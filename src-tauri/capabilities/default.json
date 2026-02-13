@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui-org/nicegui/main/nicegui/static/tauri/v2/capabilities.json",
+  "identifier": "default",
+  "description": "Default capability for Cosmos Terminal",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "shell:default",
+    "shell:allow-open",
+    "store:default"
+  ]
+}

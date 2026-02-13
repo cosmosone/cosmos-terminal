@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Rust
+src-tauri/target/
+
+# Tauri generated
+src-tauri/gen/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Environment / secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# Tauri debug / bundle output
+src-tauri/target/
+src-tauri/WixTools/
+src-tauri/NSIS/
+
+# Serena (local development tool)
+.serena/
+
+# Claude Code
+.claude/

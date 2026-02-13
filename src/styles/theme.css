@@ -1,0 +1,42 @@
+:root {
+  /* Background colors */
+  --bg-primary: #1a1b26;
+  --bg-secondary: #1e1f2e;
+  --bg-tertiary: #1e1e2e;
+  --bg-terminal: #0f0f14;
+  --bg-hover: #292e42;
+  --bg-active: #33467c;
+  --bg-input: #1e1e2e;
+
+  /* Text colors */
+  --text-primary: #c0caf5;
+  --text-secondary: #565f89;
+  --text-muted: #414868;
+  --text-bright: #e0e0e0;
+
+  /* Accent colors */
+  --accent: #7aa2f7;
+  --accent-hover: #89b4fa;
+  --accent-dim: #3d59a1;
+
+  /* Semantic colors */
+  --danger: #f7768e;
+  --warning: #e0af68;
+  --success: #9ece6a;
+  --info: #7dcfff;
+
+  /* Border colors */
+  --border: #292e42;
+  --border-active: #7aa2f7;
+
+  /* Sizing */
+  --project-tab-height: 36px;
+  --session-tab-height: 32px;
+  --statusbar-height: 24px;
+  --tab-border-radius: 4px;
+  --pane-gap: 2px;
+
+  /* Transitions */
+  --transition-fast: 100ms ease;
+  --transition-normal: 150ms ease;
+}

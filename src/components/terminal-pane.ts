@@ -1,0 +1,247 @@
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import { open } from '@tauri-apps/plugin-shell';
+import { createPtySession, writeToPtySession, resizePtySession, killPtySession } from '../services/pty-service';
+import { store } from '../state/store';
+import { logger } from '../services/logger';
+import { keybindings } from '../utils/keybindings';
+import type { AppSettings } from '../state/types';
+import { debounce } from '../utils/debounce';
+
+const XTERM_THEME = {
+  background: '#0f0f14',
+  foreground: '#c0caf5',
+  cursor: '#c0caf5',
+  cursorAccent: '#0f0f14',
+  selectionBackground: '#33467c',
+  selectionForeground: '#c0caf5',
+  black: '#15161e',
+  red: '#f7768e',
+  green: '#9ece6a',
+  yellow: '#e0af68',
+  blue: '#7aa2f7',
+  magenta: '#bb9af7',
+  cyan: '#7dcfff',
+  white: '#a9b1d6',
+  brightBlack: '#414868',
+  brightRed: '#f7768e',
+  brightGreen: '#9ece6a',
+  brightYellow: '#e0af68',
+  brightBlue: '#7aa2f7',
+  brightMagenta: '#bb9af7',
+  brightCyan: '#7dcfff',
+  brightWhite: '#c0caf5',
+};
+
+function extractCwdFromTitle(title: string): string | null {
+  let t = title.trim();
+  // PowerShell prefixes title with "PS "
+  if (/^ps\s/i.test(t)) t = t.slice(3).trim();
+  // Windows absolute path (C:\...)
+  if (/^[A-Za-z]:[\\\/]/.test(t)) return t;
+  // Unix absolute path (/...)
+  if (t.startsWith('/')) return t;
+  return null;
+}
+
+export class TerminalPane {
+  readonly element: HTMLElement;
+  readonly paneId: string;
+
+  private terminal: Terminal;
+  private fitAddon: FitAddon;
+  private webglAddon: WebglAddon | null = null;
+  private backendId: string | null = null;
+  private projectPath: string;
+  private disposed = false;
+  private resizeObserver: ResizeObserver;
+  private onProcessExit?: () => void;
+  private onCwdChange?: (cwd: string) => void;
+  private lastReportedCwd: string;
+
+  constructor(paneId: string, projectId: string, projectPath: string, onProcessExit?: () => void, onCwdChange?: (cwd: string) => void) {
+    this.paneId = paneId;
+    this.projectPath = projectPath;
+    this.onProcessExit = onProcessExit;
+    this.onCwdChange = onCwdChange;
+    this.lastReportedCwd = projectPath;
+
+    logger.debug('pty', 'TerminalPane created', { paneId, projectId, projectPath });
+
+    const settings = store.getState().settings;
+
+    this.element = document.createElement('div');
+    this.element.className = 'terminal-pane';
+    this.element.dataset.paneId = paneId;
+
+    this.terminal = new Terminal({
+      theme: XTERM_THEME,
+      fontSize: settings.fontSize,
+      fontFamily: settings.fontFamily,
+      scrollback: settings.scrollbackLines,
+      cursorStyle: settings.cursorStyle,
+      cursorBlink: settings.cursorBlink,
+      allowProposedApi: true,
+    });
+
+    this.fitAddon = new FitAddon();
+
+    this.terminal.loadAddon(this.fitAddon);
+    this.terminal.loadAddon(new WebLinksAddon((_e, uri) => open(uri)));
+
+    this.resizeObserver = new ResizeObserver(
+      debounce(() => {
+        if (!this.disposed) this.fit();
+      }, 16),
+    );
+  }
+
+  async mount(): Promise<void> {
+    logger.debug('pty', 'Mounting terminal pane', { paneId: this.paneId });
+    this.terminal.open(this.element);
+
+    // Let global keybindings pass through instead of being consumed by xterm
+    this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (e.type === 'keydown' && keybindings.matchesBinding(e)) {
+        return false; // skip xterm processing, let event bubble to window handler
+      }
+      return true;
+    });
+
+    this.tryWebgl();
+
+    this.resizeObserver.observe(this.element);
+
+    await new Promise((r) => requestAnimationFrame(r));
+    if (this.disposed) return;
+    this.fit();
+
+    this.terminal.onData((data) => {
+      if (this.backendId) {
+        writeToPtySession(this.backendId, data);
+      }
+    });
+
+    this.terminal.onBell(() => {
+      logger.debug('pty', 'Bell triggered', { paneId: this.paneId });
+      const settings = store.getState().settings;
+      if (settings.bellStyle === 'visual') {
+        this.element.classList.add('bell');
+        setTimeout(() => {
+          if (!this.disposed) this.element.classList.remove('bell');
+        }, 200);
+      }
+    });
+
+    this.terminal.onTitleChange((title) => {
+      const cwd = extractCwdFromTitle(title);
+      if (cwd && cwd.toLowerCase() !== this.lastReportedCwd.toLowerCase()) {
+        this.lastReportedCwd = cwd;
+        this.onCwdChange?.(cwd);
+      }
+    });
+
+    const settings = store.getState().settings;
+    const dims = this.fitAddon.proposeDimensions();
+    const info = await createPtySession(
+      {
+        projectPath: this.projectPath,
+        shellPath: settings.shellPath,
+        rows: dims?.rows ?? 24,
+        cols: dims?.cols ?? 80,
+      },
+      (data) => {
+        if (!this.disposed) {
+          this.terminal.write(data);
+        }
+      },
+      () => {
+        if (!this.disposed) {
+          logger.info('pty', 'Process exited', { paneId: this.paneId });
+          this.onProcessExit?.();
+        }
+      },
+    );
+
+    // Guard against disposal during async PTY creation
+    if (this.disposed) {
+      logger.warn('pty', 'Terminal disposed during mount, killing orphaned PTY', { paneId: this.paneId, backendId: info.id });
+      try { await killPtySession(info.id); } catch { /* already dead */ }
+      return;
+    }
+
+    this.backendId = info.id;
+    logger.info('pty', 'PTY session created', { paneId: this.paneId, backendId: info.id, pid: info.pid });
+  }
+
+  private tryWebgl(): void {
+    try {
+      this.webglAddon = new WebglAddon();
+      this.webglAddon.onContextLoss(() => {
+        logger.warn('pty', 'WebGL context lost, falling back to canvas', { paneId: this.paneId });
+        this.webglAddon?.dispose();
+        this.webglAddon = null;
+      });
+      this.terminal.loadAddon(this.webglAddon);
+      logger.debug('pty', 'WebGL addon loaded', { paneId: this.paneId });
+    } catch {
+      logger.debug('pty', 'WebGL not available, using canvas renderer', { paneId: this.paneId });
+      this.webglAddon = null;
+    }
+  }
+
+  fit(): void {
+    if (this.disposed || this.element.offsetWidth === 0) return;
+    try {
+      this.fitAddon.fit();
+      const dims = this.fitAddon.proposeDimensions();
+      if (dims && this.backendId) {
+        resizePtySession(this.backendId, dims.rows, dims.cols);
+        logger.debug('pty', 'Terminal fit', { paneId: this.paneId, rows: dims.rows, cols: dims.cols });
+      }
+    } catch {
+      // Fit can throw if element not visible
+    }
+  }
+
+  focus(): void {
+    this.terminal.focus();
+    this.element.classList.add('focused');
+  }
+
+  blur(): void {
+    this.element.classList.remove('focused');
+  }
+
+  applySettings(settings: AppSettings): void {
+    logger.debug('pty', 'Applying settings to terminal', { paneId: this.paneId, fontSize: settings.fontSize });
+    this.terminal.options.fontSize = settings.fontSize;
+    this.terminal.options.fontFamily = settings.fontFamily;
+    this.terminal.options.scrollback = settings.scrollbackLines;
+    this.terminal.options.cursorStyle = settings.cursorStyle;
+    this.terminal.options.cursorBlink = settings.cursorBlink;
+    this.fit();
+  }
+
+  clearScrollback(): void {
+    this.terminal.clear();
+  }
+
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    logger.info('pty', 'Disposing terminal pane', { paneId: this.paneId, backendId: this.backendId });
+    this.resizeObserver.disconnect();
+    if (this.backendId) {
+      try {
+        await killPtySession(this.backendId);
+      } catch {
+        // Session may already be dead
+      }
+    }
+    this.webglAddon?.dispose();
+    this.terminal.dispose();
+  }
+}

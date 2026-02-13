@@ -1,0 +1,142 @@
+#log-viewer-container {
+  position: fixed;
+  bottom: var(--statusbar-height);
+  left: 0;
+  right: 0;
+  height: 320px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+}
+
+.log-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.log-viewer-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.log-viewer-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.log-filter-select {
+  height: 24px;
+  padding: 0 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-size: 11px;
+  appearance: none;
+}
+
+.log-search-input {
+  height: 24px;
+  width: 140px;
+  padding: 0 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.log-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.log-search-input:focus,
+.log-filter-select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.log-btn {
+  height: 24px;
+  padding: 0 8px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.log-btn:hover {
+  background: var(--bg-active);
+}
+
+.log-btn-close {
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 6px;
+}
+
+.log-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 4px 0;
+}
+
+.log-row {
+  display: flex;
+  gap: 8px;
+  padding: 1px 12px;
+  white-space: nowrap;
+}
+
+.log-row:hover {
+  background: var(--bg-hover);
+}
+
+.log-ts {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  width: 90px;
+}
+
+.log-level {
+  flex-shrink: 0;
+  width: 44px;
+  font-weight: 600;
+}
+
+.log-cat {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  width: 64px;
+}
+
+.log-msg {
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.log-data {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.log-level-debug .log-msg { color: var(--text-muted); }
+.log-level-warn .log-msg { color: var(--warning); }
+.log-level-error .log-msg { color: var(--danger); }

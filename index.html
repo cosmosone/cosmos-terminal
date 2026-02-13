@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cosmos Terminal</title>
+    <link rel="stylesheet" href="/src/styles/reset.css" />
+    <link rel="stylesheet" href="/src/styles/theme.css" />
+    <link rel="stylesheet" href="/src/styles/layout.css" />
+    <link rel="stylesheet" href="/src/styles/project-tabs.css" />
+    <link rel="stylesheet" href="/src/styles/session-tabs.css" />
+    <link rel="stylesheet" href="/src/styles/terminal.css" />
+    <link rel="stylesheet" href="/src/styles/settings.css" />
+    <link rel="stylesheet" href="/src/styles/statusbar.css" />
+    <link rel="stylesheet" href="/src/styles/log-viewer.css" />
+    <link rel="stylesheet" href="/src/styles/context-menu.css" />
+    <link rel="stylesheet" href="/src/styles/git-sidebar.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="project-tab-bar"></div>
+      <div id="session-tab-bar"></div>
+      <div id="main-content">
+        <div id="terminal-container"></div>
+        <div id="settings-container" class="hidden"></div>
+        <div id="git-sidebar-container" class="hidden"></div>
+      </div>
+      <div id="log-viewer-container" class="hidden"></div>
+      <div id="status-bar"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

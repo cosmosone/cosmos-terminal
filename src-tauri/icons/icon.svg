@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2D2D44"/>
+      <stop offset="100%" stop-color="#1A1A24"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8"/>
+    </filter>
+  </defs>
+
+  <!-- Background gradient -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- Subtle glow behind frame -->
+  <rect x="111" y="151" width="290" height="210" rx="22" ry="22"
+        fill="none" stroke="#4FC3F7" stroke-width="28" opacity="0.2"
+        filter="url(#glow)"/>
+
+  <!-- Terminal frame -->
+  <rect x="111" y="151" width="290" height="210" rx="22" ry="22"
+        fill="#12121E" stroke="#4FC3F7" stroke-width="14"/>
+
+  <!-- Chevron > -->
+  <polyline points="206,221 251,256 206,291"
+            fill="none" stroke="#E8E8F0" stroke-width="14"
+            stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Cursor _ -->
+  <rect x="266" y="279" width="55" height="12" rx="3" ry="3" fill="#E8E8F0"/>
+</svg>

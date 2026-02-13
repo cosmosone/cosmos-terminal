@@ -1,0 +1,363 @@
+/* ── Backdrop ── */
+#settings-container {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* ── Dialog chrome ── */
+.settings-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 90%;
+  max-width: 560px;
+  max-height: 80vh;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+/* ── Scrollable body ── */
+.settings-inner {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 24px;
+}
+
+.settings-inner::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-inner::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-inner::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+.settings-inner::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ── Header (sticky) ── */
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-header-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.settings-header-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.settings-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.settings-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Sections (collapsible) ── */
+.settings-section {
+  padding-top: 16px;
+  padding-bottom: 4px;
+}
+
+.settings-section + .settings-section {
+  border-top: none;
+}
+
+.settings-section.collapsed {
+  padding-bottom: 0;
+}
+
+.settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 8px;
+  margin-left: -22px;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--transition-fast);
+}
+
+.settings-section.collapsed .settings-section-title {
+  margin-bottom: 0;
+}
+
+.settings-section-title:hover {
+  color: var(--text-primary);
+}
+
+.settings-section-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 9px;
+  transition: transform 0.2s ease;
+}
+
+.settings-section-chevron::before {
+  content: '\25BC';
+}
+
+.settings-section.collapsed .settings-section-chevron {
+  transform: rotate(-90deg);
+}
+
+.settings-section.collapsed .settings-section-content {
+  display: none;
+}
+
+/* ── Rows ── */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 6px 0;
+  gap: 16px;
+}
+
+.settings-row label {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* ── Text / number / select inputs ── */
+.settings-row input[type="text"],
+.settings-row input[type="number"],
+.settings-row select {
+  width: 200px;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  transition: border-color var(--transition-fast);
+}
+
+.settings-row input:focus,
+.settings-row select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.settings-row input[type="number"]::-webkit-inner-spin-button,
+.settings-row input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.settings-row input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ── Number input with stepper ── */
+.number-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 200px;
+  height: 30px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+}
+
+.number-input-wrapper:focus-within {
+  border-color: var(--accent);
+}
+
+.number-input-wrapper input[type="number"] {
+  flex: 1;
+  width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  text-align: center;
+  padding: 0;
+}
+
+.number-input-wrapper input[type="number"]:focus {
+  outline: none;
+  border-color: transparent;
+}
+
+.number-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 10px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.number-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Select dropdown ── */
+.settings-row select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23565f89' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 28px;
+}
+
+/* ── Toggle switch ── */
+.settings-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--bg-hover);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background var(--transition-normal);
+  flex-shrink: 0;
+}
+
+.settings-toggle.active {
+  background: var(--accent);
+}
+
+.settings-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  transition: transform var(--transition-normal);
+}
+
+.settings-toggle.active::after {
+  transform: translateX(16px);
+}
+
+/* ── Keybinding button ── */
+.keybinding-input {
+  min-width: 140px;
+  height: 30px;
+  padding: 0 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.keybinding-input:hover {
+  border-color: var(--text-muted);
+}
+
+.keybinding-input.recording {
+  border-color: var(--accent);
+  background: rgba(122, 162, 247, 0.1);
+  color: var(--accent);
+  animation: keybinding-pulse 1s ease-in-out infinite;
+}
+
+@keyframes keybinding-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Timer label ── */
+.settings-timer {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+.settings-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Action button ── */
+.settings-btn {
+  height: 30px;
+  padding: 0 14px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.settings-btn:hover {
+  background: var(--bg-active);
+  border-color: var(--accent);
+}

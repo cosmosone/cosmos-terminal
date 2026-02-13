@@ -1,0 +1,133 @@
+#project-tab-bar {
+  display: flex;
+  align-items: center;
+  height: var(--project-tab-height);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 0 8px;
+  -webkit-app-region: drag;
+}
+
+#project-tab-bar .tab-list {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  -webkit-app-region: no-drag;
+}
+
+#project-tab-bar .tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+.project-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--tab-border-radius);
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  position: relative;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  -webkit-app-region: no-drag;
+}
+
+.project-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.project-tab.active {
+  color: var(--text-primary);
+}
+
+.project-tab.active:hover {
+  background: var(--bg-hover);
+}
+
+.project-tab .tab-label {
+  flex: 1;
+  text-align: left;
+  position: relative;
+}
+
+/* Accent underline indicator for active project tab — scoped to label only */
+.project-tab.active .tab-label::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
+.project-tab .tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.project-tab:hover .tab-close {
+  opacity: 0.6;
+}
+
+.project-tab .tab-close:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
+.project-tab-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  border-radius: var(--tab-border-radius);
+  color: var(--text-muted);
+  font-size: 16px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  -webkit-app-region: no-drag;
+}
+
+.project-tab-add:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.project-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+}
+
+.project-tab-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--tab-border-radius);
+  color: var(--text-muted);
+  font-size: 18px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.project-tab-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

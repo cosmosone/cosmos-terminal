@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Monochrome/themed variant: single solid color, no gradients -->
+
+  <!-- Terminal frame (outline only) -->
+  <rect x="111" y="151" width="290" height="210" rx="22" ry="22"
+        fill="none" stroke="#FFFFFF" stroke-width="14"/>
+
+  <!-- Chevron > -->
+  <polyline points="206,221 251,256 206,291"
+            fill="none" stroke="#FFFFFF" stroke-width="14"
+            stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Cursor _ -->
+  <rect x="266" y="279" width="55" height="12" rx="3" ry="3" fill="#FFFFFF"/>
+</svg>
