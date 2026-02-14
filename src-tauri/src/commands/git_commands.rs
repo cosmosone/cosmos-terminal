@@ -180,6 +180,7 @@ pub async fn git_diff(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+<<<<<<< Updated upstream
 pub async fn git_stage_all(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
@@ -226,14 +227,21 @@ pub async fn git_commit(path: String, message: String) -> Result<GitCommitResult
 #[tauri::command]
 pub async fn git_push(path: String) -> Result<GitPushResult, String> {
     tokio::task::spawn_blocking(move || {
-        let repo_path = Repository::discover(&path)
-            .map_err(|e| e.to_string())?
+        let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+        let repo_path = repo
             .workdir()
             .ok_or("Not a working directory")?
             .to_path_buf();
 
+        // Get current branch name
+        let branch = match repo.head() {
+            Ok(head) => head.shorthand().unwrap_or("HEAD").to_string(),
+            Err(_) => "HEAD".to_string(),
+        };
+
         let mut cmd = std::process::Command::new("git");
-        cmd.arg("push").current_dir(&repo_path);
+        cmd.args(["push", "-u", "origin", &branch])
+            .current_dir(&repo_path);
 
         #[cfg(target_os = "windows")]
         {
