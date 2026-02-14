@@ -180,7 +180,6 @@ pub async fn git_diff(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-<<<<<<< Updated upstream
 pub async fn git_stage_all(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
