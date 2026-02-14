@@ -93,6 +93,45 @@ export class SplitContainer {
     }
   }
 
+  private static readonly HANDLE_EXPAND = 4;
+
+  private positionHandle(handle: HTMLElement, d: { rect: Rect; direction: string }): void {
+    const expand = SplitContainer.HANDLE_EXPAND;
+    const isHz = d.direction === 'horizontal';
+    handle.style.left = `${d.rect.x - (isHz ? expand : 0)}px`;
+    handle.style.top = `${d.rect.y - (isHz ? 0 : expand)}px`;
+    handle.style.width = `${d.rect.width + (isHz ? expand * 2 : 0)}px`;
+    handle.style.height = `${d.rect.height + (isHz ? 0 : expand * 2)}px`;
+  }
+
+  /** Lightweight position-only update (no handle recreation). */
+  private updatePositions(tree: PaneNode): void {
+    const rect: Rect = {
+      x: 0,
+      y: 0,
+      width: this.container.offsetWidth,
+      height: this.container.offsetHeight,
+    };
+
+    const { paneRects, dividers } = computeLayout(tree, rect);
+    this.lastPaneRects = paneRects;
+
+    for (const [paneId, r] of paneRects) {
+      const tp = this.terminals.get(paneId);
+      if (tp && tp.element.style.display !== 'none') {
+        tp.element.style.left = `${r.x}px`;
+        tp.element.style.top = `${r.y}px`;
+        tp.element.style.width = `${r.width}px`;
+        tp.element.style.height = `${r.height}px`;
+        tp.fit();
+      }
+    }
+
+    for (let i = 0; i < this.handles.length && i < dividers.length; i++) {
+      this.positionHandle(this.handles[i], dividers[i]);
+    }
+  }
+
   private layout(tree: PaneNode, projectId: string, sessionId: string): void {
     const rect: Rect = {
       x: 0,
@@ -127,10 +166,7 @@ export class SplitContainer {
     for (const d of dividers) {
       const handle = document.createElement('div');
       handle.className = `pane-resize-handle ${d.direction}`;
-      handle.style.left = `${d.rect.x}px`;
-      handle.style.top = `${d.rect.y}px`;
-      handle.style.width = `${d.rect.width}px`;
-      handle.style.height = `${d.rect.height}px`;
+      this.positionHandle(handle, d);
 
       setupResizeHandle(handle, d, {
         getTree: () => {
@@ -139,7 +175,10 @@ export class SplitContainer {
           return s?.paneTree ?? tree;
         },
         getContainerRect: () => this.container.getBoundingClientRect(),
-        onResize: (newTree) => setPaneTree(projectId, sessionId, newTree),
+        onResize: (newTree) => {
+          setPaneTree(projectId, sessionId, newTree);
+          this.updatePositions(newTree);
+        },
       });
 
       this.container.appendChild(handle);
@@ -175,7 +214,7 @@ export class SplitContainer {
     const project = getActiveProject();
     if (!project) return;
     const session = project.sessions.find((s) => s.id === project.activeSessionId);
-    if (session) this.layout(session.paneTree, project.id, session.id);
+    if (session) this.updatePositions(session.paneTree);
   }
 
   navigatePane(direction: 'left' | 'right' | 'up' | 'down'): void {

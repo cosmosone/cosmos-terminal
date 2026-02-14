@@ -102,7 +102,7 @@ impl SessionHandle {
         channel: Channel<Vec<u8>>,
         alive: Arc<AtomicBool>,
     ) {
-        let mut buf = [0u8; 4096];
+        let mut buf = [0u8; 16384];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break, // EOF

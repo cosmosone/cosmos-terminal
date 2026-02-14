@@ -46,20 +46,38 @@
   position: absolute;
   z-index: 10;
   background: transparent;
-  transition: background var(--transition-fast);
 }
 
-.pane-resize-handle:hover,
-.pane-resize-handle.dragging {
-  background: var(--accent);
+.pane-resize-handle::after {
+  content: '';
+  position: absolute;
+  background: transparent;
+  transition: background var(--transition-fast);
 }
 
 .pane-resize-handle.horizontal {
   cursor: col-resize;
-  width: var(--pane-gap);
+}
+
+.pane-resize-handle.horizontal::after {
+  left: 4px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
 }
 
 .pane-resize-handle.vertical {
   cursor: row-resize;
-  height: var(--pane-gap);
+}
+
+.pane-resize-handle.vertical::after {
+  top: 4px;
+  left: 0;
+  right: 0;
+  height: 2px;
+}
+
+.pane-resize-handle:hover::after,
+.pane-resize-handle.dragging::after {
+  background: var(--accent);
 }

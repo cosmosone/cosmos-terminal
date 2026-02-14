@@ -1,16 +1,7 @@
-import { load, type Store } from '@tauri-apps/plugin-store';
 import type { GitSidebarState, Project } from '../state/types';
+import { createStoreLazy } from './store-loader';
 
-const STORE_PATH = 'workspace.json';
-
-let storeInstance: Store | null = null;
-
-async function getStore(): Promise<Store> {
-  if (!storeInstance) {
-    storeInstance = await load(STORE_PATH, { defaults: {}, autoSave: true });
-  }
-  return storeInstance;
-}
+const getStore = createStoreLazy('workspace.json');
 
 export interface SavedWorkspace {
   projects: Project[];
@@ -22,7 +13,7 @@ export async function loadWorkspace(): Promise<SavedWorkspace | null> {
   try {
     const s = await getStore();
     const saved = await s.get<SavedWorkspace>('workspace');
-    if (saved && saved.projects && saved.projects.length > 0) {
+    if (saved?.projects?.length) {
       return saved;
     }
   } catch {

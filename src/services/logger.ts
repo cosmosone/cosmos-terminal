@@ -7,7 +7,6 @@ export type LogCategory =
   | 'settings'
   | 'project'
   | 'session'
-  | 'ui'
   | 'git';
 
 export interface LogEntry {

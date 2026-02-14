@@ -9,8 +9,6 @@ type Subscription<T> = {
 export class Store {
   private state: AppState;
   private subscriptions: Subscription<any>[] = [];
-  private batchDepth = 0;
-  private pendingNotify = false;
 
   constructor(initial: AppState) {
     this.state = initial;
@@ -22,28 +20,7 @@ export class Store {
 
   setState(updater: StateUpdater): void {
     this.state = updater(this.state);
-    if (this.batchDepth > 0) {
-      this.pendingNotify = true;
-    } else {
-      this.notify();
-    }
-  }
-
-  batch(fn: () => void): void {
-    this.batchDepth++;
-    try {
-      fn();
-    } finally {
-      this.batchDepth--;
-      if (this.batchDepth === 0 && this.pendingNotify) {
-        this.pendingNotify = false;
-        this.notify();
-      }
-    }
-  }
-
-  subscribe(listener: StateListener<AppState>): () => void {
-    return this.select((s) => s, listener);
+    this.notify();
   }
 
   select<T>(selector: StateSelector<T>, listener: StateListener<T>): () => void {

@@ -1,6 +1,6 @@
 import { store } from '../state/store';
-import { updateSettings, toggleSettingsView } from '../state/actions';
-import { saveSettings } from '../services/settings-service';
+import { toggleDebugLogging, updateSettings, toggleSettingsView } from '../state/actions';
+import { saveSettings, TERMINAL_FONT_PRESETS, UI_FONT_PRESETS } from '../services/settings-service';
 import { logger } from '../services/logger';
 import type { AppSettings, KeybindingConfig } from '../state/types';
 import { keybindings } from '../utils/keybindings';
@@ -15,6 +15,10 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
   });
 
   function render(settings: AppSettings): void {
+    // Preserve scroll position across re-renders
+    const prevInner = container.querySelector('.settings-inner');
+    const savedScrollTop = prevInner?.scrollTop ?? 0;
+
     clearChildren(container);
 
     const dialog = createElement('div', { className: 'settings-dialog' });
@@ -31,7 +35,7 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     collapseAllBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 3 12 8 17 3"/><polyline points="7 21 12 16 17 21"/></svg>';
     const closeBtn = createElement('div', { className: 'settings-close' });
     closeBtn.innerHTML = '&#215;';
-    closeBtn.addEventListener('click', () => toggleSettingsView());
+    closeBtn.addEventListener('click', toggleSettingsView);
 
     headerRight.appendChild(expandAllBtn);
     headerRight.appendChild(collapseAllBtn);
@@ -69,10 +73,16 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     // ── 1. Font (most commonly adjusted) ──
     const font = createCollapsibleSection('Font');
     font.content.appendChild(
-      createTextRow('Font Family', settings.fontFamily, (v) => apply({ fontFamily: v })),
+      createFontRow('Terminal Font', settings.fontFamily, TERMINAL_FONT_PRESETS, (v) => apply({ fontFamily: v })),
     );
     font.content.appendChild(
       createNumberRow('Font Size', settings.fontSize, 8, 32, (v) => apply({ fontSize: v })),
+    );
+    font.content.appendChild(
+      createFontRow('UI Font', settings.uiFontFamily, UI_FONT_PRESETS, (v) => apply({ uiFontFamily: v })),
+    );
+    font.content.appendChild(
+      createNumberRow('UI Font Size', settings.uiFontSize, 8, 32, (v) => apply({ uiFontSize: v })),
     );
     inner.appendChild(font.wrapper);
 
@@ -111,14 +121,8 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     // ── 4. AI Integration ──
     const ai = createCollapsibleSection('AI Integration');
     ai.content.appendChild(
-      createTextRow('OpenAI API Key', settings.openaiApiKey, (v) => apply({ openaiApiKey: v })),
+      createApiKeyRow(settings.openaiApiKey, (v) => apply({ openaiApiKey: v })),
     );
-    const hint = createElement('div', { className: 'settings-row' });
-    hint.appendChild(createElement('label'));
-    const hintText = createElement('span', { className: 'settings-hint' });
-    hintText.textContent = 'Used for generating commit messages (GPT-5-nano)';
-    hint.appendChild(hintText);
-    ai.content.appendChild(hint);
     inner.appendChild(ai.wrapper);
 
     // ── 5. Keybindings ──
@@ -137,9 +141,35 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       ['cycleProjectNext', 'Next Project Tab'],
       ['cycleProjectPrev', 'Previous Project Tab'],
     ];
+
+    // Build conflict map: combo -> list of labels that use it
+    const hardcodedBindings: [string, string][] = [
+      ['Ctrl+Shift+t', 'New Session'],
+      ['Ctrl+Shift+w', 'Close Session'],
+      ['Ctrl+,', 'Settings'],
+      ['Ctrl+Shift+g', 'Git Sidebar'],
+    ];
+    const comboToLabels = new Map<string, string[]>();
+
+    function addToConflictMap(combo: string, label: string): void {
+      const normalized = normalizeCombo(combo);
+      const list = comboToLabels.get(normalized) ?? [];
+      list.push(label);
+      comboToLabels.set(normalized, list);
+    }
+
     for (const [key, label] of kbLabels) {
+      addToConflictMap(settings.keybindings[key], label);
+    }
+    for (const [combo, label] of hardcodedBindings) {
+      addToConflictMap(combo, label);
+    }
+
+    for (const [key, label] of kbLabels) {
+      const combo = normalizeCombo(settings.keybindings[key]);
+      const others = (comboToLabels.get(combo) ?? []).filter((l) => l !== label);
       kb.content.appendChild(
-        createKeybindingRow(label, settings.keybindings[key], (v) =>
+        createKeybindingRow(label, settings.keybindings[key], others, (v) =>
           apply({ keybindings: { ...settings.keybindings, [key]: v } }),
         ),
       );
@@ -149,15 +179,9 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     // ── 6. Logging & Debugging (rarely needed) ──
     const log = createCollapsibleSection('Logging & Debugging');
     log.content.appendChild(
-      createToggleRow('Enable Debug Logging', settings.debugLogging, (v) => {
-        if (v) {
-          const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-          apply({ debugLogging: true, debugLoggingExpiry: expiry });
-          logger.enable();
-        } else {
-          apply({ debugLogging: false, debugLoggingExpiry: null });
-          logger.disable();
-        }
+      createToggleRow('Enable Debug Logging', settings.debugLogging, () => {
+        toggleDebugLogging();
+        onSettingsChanged();
       }),
     );
 
@@ -195,6 +219,11 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
 
     dialog.appendChild(inner);
     container.appendChild(dialog);
+
+    // Restore scroll position after DOM update
+    if (savedScrollTop) {
+      inner.scrollTop = savedScrollTop;
+    }
   }
 
   function formatExpiry(expiry: string | null): string {
@@ -300,6 +329,63 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     return row;
   }
 
+  function createFontRow(
+    label: string,
+    value: string,
+    presets: string[],
+    onChange: (v: string) => void,
+  ): HTMLElement {
+    const row = createElement('div', { className: 'settings-row' });
+    const lbl = createElement('label');
+    lbl.textContent = label;
+
+    const wrapper = createElement('div', { className: 'font-input-wrapper' });
+
+    const select = createElement('select', { className: 'font-select' });
+    for (const font of presets) {
+      const option = createElement('option');
+      option.value = font;
+      option.textContent = font;
+      if (font === value) option.selected = true;
+      select.appendChild(option);
+    }
+    // "Custom..." option
+    const customOpt = createElement('option');
+    customOpt.value = '__custom__';
+    customOpt.textContent = 'Custom...';
+    select.appendChild(customOpt);
+
+    // If current value isn't a preset, select Custom and show input
+    const isCustom = !presets.includes(value);
+    if (isCustom) customOpt.selected = true;
+
+    const customInput = createElement('input', { type: 'text', className: 'font-custom-input' });
+    customInput.value = isCustom ? value : '';
+    customInput.placeholder = 'Font name...';
+    customInput.style.display = isCustom ? '' : 'none';
+    customInput.addEventListener('change', () => {
+      const v = customInput.value.trim();
+      if (v) onChange(v);
+    });
+
+    select.addEventListener('change', () => {
+      if (select.value === '__custom__') {
+        customInput.style.display = '';
+        customInput.focus();
+      } else {
+        customInput.style.display = 'none';
+        onChange(select.value);
+      }
+    });
+
+    wrapper.appendChild(select);
+    wrapper.appendChild(customInput);
+
+    row.appendChild(lbl);
+    row.appendChild(wrapper);
+    return row;
+  }
+
   function createToggleRow(
     label: string,
     value: boolean,
@@ -322,22 +408,41 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
   function createKeybindingRow(
     label: string,
     value: string,
+    conflicts: string[],
     onChange: (v: string) => void,
   ): HTMLElement {
     const row = createElement('div', { className: 'settings-row' });
     const lbl = createElement('label');
     lbl.textContent = label;
-    const kbd = createElement('button', { className: 'keybinding-input' });
+
+    if (conflicts.length > 0) {
+      const conflictHint = createElement('span', { className: 'keybinding-conflict-label' });
+      conflictHint.textContent = `Conflicts with: ${conflicts.join(', ')}`;
+      lbl.appendChild(conflictHint);
+    }
+
+    const kbd = createElement('button', {
+      className: `keybinding-input${conflicts.length > 0 ? ' conflict' : ''}`,
+    });
     kbd.textContent = formatKeybinding(value);
 
     kbd.addEventListener('click', () => {
-      kbd.textContent = 'Press keys...';
+      kbd.textContent = 'Press keys... (Esc to cancel)';
       kbd.classList.add('recording');
       keybindings.setActive(false);
 
       function onKeydown(e: KeyboardEvent) {
         e.preventDefault();
         e.stopImmediatePropagation();
+
+        // Cancel on Escape
+        if (e.key === 'Escape') {
+          kbd.textContent = formatKeybinding(value);
+          kbd.classList.remove('recording');
+          keybindings.setActive(true);
+          window.removeEventListener('keydown', onKeydown, true);
+          return;
+        }
 
         if (['Alt', 'Control', 'Shift', 'Meta'].includes(e.key)) return;
 
@@ -364,10 +469,87 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     return row;
   }
 
+  function createApiKeyRow(value: string, onChange: (v: string) => void): HTMLElement {
+    const wrapper = createElement('div', { className: 'settings-api-key-section' });
+
+    const row = createElement('div', { className: 'settings-row' });
+    const lbl = createElement('label');
+    lbl.textContent = 'OpenAI API Key';
+    const input = createElement('input', { type: 'password' });
+    input.value = value;
+    input.placeholder = 'sk-...';
+    input.addEventListener('change', () => onChange(input.value));
+    row.appendChild(lbl);
+    row.appendChild(input);
+    wrapper.appendChild(row);
+
+    const actionRow = createElement('div', { className: 'settings-row' });
+    const hintText = createElement('span', { className: 'settings-hint' });
+    hintText.textContent = 'Used for generating commit messages (GPT-5-nano)';
+    actionRow.appendChild(hintText);
+
+    const baseClass = 'settings-btn api-key-test-btn';
+    const testBtn = createElement('button', { className: baseClass });
+    testBtn.textContent = 'Test';
+
+    function showTestResult(text: string, stateClass: string, delayMs: number): void {
+      testBtn.textContent = text;
+      testBtn.className = stateClass ? `${baseClass} ${stateClass}` : baseClass;
+      setTimeout(() => {
+        testBtn.textContent = 'Test';
+        testBtn.className = baseClass;
+      }, delayMs);
+    }
+
+    testBtn.addEventListener('click', async () => {
+      const key = input.value.trim();
+      if (!key) {
+        showTestResult('No key', 'test-fail', 2500);
+        return;
+      }
+
+      testBtn.textContent = 'Testing..';
+      testBtn.disabled = true;
+
+      let resultText: string;
+      let resultClass: string;
+      try {
+        const res = await fetch('https://api.openai.com/v1/models', {
+          headers: { Authorization: `Bearer ${key}` },
+        });
+        if (res.ok) {
+          resultText = 'Valid';
+          resultClass = 'test-pass';
+        } else if (res.status === 401) {
+          resultText = 'Invalid key';
+          resultClass = 'test-fail';
+        } else {
+          resultText = `Error ${res.status}`;
+          resultClass = 'test-fail';
+        }
+      } catch {
+        resultText = 'Network error';
+        resultClass = 'test-fail';
+      }
+
+      testBtn.disabled = false;
+      showTestResult(resultText, resultClass, 3000);
+    });
+
+    actionRow.appendChild(testBtn);
+    wrapper.appendChild(actionRow);
+
+    return wrapper;
+  }
+
   function formatKeybinding(combo: string): string {
     return combo
       .replace(/Arrow/g, '')
       .replace(/\+/g, ' + ');
+  }
+
+  function normalizeCombo(combo: string): string {
+    return combo.toLowerCase().split('+').sort().join('+');
   }
 
   store.select((s) => s.settings, render);

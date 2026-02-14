@@ -55,6 +55,8 @@ export interface AppSettings {
   shellPath: string;
   fontSize: number;
   fontFamily: string;
+  uiFontFamily: string;
+  uiFontSize: number;
   scrollbackLines: number;
   cursorStyle: 'block' | 'underline' | 'bar';
   cursorBlink: boolean;
@@ -111,6 +113,8 @@ export interface ProjectGitState {
   loading: boolean;
   error: string | null;
   commitMessage: string;
+  generating: boolean;
+  generatingLabel: string;
 }
 
 export interface GitSidebarState {

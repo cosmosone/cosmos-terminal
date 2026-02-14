@@ -1,5 +1,6 @@
 import { store } from './store';
 import { logger } from '../services/logger';
+import { saveSettings } from '../services/settings-service';
 import { findLeafPaneIds } from '../layout/pane-tree';
 import type { AppSettings, GitSidebarState, PaneNode, Project, ProjectGitState, Session } from './types';
 
@@ -120,7 +121,8 @@ export function renameProject(projectId: string, name: string): void {
 
 export function updateProjectCwd(projectId: string, cwd: string): void {
   const project = store.getState().projects.find((p) => p.id === projectId);
-  if (project && project.path.toLowerCase() === cwd.toLowerCase()) return;
+  if (project?.path.toLowerCase() === cwd.toLowerCase()) return;
+
   const name = cwd.split(/[/\\]/).filter(Boolean).pop() || 'Project';
   updateProject(projectId, (p) => ({ ...p, name, path: cwd }));
 }
@@ -204,14 +206,19 @@ function removePaneFromTree(node: PaneNode, paneId: string): PaneNode | null {
   if (node.type === 'leaf') {
     return node.paneId === paneId ? null : node;
   }
-  const remaining = node.children
-    .map((c) => removePaneFromTree(c, paneId))
-    .filter((c): c is PaneNode => c !== null);
-  if (remaining.length === 0) return null;
-  if (remaining.length === 1) return remaining[0];
-  const totalRatio = node.ratios.reduce((a, b) => a + b, 0);
-  const newRatios = remaining.map(() => totalRatio / remaining.length);
-  return { ...node, children: remaining, ratios: newRatios };
+  const results: { node: PaneNode; ratio: number }[] = [];
+  for (let i = 0; i < node.children.length; i++) {
+    const child = removePaneFromTree(node.children[i], paneId);
+    if (child) results.push({ node: child, ratio: node.ratios[i] });
+  }
+  if (results.length === 0) return null;
+  if (results.length === 1) return results[0].node;
+  // Normalize proportionally so ratios sum to exactly 1.0
+  const totalRatio = results.reduce((sum, r) => sum + r.ratio, 0);
+  const newRatios = results.map((r) => r.ratio / totalRatio);
+  const sum = newRatios.slice(0, -1).reduce((a, b) => a + b, 0);
+  newRatios[newRatios.length - 1] = 1.0 - sum;
+  return { ...node, children: results.map((r) => r.node), ratios: newRatios };
 }
 
 // --- Tab cycling actions ---
@@ -223,6 +230,17 @@ export function cycleSession(projectId: string, direction: 1 | -1): void {
   const newIdx = (idx + direction + project.sessions.length) % project.sessions.length;
   logger.debug('session', 'cycleSession', { projectId, direction, from: idx, to: newIdx });
   setActiveSession(projectId, project.sessions[newIdx].id);
+}
+
+export function reorderProject(projectId: string, newIndex: number): void {
+  store.setState((s) => {
+    const oldIndex = s.projects.findIndex((p) => p.id === projectId);
+    if (oldIndex === -1 || oldIndex === newIndex) return s;
+    const projects = [...s.projects];
+    const [moved] = projects.splice(oldIndex, 1);
+    projects.splice(newIndex, 0, moved);
+    return { ...s, projects };
+  });
 }
 
 export function cycleProject(direction: 1 | -1): void {
@@ -242,6 +260,19 @@ export function updateSettings(partial: Partial<AppSettings>): void {
     ...s,
     settings: { ...s.settings, ...partial },
   }));
+}
+
+export function toggleDebugLogging(): void {
+  const enabling = !store.getState().settings.debugLogging;
+  if (enabling) {
+    const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    updateSettings({ debugLogging: true, debugLoggingExpiry: expiry });
+    logger.enable();
+  } else {
+    updateSettings({ debugLogging: false, debugLoggingExpiry: null });
+    logger.disable();
+  }
+  saveSettings(store.getState().settings);
 }
 
 // --- View actions ---
@@ -309,10 +340,29 @@ export function setCommitMessage(projectId: string, message: string): void {
   updateGitState(projectId, { commitMessage: message });
 }
 
+export function setGenerating(projectId: string, generating: boolean, label?: string): void {
+  updateGitState(projectId, { generating, generatingLabel: label ?? '' });
+}
+
 export function defaultGitState(): ProjectGitState {
-  return { isRepo: null, status: null, log: [], loading: false, error: null, commitMessage: '' };
+  return {
+    isRepo: null,
+    status: null,
+    log: [],
+    loading: false,
+    error: null,
+    commitMessage: '',
+    generating: false,
+    generatingLabel: '',
+  };
 }
 
 export function defaultGitSidebarState(): GitSidebarState {
-  return { visible: false, width: 350, expandedProjectIds: [], activeProjectId: null, graphExpanded: true };
+  return {
+    visible: false,
+    width: 350,
+    expandedProjectIds: [],
+    activeProjectId: null,
+    graphExpanded: true,
+  };
 }

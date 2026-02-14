@@ -67,23 +67,7 @@
   gap: 6px;
 }
 
-.settings-header-icon-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.settings-header-icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
+.settings-header-icon-btn,
 .settings-close {
   display: flex;
   align-items: center;
@@ -92,14 +76,18 @@
   height: 28px;
   border-radius: 6px;
   color: var(--text-muted);
-  font-size: 18px;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
+.settings-header-icon-btn:hover,
 .settings-close:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.settings-close {
+  font-size: 18px;
 }
 
 /* ── Sections (collapsible) ── */
@@ -178,9 +166,10 @@
   white-space: nowrap;
 }
 
-/* ── Text / number / select inputs ── */
+/* ── Text / number / select / password inputs ── */
 .settings-row input[type="text"],
 .settings-row input[type="number"],
+.settings-row input[type="password"],
 .settings-row select {
   width: 200px;
   height: 30px;
@@ -332,11 +321,40 @@
   50% { opacity: 0.6; }
 }
 
+.keybinding-input.conflict {
+  border-color: var(--danger);
+  background: rgba(247, 118, 142, 0.1);
+  color: var(--danger);
+}
+
+.keybinding-conflict-label {
+  display: block;
+  font-size: 10px;
+  color: var(--danger);
+  margin-top: 2px;
+}
+
+/* ── Font selector ── */
+.font-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.font-input-wrapper .font-select {
+  width: 100%;
+}
+
+.font-input-wrapper .font-custom-input {
+  width: 100%;
+}
+
 /* ── Timer label ── */
 .settings-timer {
   font-size: 12px;
   color: var(--text-secondary);
-  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-family: var(--font-ui, inherit);
 }
 
 .settings-hint {
@@ -360,4 +378,37 @@
 .settings-btn:hover {
   background: var(--bg-active);
   border-color: var(--accent);
+}
+
+.settings-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── API key section ── */
+.settings-api-key-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-row input[type="password"] {
+  letter-spacing: 1px;
+}
+
+.api-key-test-btn {
+  flex-shrink: 0;
+  min-width: 80px;
+  text-align: center;
+}
+
+.api-key-test-btn.test-pass {
+  border-color: var(--green, #9ece6a);
+  color: var(--green, #9ece6a);
+  background: rgba(158, 206, 106, 0.1);
+}
+
+.api-key-test-btn.test-fail {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(247, 118, 142, 0.1);
 }

@@ -24,18 +24,25 @@ export function setupResizeHandle(
     const containerRect = callbacks.getContainerRect();
     const startPos = isHorizontal ? e.clientX : e.clientY;
     const totalSize = isHorizontal ? containerRect.width : containerRect.height;
+    const originalTree = callbacks.getTree();
+    let rafId = 0;
+    let lastPos = startPos;
 
     const onMove = (me: MouseEvent) => {
-      const currentPos = isHorizontal ? me.clientX : me.clientY;
-      const deltaPx = currentPos - startPos;
-      const deltaRatio = deltaPx / totalSize;
-
-      const tree = callbacks.getTree();
-      const newTree = updateRatio(tree, divider.path, divider.dividerIndex, deltaRatio);
-      callbacks.onResize(newTree);
+      lastPos = isHorizontal ? me.clientX : me.clientY;
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          rafId = 0;
+          const deltaPx = lastPos - startPos;
+          const deltaRatio = deltaPx / totalSize;
+          const newTree = updateRatio(originalTree, divider.path, divider.dividerIndex, deltaRatio);
+          callbacks.onResize(newTree);
+        });
+      }
     };
 
     const onUp = () => {
+      if (rafId) cancelAnimationFrame(rafId);
       handle.classList.remove('dragging');
       logger.debug('layout', 'Pane resize drag end', { direction: divider.direction, dividerIndex: divider.dividerIndex });
       window.removeEventListener('mousemove', onMove);

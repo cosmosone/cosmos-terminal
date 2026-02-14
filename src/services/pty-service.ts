@@ -37,8 +37,8 @@ export async function createPtySession(
   return info;
 }
 
-export async function writeToPtySession(sessionId: string, data: string): Promise<void> {
-  await invoke('write_to_session', { sessionId, data });
+export function writeToPtySession(sessionId: string, data: string): void {
+  invoke('write_to_session', { sessionId, data }).catch(() => {});
 }
 
 export async function resizePtySession(

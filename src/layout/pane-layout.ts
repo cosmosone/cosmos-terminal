@@ -18,14 +18,24 @@ export function computeLayout(
   node: PaneNode,
   rect: Rect,
   gap: number = PANE_GAP,
-  path: number[] = [],
 ): LayoutResult {
   const paneRects = new Map<string, Rect>();
   const dividers: DividerInfo[] = [];
+  computeLayoutInner(node, rect, gap, [], paneRects, dividers);
+  return { paneRects, dividers };
+}
 
+function computeLayoutInner(
+  node: PaneNode,
+  rect: Rect,
+  gap: number,
+  path: number[],
+  paneRects: Map<string, Rect>,
+  dividers: DividerInfo[],
+): void {
   if (node.type === 'leaf') {
     paneRects.set(node.paneId, rect);
-    return { paneRects, dividers };
+    return;
   }
 
   const { direction, children, ratios } = node;
@@ -41,19 +51,18 @@ export function computeLayout(
       const dividerRect: Rect = isHorizontal
         ? { x: rect.x + offset + size, y: rect.y, width: gap, height: rect.height }
         : { x: rect.x, y: rect.y + offset + size, width: rect.width, height: gap };
-      dividers.push({ rect: dividerRect, direction, path: [...path], dividerIndex: i });
+      // Snapshot path for the divider (dividers need stable path references)
+      dividers.push({ rect: dividerRect, direction, path: path.slice(), dividerIndex: i });
     }
 
     const childRect: Rect = isHorizontal
       ? { x: rect.x + offset, y: rect.y, width: size, height: rect.height }
       : { x: rect.x, y: rect.y + offset, width: rect.width, height: size };
 
-    const child = computeLayout(children[i], childRect, gap, [...path, i]);
-    for (const [sid, r] of child.paneRects) paneRects.set(sid, r);
-    dividers.push(...child.dividers);
+    path.push(i);
+    computeLayoutInner(children[i], childRect, gap, path, paneRects, dividers);
+    path.pop();
 
     offset += size + gap;
   }
-
-  return { paneRects, dividers };
 }

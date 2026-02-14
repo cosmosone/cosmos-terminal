@@ -8,6 +8,7 @@ import {
   toggleGraphExpanded,
   updateGitState,
   setCommitMessage,
+  setGenerating,
   defaultGitState,
 } from '../state/actions';
 import {
@@ -37,6 +38,9 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   const container = $('#git-sidebar-container')! as HTMLElement;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let graphHeight = 200;
+
+  // Local commit message buffer – avoids store updates (and full re-renders) on every keystroke
+  const localCommitMessages = new Map<string, string>();
 
   // --- Left-edge resize handle (sidebar width) ---
   const resizeHandle = createElement('div', { className: 'git-sidebar-resize' });
@@ -174,19 +178,20 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     const graphArrow = createElement('span', { className: `git-section-arrow${gitSidebar.graphExpanded ? '' : ' collapsed'}` });
     graphArrow.textContent = '\u25BC';
     const graphLabel = createElement('span');
-    graphLabel.textContent = 'Commit History';
+    const activeId = gitSidebar.activeProjectId || gitProjects[0]?.id;
+    const activeProject = activeId ? projects.find((p) => p.id === activeId) : null;
+    graphLabel.textContent = activeProject
+      ? `Commit History [${activeProject.name}]`
+      : 'Commit History';
     graphHeaderEl.appendChild(graphArrow);
     graphHeaderEl.appendChild(graphLabel);
     graphHeaderEl.onclick = toggleGraphExpanded;
 
     // --- Graph content ---
     clearChildren(graphContent);
-    if (gitSidebar.graphExpanded) {
-      const activeId = gitSidebar.activeProjectId || gitProjects[0]?.id;
-      if (activeId) {
-        const gs = gitStates[activeId] || defaultGitState();
-        graphContent.appendChild(renderLog(gs));
-      }
+    if (gitSidebar.graphExpanded && activeId) {
+      const gs = gitStates[activeId] || defaultGitState();
+      graphContent.appendChild(renderLog(gs));
     }
 
     applyGraphHeight();
@@ -246,20 +251,14 @@ export function initGitSidebar(onLayoutChange: () => void): void {
         const err = createElement('div', { className: 'git-sidebar-error' });
         err.textContent = gs.error;
         wrap.appendChild(err);
-      } else if (gs.status) {
+      } else if (gs.status?.files.length) {
         wrap.appendChild(renderCommitArea(project, gs));
 
-        if (gs.status.files.length > 0) {
-          const fileList = createElement('div', { className: 'git-file-list' });
-          for (const file of gs.status.files) {
-            fileList.appendChild(renderFile(file));
-          }
-          wrap.appendChild(fileList);
-        } else {
-          const empty = createElement('div', { className: 'git-sidebar-empty' });
-          empty.textContent = 'No Changes';
-          wrap.appendChild(empty);
+        const fileList = createElement('div', { className: 'git-file-list' });
+        for (const file of gs.status.files) {
+          fileList.appendChild(renderFile(file));
         }
+        wrap.appendChild(fileList);
       }
     }
 
@@ -286,44 +285,56 @@ export function initGitSidebar(onLayoutChange: () => void): void {
 
     const textarea = createElement('textarea', { className: 'git-commit-textarea' }) as HTMLTextAreaElement;
     textarea.placeholder = 'Commit message...';
-    textarea.value = gs.commitMessage;
+    textarea.value = localCommitMessages.get(project.id) ?? gs.commitMessage;
     textarea.addEventListener('input', () => {
-      setCommitMessage(project.id, textarea.value);
+      localCommitMessages.set(project.id, textarea.value);
     });
     area.appendChild(textarea);
 
     const buttons = createElement('div', { className: 'git-commit-buttons' });
 
-    const generateBtn = createElement('button', { className: 'git-generate-btn' });
-    generateBtn.textContent = 'Generate';
+    const generateBtn = createElement('button', { className: 'git-commit-btn secondary git-generate-btn' });
+    generateBtn.textContent = gs.generating ? (gs.generatingLabel || 'Generating...') : 'Generate';
+    generateBtn.disabled = gs.generating;
     generateBtn.addEventListener('click', async () => {
-      generateBtn.textContent = '...';
+      if (gs.generating) return;
+      setGenerating(project.id, true, 'Generating...');
       try {
         const diff = await getGitDiff(project.path);
         if (!diff.trim()) {
+          localCommitMessages.delete(project.id);
           setCommitMessage(project.id, '');
           return;
         }
-        const msg = await generateCommitMessage(diff);
+        const msg = await generateCommitMessage(diff, (label) => {
+          setGenerating(project.id, true, label);
+        });
+        localCommitMessages.set(project.id, msg);
         setCommitMessage(project.id, msg);
-        textarea.value = msg;
       } catch (err: any) {
-        logger.error('git', 'Generate commit message failed', err?.message);
+        const errorMsg = err?.message || 'Failed to generate commit message';
+        logger.error('git', 'Generate commit message failed', errorMsg);
+        updateGitState(project.id, { error: errorMsg });
+        setTimeout(() => {
+          const current = store.getState().gitStates[project.id];
+          if (current?.error === errorMsg) updateGitState(project.id, { error: null });
+        }, 5000);
       } finally {
-        generateBtn.textContent = 'Generate';
+        setGenerating(project.id, false);
       }
     });
     buttons.appendChild(generateBtn);
 
-    const commitBtn = createElement('button', { className: 'git-commit-btn primary' });
-    commitBtn.textContent = 'Commit';
-    commitBtn.addEventListener('click', () => doCommit(project, false));
-    buttons.appendChild(commitBtn);
+    function addButton(label: string, handler: () => void): void {
+      const btn = createElement('button', { className: 'git-commit-btn secondary' });
+      btn.textContent = label;
+      btn.addEventListener('click', handler);
+      buttons.appendChild(btn);
+    }
 
-    const commitPushBtn = createElement('button', { className: 'git-commit-btn secondary' });
-    commitPushBtn.textContent = 'Commit & Push';
-    commitPushBtn.addEventListener('click', () => doCommit(project, true));
-    buttons.appendChild(commitPushBtn);
+    addButton('Commit', () => doCommit(project, false));
+    addButton('Push', () => doPush(project));
+    addButton('Commit & Push', () => doCommit(project, true));
 
     area.appendChild(buttons);
     return area;
@@ -392,14 +403,8 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   }
 
   async function refreshProject(project: Project, silent = false): Promise<void> {
-    // Check if this path is even a git repo
-    try {
-      const repo = await isGitRepo(project.path);
-      if (!repo) {
-        updateGitState(project.id, { isRepo: false, loading: false });
-        return;
-      }
-    } catch {
+    const repo = await isGitRepo(project.path).catch(() => false);
+    if (!repo) {
       updateGitState(project.id, { isRepo: false, loading: false });
       return;
     }
@@ -436,7 +441,7 @@ export function initGitSidebar(onLayoutChange: () => void): void {
 
   async function doCommit(project: Project, push: boolean): Promise<void> {
     const gs = store.getState().gitStates[project.id] || defaultGitState();
-    const message = gs.commitMessage.trim();
+    const message = (localCommitMessages.get(project.id) ?? gs.commitMessage).trim();
     if (!message) return;
 
     updateGitState(project.id, { loading: true, error: null });
@@ -444,6 +449,7 @@ export function initGitSidebar(onLayoutChange: () => void): void {
       await gitStageAll(project.path);
       const result = await gitCommit(project.path, message);
       logger.info('git', 'Commit created', { projectId: project.id, commitId: result.commitId });
+      localCommitMessages.delete(project.id);
       setCommitMessage(project.id, '');
 
       if (push) {
@@ -462,9 +468,30 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     }
   }
 
+  async function doPush(project: Project): Promise<void> {
+    updateGitState(project.id, { loading: true, error: null });
+    try {
+      const pushResult = await gitPush(project.path);
+      if (!pushResult.success) {
+        updateGitState(project.id, { loading: false, error: `Push failed: ${pushResult.message}` });
+        return;
+      }
+      logger.info('git', 'Push completed', { projectId: project.id });
+      updateGitState(project.id, { loading: false });
+      await fetchLog(project);
+    } catch (err: any) {
+      updateGitState(project.id, { loading: false, error: err?.message || 'Push failed' });
+    }
+  }
+
   function startPolling(): void {
     stopPolling();
     refreshAllProjects();
+    // Fetch commit log for the project shown in the graph panel on startup
+    const { gitSidebar, projects } = store.getState();
+    const activeId = gitSidebar.activeProjectId || projects[0]?.id;
+    const activeProject = activeId ? projects.find((p) => p.id === activeId) : null;
+    if (activeProject) fetchLog(activeProject);
     pollTimer = setInterval(() => refreshAllProjects(true), 5000);
   }
 
@@ -475,19 +502,24 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     }
   }
 
+  function applyVisibility(visible: boolean): void {
+    container.classList.toggle('hidden', !visible);
+    if (visible) {
+      container.style.width = store.getState().gitSidebar.width + 'px';
+      startPolling();
+    } else {
+      stopPolling();
+    }
+    onLayoutChange();
+  }
+
   store.select(
     (s) => s.gitSidebar.visible,
-    (visible) => {
-      container.classList.toggle('hidden', !visible);
-      if (visible) {
-        container.style.width = store.getState().gitSidebar.width + 'px';
-        startPolling();
-      } else {
-        stopPolling();
-      }
-      onLayoutChange();
-    },
+    applyVisibility,
   );
+
+  // Apply initial state (store.select only fires on changes, not at registration)
+  applyVisibility(store.getState().gitSidebar.visible);
 
   store.select(
     (s) => s.gitSidebar.width,
@@ -499,10 +531,13 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     },
   );
 
-  store.select((s) => s.gitStates, render);
-  store.select((s) => s.projects, render);
-  store.select((s) => s.gitSidebar.expandedProjectIds, render);
-  store.select((s) => s.gitSidebar.graphExpanded, render);
+  function renderIfVisible(): void {
+    if (store.getState().gitSidebar.visible) render();
+  }
+  store.select((s) => s.gitStates, renderIfVisible);
+  store.select((s) => s.projects, renderIfVisible);
+  store.select((s) => s.gitSidebar.expandedProjectIds, renderIfVisible);
+  store.select((s) => s.gitSidebar.graphExpanded, renderIfVisible);
 
   store.select(
     (s) => s.gitSidebar.activeProjectId,

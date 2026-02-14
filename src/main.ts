@@ -1,7 +1,7 @@
 import '@xterm/xterm/css/xterm.css';
 import { initStore, store } from './state/store';
 import { addProject, addSession, getActiveProject, getActiveSession, removeSession, splitPane, cycleSession, cycleProject, toggleSettingsView, toggleGitSidebar, defaultGitSidebarState } from './state/actions';
-import { loadSettings, saveSettings } from './services/settings-service';
+import { loadSettings, saveSettings, buildUiFont } from './services/settings-service';
 import { loadWorkspace, saveWorkspace } from './services/workspace-service';
 import { findLeafPaneIds } from './layout/pane-tree';
 import type { AppState, KeybindingConfig } from './state/types';
@@ -47,13 +47,20 @@ async function main(): Promise<void> {
 
   logger.debug('app', 'Store initialized', { restored: !!saved });
 
+  function applyUiFont(): void {
+    const { uiFontFamily, uiFontSize } = store.getState().settings;
+    document.documentElement.style.setProperty('--font-ui', buildUiFont(uiFontFamily));
+    document.documentElement.style.setProperty('--font-ui-size', `${uiFontSize}px`);
+  }
+  applyUiFont();
+
   const terminalContainer = $('#terminal-container')! as HTMLElement;
   const splitContainer = new SplitContainer(terminalContainer);
   const refresh = () => splitContainer.render();
 
   initProjectTabBar(refresh);
   initSessionTabBar(refresh);
-  initSettingsPage(() => splitContainer.applySettings());
+  initSettingsPage(() => { splitContainer.applySettings(); applyUiFont(); });
   initStatusBar(() => splitContainer.clearAllScrollback());
   initLogViewer();
   initGitSidebar(() => splitContainer.reLayout());
@@ -77,21 +84,25 @@ async function main(): Promise<void> {
     saveWorkspace(s.projects, s.activeProjectId, s.gitSidebar);
   }, 1000);
 
-  for (const selector of [
-    (s: AppState) => s.projects,
-    (s: AppState) => s.activeProjectId,
-    (s: AppState) => s.gitSidebar,
-  ]) {
+  const workspaceSelectors: ((s: AppState) => unknown)[] = [
+    (s) => s.projects,
+    (s) => s.activeProjectId,
+    (s) => s.gitSidebar,
+  ];
+  for (const selector of workspaceSelectors) {
     store.select(selector, () => debouncedSave());
   }
 
-  window.addEventListener(
-    'resize',
-    debounce(() => {
-      logger.debug('layout', 'Window resized, re-laying out');
-      splitContainer.reLayout();
-    }, 16),
-  );
+  let resizeRafId = 0;
+  window.addEventListener('resize', () => {
+    if (!resizeRafId) {
+      resizeRafId = requestAnimationFrame(() => {
+        resizeRafId = 0;
+        logger.debug('layout', 'Window resized, re-laying out');
+        splitContainer.reLayout();
+      });
+    }
+  });
 
   keybindings.register({
     key: 't',

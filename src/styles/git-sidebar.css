@@ -323,7 +323,7 @@
 
 /* ===== Commit Area ===== */
 .git-commit-area {
-  padding: 8px 6px 8px 6px;
+  padding: 8px 6px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -392,19 +392,7 @@
 }
 
 .git-generate-btn {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 10px;
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  cursor: pointer;
-  margin-left: auto;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.git-generate-btn:hover {
-  background: var(--bg-active);
-  color: var(--text-primary);
+  margin-right: auto;
 }
 
 /* ===== Commit History (Graph Section) ===== */

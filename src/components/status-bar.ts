@@ -2,6 +2,8 @@ import { getSystemStats } from '../services/system-monitor';
 import { logger } from '../services/logger';
 import { $ } from '../utils/dom';
 
+const POLL_INTERVAL_MS = 3000;
+
 export function initStatusBar(onCleanup?: () => void): void {
   const bar = $('#status-bar')!;
   bar.innerHTML = `
@@ -32,7 +34,7 @@ export function initStatusBar(onCleanup?: () => void): void {
 
   const logToggle = $('#status-log-toggle')!;
   logToggle.addEventListener('click', () => {
-    const viewer = document.getElementById('log-viewer-container');
+    const viewer = $('#log-viewer-container');
     if (viewer) viewer.classList.toggle('hidden');
   });
 
@@ -69,7 +71,7 @@ export function initStatusBar(onCleanup?: () => void): void {
   }
 
   poll();
-  let intervalId = setInterval(poll, 2000);
+  let intervalId = setInterval(poll, POLL_INTERVAL_MS);
 
   // Pause polling when window is not visible (minimized, etc.)
   document.addEventListener('visibilitychange', () => {
@@ -77,7 +79,7 @@ export function initStatusBar(onCleanup?: () => void): void {
       clearInterval(intervalId);
     } else {
       poll();
-      intervalId = setInterval(poll, 2000);
+      intervalId = setInterval(poll, POLL_INTERVAL_MS);
     }
   });
 }

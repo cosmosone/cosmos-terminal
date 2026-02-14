@@ -8,6 +8,7 @@ import { store } from '../state/store';
 import { logger } from '../services/logger';
 import { keybindings } from '../utils/keybindings';
 import type { AppSettings } from '../state/types';
+import { buildTerminalFont } from '../services/settings-service';
 import { debounce } from '../utils/debounce';
 
 const XTERM_THEME = {
@@ -36,13 +37,22 @@ const XTERM_THEME = {
 };
 
 function extractCwdFromTitle(title: string): string | null {
-  let t = title.trim();
-  // PowerShell prefixes title with "PS "
-  if (/^ps\s/i.test(t)) t = t.slice(3).trim();
+  let cleaned = title.trim();
+
+  // PowerShell prefixes the window title with "PS "
+  if (/^ps\s/i.test(cleaned)) {
+    cleaned = cleaned.slice(3).trim();
+  }
+
+  // Reject paths ending with a file extension (e.g. powershell.exe, cmd.bat)
+  if (/\.\w{1,4}$/i.test(cleaned)) return null;
+
   // Windows absolute path (C:\...)
-  if (/^[A-Za-z]:[\\\/]/.test(t)) return t;
+  if (/^[A-Za-z]:[\\\/]/.test(cleaned)) return cleaned;
+
   // Unix absolute path (/...)
-  if (t.startsWith('/')) return t;
+  if (cleaned.startsWith('/')) return cleaned;
+
   return null;
 }
 
@@ -60,6 +70,10 @@ export class TerminalPane {
   private onProcessExit?: () => void;
   private onCwdChange?: (cwd: string) => void;
   private lastReportedCwd: string;
+  private lastSentRows = 0;
+  private lastSentCols = 0;
+  private pendingOutput: Uint8Array[] = [];
+  private outputRafId = 0;
 
   constructor(paneId: string, projectId: string, projectPath: string, onProcessExit?: () => void, onCwdChange?: (cwd: string) => void) {
     this.paneId = paneId;
@@ -79,7 +93,7 @@ export class TerminalPane {
     this.terminal = new Terminal({
       theme: XTERM_THEME,
       fontSize: settings.fontSize,
-      fontFamily: settings.fontFamily,
+      fontFamily: buildTerminalFont(settings.fontFamily),
       scrollback: settings.scrollbackLines,
       cursorStyle: settings.cursorStyle,
       cursorBlink: settings.cursorBlink,
@@ -104,9 +118,7 @@ export class TerminalPane {
 
     // Let global keybindings pass through instead of being consumed by xterm
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if (e.type === 'keydown' && keybindings.matchesBinding(e)) {
-        return false; // skip xterm processing, let event bubble to window handler
-      }
+      if (e.type === 'keydown' && keybindings.matchesBinding(e)) return false;
       return true;
     });
 
@@ -135,6 +147,13 @@ export class TerminalPane {
       }
     });
 
+    this.terminal.onSelectionChange(() => {
+      if (store.getState().settings.copyOnSelect) {
+        const text = this.terminal.getSelection();
+        if (text) navigator.clipboard.writeText(text);
+      }
+    });
+
     this.terminal.onTitleChange((title) => {
       const cwd = extractCwdFromTitle(title);
       if (cwd && cwd.toLowerCase() !== this.lastReportedCwd.toLowerCase()) {
@@ -154,7 +173,10 @@ export class TerminalPane {
       },
       (data) => {
         if (!this.disposed) {
-          this.terminal.write(data);
+          this.pendingOutput.push(data);
+          if (!this.outputRafId) {
+            this.outputRafId = requestAnimationFrame(() => this.flushOutput());
+          }
         }
       },
       () => {
@@ -165,10 +187,9 @@ export class TerminalPane {
       },
     );
 
-    // Guard against disposal during async PTY creation
     if (this.disposed) {
       logger.warn('pty', 'Terminal disposed during mount, killing orphaned PTY', { paneId: this.paneId, backendId: info.id });
-      try { await killPtySession(info.id); } catch { /* already dead */ }
+      await killPtySession(info.id).catch(() => {});
       return;
     }
 
@@ -192,14 +213,39 @@ export class TerminalPane {
     }
   }
 
+  private flushOutput(): void {
+    this.outputRafId = 0;
+    if (this.disposed || this.pendingOutput.length === 0) return;
+
+    if (this.pendingOutput.length === 1) {
+      this.terminal.write(this.pendingOutput[0]);
+    } else {
+      // Concatenate all pending chunks into a single write
+      let totalLen = 0;
+      for (const chunk of this.pendingOutput) totalLen += chunk.length;
+      const merged = new Uint8Array(totalLen);
+      let offset = 0;
+      for (const chunk of this.pendingOutput) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+      }
+      this.terminal.write(merged);
+    }
+    this.pendingOutput = [];
+  }
+
   fit(): void {
     if (this.disposed || this.element.offsetWidth === 0) return;
     try {
       this.fitAddon.fit();
       const dims = this.fitAddon.proposeDimensions();
       if (dims && this.backendId) {
-        resizePtySession(this.backendId, dims.rows, dims.cols);
-        logger.debug('pty', 'Terminal fit', { paneId: this.paneId, rows: dims.rows, cols: dims.cols });
+        if (dims.rows !== this.lastSentRows || dims.cols !== this.lastSentCols) {
+          this.lastSentRows = dims.rows;
+          this.lastSentCols = dims.cols;
+          resizePtySession(this.backendId, dims.rows, dims.cols);
+          logger.debug('pty', 'Terminal fit', { paneId: this.paneId, rows: dims.rows, cols: dims.cols });
+        }
       }
     } catch {
       // Fit can throw if element not visible
@@ -218,7 +264,7 @@ export class TerminalPane {
   applySettings(settings: AppSettings): void {
     logger.debug('pty', 'Applying settings to terminal', { paneId: this.paneId, fontSize: settings.fontSize });
     this.terminal.options.fontSize = settings.fontSize;
-    this.terminal.options.fontFamily = settings.fontFamily;
+    this.terminal.options.fontFamily = buildTerminalFont(settings.fontFamily);
     this.terminal.options.scrollback = settings.scrollbackLines;
     this.terminal.options.cursorStyle = settings.cursorStyle;
     this.terminal.options.cursorBlink = settings.cursorBlink;
@@ -232,14 +278,12 @@ export class TerminalPane {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    if (this.outputRafId) cancelAnimationFrame(this.outputRafId);
+    this.pendingOutput = [];
     logger.info('pty', 'Disposing terminal pane', { paneId: this.paneId, backendId: this.backendId });
     this.resizeObserver.disconnect();
     if (this.backendId) {
-      try {
-        await killPtySession(this.backendId);
-      } catch {
-        // Session may already be dead
-      }
+      await killPtySession(this.backendId).catch(() => {});
     }
     this.webglAddon?.dispose();
     this.terminal.dispose();
