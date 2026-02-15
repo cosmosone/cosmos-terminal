@@ -59,11 +59,7 @@ export interface AppSettings {
   uiFontFamily: string;
   uiFontSize: number;
   scrollbackLines: number;
-  cursorStyle: 'block' | 'underline' | 'bar';
-  cursorBlink: boolean;
   copyOnSelect: boolean;
-  webglRenderer: boolean;
-  bellStyle: 'visual' | 'none';
   debugLogging: boolean;
   debugLoggingExpiry: string | null;
   keybindings: KeybindingConfig;

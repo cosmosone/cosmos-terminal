@@ -7,8 +7,8 @@
   contain: content;
 }
 
-/* Dim unfocused panes via an overlay instead of opacity on the container.
-   This keeps the xterm canvas un-composited so it retains subpixel AA. */
+/* Overlay dims unfocused panes without opacity on the container,
+   keeping the xterm canvas un-composited for subpixel AA. */
 .terminal-pane::after {
   content: '';
   position: absolute;
@@ -18,9 +18,8 @@
   z-index: 1;
 }
 
-/* When focused, completely remove the overlay from the render tree.
-   Using content:none instead of opacity:0 so absolutely nothing sits above
-   the xterm canvas that could interfere with compositing/subpixel rendering. */
+/* content:none fully removes the overlay from the render tree so nothing
+   sits above the xterm canvas that could interfere with subpixel rendering. */
 .terminal-pane.focused::after {
   content: none;
 }
@@ -38,10 +37,6 @@
 /* Subpixel (ClearType) rendering hints for the xterm canvas */
 .terminal-pane .xterm canvas {
   image-rendering: auto;
-  -webkit-font-smoothing: subpixel-antialiased;
-}
-
-.terminal-pane .xterm-screen {
   -webkit-font-smoothing: subpixel-antialiased;
 }
 

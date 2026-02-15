@@ -200,12 +200,16 @@ export function initGitSidebar(onLayoutChange: () => void): void {
 
   function renderProject(project: Project, gs: ProjectGitState, expanded: boolean): HTMLElement {
     const wrap = createElement('div');
+    const hasFiles = (gs.status?.files.length ?? 0) > 0;
+    const isExpanded = expanded && hasFiles;
 
-    const row = createElement('div', { className: `git-project-row${expanded ? ' active' : ''}` });
+    const row = createElement('div', { className: `git-project-row${isExpanded ? ' active' : ''}` });
 
-    const arrow = createElement('span', { className: `git-project-arrow${expanded ? ' expanded' : ''}` });
-    arrow.textContent = '\u25B6';
-    row.appendChild(arrow);
+    if (hasFiles) {
+      const arrow = createElement('span', { className: `git-project-arrow${isExpanded ? ' expanded' : ''}` });
+      arrow.textContent = '\u25B6';
+      row.appendChild(arrow);
+    }
 
     const name = createElement('span', { className: 'git-project-name' });
     name.textContent = project.name;
@@ -234,16 +238,16 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     row.appendChild(actions);
 
     row.addEventListener('click', () => {
-      toggleProjectExpanded(project.id);
-      setGitSidebarActiveProject(project.id);
-      if (store.getState().gitSidebar.expandedProjectIds.includes(project.id)) {
-        fetchLog(project);
+      if (hasFiles) {
+        toggleProjectExpanded(project.id);
       }
+      setGitSidebarActiveProject(project.id);
+      fetchLog(project);
     });
 
     wrap.appendChild(row);
 
-    if (expanded) {
+    if (isExpanded) {
       if (gs.loading) {
         const loading = createElement('div', { className: 'git-sidebar-loading' });
         loading.textContent = 'Loading...';
@@ -252,7 +256,8 @@ export function initGitSidebar(onLayoutChange: () => void): void {
         const err = createElement('div', { className: 'git-sidebar-error' });
         err.textContent = gs.error;
         wrap.appendChild(err);
-      } else if (gs.status?.files.length) {
+      } else if (gs.status) {
+        // hasFiles is guaranteed true here (isExpanded implies hasFiles)
         wrap.appendChild(renderCommitArea(project, gs));
 
         const fileList = createElement('div', { className: 'git-file-list' });

@@ -97,23 +97,7 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       ),
     );
     term.content.appendChild(
-      createSelectRow('Cursor Style', settings.cursorStyle, ['block', 'underline', 'bar'], (v) =>
-        apply({ cursorStyle: v as AppSettings['cursorStyle'] }),
-      ),
-    );
-    term.content.appendChild(
-      createToggleRow('Cursor Blink', settings.cursorBlink, (v) => apply({ cursorBlink: v })),
-    );
-    term.content.appendChild(
       createToggleRow('Copy on Select', settings.copyOnSelect, (v) => apply({ copyOnSelect: v })),
-    );
-    term.content.appendChild(
-      createToggleRow('WebGL Renderer', settings.webglRenderer, (v) => apply({ webglRenderer: v })),
-    );
-    term.content.appendChild(
-      createSelectRow('Bell Style', settings.bellStyle, ['visual', 'none'], (v) =>
-        apply({ bellStyle: v as AppSettings['bellStyle'] }),
-      ),
     );
     inner.appendChild(term.wrapper);
 
@@ -363,29 +347,6 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
 
     row.appendChild(lbl);
     row.appendChild(wrapper);
-    return row;
-  }
-
-  function createSelectRow(
-    label: string,
-    value: string,
-    options: string[],
-    onChange: (v: string) => void,
-  ): HTMLElement {
-    const row = createElement('div', { className: 'settings-row' });
-    const lbl = createElement('label');
-    lbl.textContent = label;
-    const select = createElement('select');
-    for (const opt of options) {
-      const option = createElement('option');
-      option.value = opt;
-      option.textContent = opt;
-      if (opt === value) option.selected = true;
-      select.appendChild(option);
-    }
-    select.addEventListener('change', () => onChange(select.value));
-    row.appendChild(lbl);
-    row.appendChild(select);
     return row;
   }
 

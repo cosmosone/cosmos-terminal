@@ -59,15 +59,13 @@ fn git_status_sync(path: &str) -> Result<GitStatusResult, String> {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)
-        .include_ignored(false); // Skip ignored files entirely — they were filtered post-hoc before
+        .include_ignored(false);
 
     let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
 
     let mut files = Vec::with_capacity(statuses.len());
-    let mut dirty = false;
 
     for entry in statuses.iter() {
-        dirty = true;
         files.push(GitFileStatus {
             path: entry.path().unwrap_or("").to_string(),
             status: status_string(entry.status()).to_string(),
@@ -77,7 +75,7 @@ fn git_status_sync(path: &str) -> Result<GitStatusResult, String> {
 
     Ok(GitStatusResult {
         branch,
-        dirty,
+        dirty: !files.is_empty(),
         files,
     })
 }

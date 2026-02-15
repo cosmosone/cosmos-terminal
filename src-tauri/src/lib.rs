@@ -50,13 +50,15 @@ pub fn run() {
         use std::env;
         let key = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
         let extra = env::var(key).unwrap_or_default();
-        let flags = "\
-            --enable-lcd-text \
-            --force-color-profile=srgb \
-            --use-angle=d3d11 \
-            --disable-features=RendererCodeIntegrity";
+        let flags = [
+            "--enable-lcd-text",
+            "--force-color-profile=srgb",
+            "--use-angle=d3d11",
+            "--disable-features=RendererCodeIntegrity",
+        ]
+        .join(" ");
         let combined = if extra.is_empty() {
-            flags.to_string()
+            flags
         } else {
             format!("{extra} {flags}")
         };

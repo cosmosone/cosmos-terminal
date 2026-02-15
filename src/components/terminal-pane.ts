@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ImageAddon } from '@xterm/addon-image';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { open } from '@tauri-apps/plugin-shell';
 import { createPtySession, writeToPtySession, resizePtySession, killPtySession } from '../services/pty-service';
 import { store } from '../state/store';
@@ -11,6 +12,19 @@ import { keybindings } from '../utils/keybindings';
 import type { AppSettings } from '../state/types';
 import { buildTerminalFont } from '../services/settings-service';
 
+/** Fixed xterm.js rendering options that never change with user settings. */
+const XTERM_RENDERING_OPTIONS = {
+  cursorStyle: 'block' as const,
+  cursorBlink: true,
+  fontWeight: 'normal' as const,
+  fontWeightBold: 'bold' as const,
+  letterSpacing: 0,
+  allowTransparency: false,       // Opaque background enables subpixel AA in canvas renderer
+  customGlyphs: true,             // Pixel-perfect box-drawing and powerline characters
+  rescaleOverlappingGlyphs: true, // Rescale glyphs that would bleed into adjacent cells
+  drawBoldTextInBrightColors: false, // Use actual bold weight, not just bright colors
+  minimumContrastRatio: 1,        // Disable contrast adjustment to match native terminal colors
+};
 
 const XTERM_THEME = {
   background: '#0f0f14',
@@ -94,20 +108,11 @@ export class TerminalPane {
 
     this.terminal = new Terminal({
       theme: XTERM_THEME,
+      ...XTERM_RENDERING_OPTIONS,
       fontSize: settings.fontSize,
       fontFamily: buildTerminalFont(settings.fontFamily),
-      fontWeight: 'normal',
-      fontWeightBold: 'bold',
       lineHeight: settings.lineHeight,
-      letterSpacing: 0,
-      allowTransparency: false,       // Opaque background — enables subpixel AA in canvas renderer
-      customGlyphs: true,             // Pixel-perfect box-drawing & powerline characters
-      rescaleOverlappingGlyphs: true, // Rescale glyphs that would bleed into adjacent cells
-      drawBoldTextInBrightColors: false, // Use actual bold weight, not just bright colors
-      minimumContrastRatio: 1,        // Disable contrast adjustment — match native terminal colors exactly
       scrollback: settings.scrollbackLines,
-      cursorStyle: settings.cursorStyle,
-      cursorBlink: settings.cursorBlink,
       allowProposedApi: true,
     });
 
@@ -116,6 +121,8 @@ export class TerminalPane {
     this.terminal.loadAddon(this.fitAddon);
     this.terminal.loadAddon(new WebLinksAddon((_e, uri) => open(uri)));
     this.terminal.loadAddon(new ImageAddon());
+    this.terminal.loadAddon(new Unicode11Addon());
+    this.terminal.unicode.activeVersion = '11';
 
     this.resizeObserver = new ResizeObserver(() => {
       if (!this.resizeRafId && !this.disposed) {
@@ -148,9 +155,9 @@ export class TerminalPane {
       return true;
     });
 
-    if (store.getState().settings.webglRenderer) {
-      this.tryWebgl();
-    }
+    // Always use WebGL for best text rendering (ClearType glyph atlas).
+    // Falls back to canvas automatically on context loss or if unavailable.
+    this.tryWebgl();
 
     this.resizeObserver.observe(this.element);
 
@@ -166,13 +173,10 @@ export class TerminalPane {
 
     this.terminal.onBell(() => {
       logger.debug('pty', 'Bell triggered', { paneId: this.paneId });
-      const settings = store.getState().settings;
-      if (settings.bellStyle === 'visual') {
-        this.element.classList.add('bell');
-        setTimeout(() => {
-          if (!this.disposed) this.element.classList.remove('bell');
-        }, 200);
-      }
+      this.element.classList.add('bell');
+      setTimeout(() => {
+        if (!this.disposed) this.element.classList.remove('bell');
+      }, 200);
     });
 
     this.terminal.onSelectionChange(() => {
@@ -291,28 +295,16 @@ export class TerminalPane {
 
   applySettings(settings: AppSettings): void {
     logger.debug('pty', 'Applying settings to terminal', { paneId: this.paneId, fontSize: settings.fontSize });
+
+    Object.assign(this.terminal.options, XTERM_RENDERING_OPTIONS);
     this.terminal.options.fontSize = settings.fontSize;
     this.terminal.options.fontFamily = buildTerminalFont(settings.fontFamily);
-    this.terminal.options.fontWeight = 'normal';
-    this.terminal.options.fontWeightBold = 'bold';
     this.terminal.options.lineHeight = settings.lineHeight;
-    this.terminal.options.letterSpacing = 0;
-    this.terminal.options.allowTransparency = false;
-    this.terminal.options.customGlyphs = true;
-    this.terminal.options.rescaleOverlappingGlyphs = true;
-    this.terminal.options.drawBoldTextInBrightColors = false;
-    this.terminal.options.minimumContrastRatio = 1;
     this.terminal.options.scrollback = settings.scrollbackLines;
-    this.terminal.options.cursorStyle = settings.cursorStyle;
-    this.terminal.options.cursorBlink = settings.cursorBlink;
 
-    // Toggle renderer: WebGL (fast, bypasses ClearType) vs Canvas (native font rendering)
-    if (settings.webglRenderer && !this.webglAddon) {
+    // Re-attempt WebGL if it was lost (e.g. after context loss)
+    if (!this.webglAddon) {
       this.tryWebgl();
-    } else if (!settings.webglRenderer && this.webglAddon) {
-      this.webglAddon.dispose();
-      this.webglAddon = null;
-      logger.debug('pty', 'Switched to canvas renderer', { paneId: this.paneId });
     }
 
     this.fit();
