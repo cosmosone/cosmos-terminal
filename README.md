@@ -4,7 +4,7 @@
 
 Built with [Tauri v2](https://v2.tauri.app/) + Rust. Developed and tested on Windows 11.
 
-![Cosmos Terminal in action — terminal with integrated Git sidebar showing source control, commit history, and file changes](resources/cosmos-tauri-terminal.png)
+![Cosmos Terminal in action — terminal with integrated Git sidebar showing source control, commit history, and file changes](resources/cosmos-terminal.png)
 
 ---
 

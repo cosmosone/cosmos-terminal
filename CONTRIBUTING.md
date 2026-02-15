@@ -11,8 +11,8 @@ Thanks for your interest in contributing! Here's how to get started.
 ## Setup
 
 ```bash
-git clone https://github.com/user/cosmos-tauri-terminal.git
-cd cosmos-tauri-terminal
+git clone https://github.com/user/cosmos-terminal.git
+cd cosmos-terminal
 npm install
 npm run tauri dev
 ```
