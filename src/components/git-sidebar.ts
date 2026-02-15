@@ -23,7 +23,7 @@ import {
 import { generateCommitMessage } from '../services/openai-service';
 import { logger } from '../services/logger';
 import { createElement, clearChildren, $ } from '../utils/dom';
-import type { Project, ProjectGitState, GitFileStatus, GitFileStatusKind, GitLogEntry } from '../state/types';
+import type { Project, ProjectGitState, GitFileStatus, GitFileStatusKind, GitStatusResult, GitLogEntry } from '../state/types';
 
 const STATUS_LETTERS: Record<GitFileStatusKind, string> = {
   modified: 'M',
@@ -38,6 +38,7 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   const container = $('#git-sidebar-container')! as HTMLElement;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let graphHeight = 200;
+  let renderRafId = 0;
 
   // Local commit message buffer – avoids store updates (and full re-renders) on every keystroke
   const localCommitMessages = new Map<string, string>();
@@ -402,10 +403,29 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     return new Date(epochSeconds * 1000).toLocaleDateString();
   }
 
+  function statusEquals(a: GitStatusResult | null, b: GitStatusResult | null): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    // Cheap shallow checks first
+    if (a.branch !== b.branch || a.dirty !== b.dirty || a.files.length !== b.files.length) return false;
+    // Deep check only when shallow matches
+    for (let i = 0; i < a.files.length; i++) {
+      const fa = a.files[i], fb = b.files[i];
+      if (fa.path !== fb.path || fa.status !== fb.status || fa.staged !== fb.staged) return false;
+    }
+    return true;
+  }
+
   async function refreshProject(project: Project, silent = false): Promise<void> {
-    const repo = await isGitRepo(project.path).catch(() => false);
-    if (!repo) {
-      updateGitState(project.id, { isRepo: false, loading: false });
+    // Skip isGitRepo IPC if we already know the answer
+    const existingState = store.getState().gitStates[project.id];
+    if (!existingState || existingState.isRepo === null) {
+      const repo = await isGitRepo(project.path).catch(() => false);
+      if (!repo) {
+        updateGitState(project.id, { isRepo: false, loading: false });
+        return;
+      }
+    } else if (existingState.isRepo === false) {
       return;
     }
 
@@ -415,7 +435,7 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     try {
       const status = await getGitStatus(project.path);
       const existing = store.getState().gitStates[project.id];
-      if (existing && JSON.stringify(existing.status) === JSON.stringify(status)) {
+      if (existing && statusEquals(existing.status, status)) {
         if (!silent) updateGitState(project.id, { loading: false });
         return;
       }
@@ -492,7 +512,7 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     const activeId = gitSidebar.activeProjectId || projects[0]?.id;
     const activeProject = activeId ? projects.find((p) => p.id === activeId) : null;
     if (activeProject) fetchLog(activeProject);
-    pollTimer = setInterval(() => refreshAllProjects(true), 5000);
+    pollTimer = setInterval(() => refreshAllProjects(true), 15000);
   }
 
   function stopPolling(): void {
@@ -501,6 +521,17 @@ export function initGitSidebar(onLayoutChange: () => void): void {
       pollTimer = null;
     }
   }
+
+  // Pause git polling while window is hidden (minimized, different tab, etc.)
+  document.addEventListener('visibilitychange', () => {
+    const sidebarVisible = store.getState().gitSidebar.visible;
+    if (!sidebarVisible) return;
+    if (document.hidden) {
+      stopPolling();
+    } else {
+      startPolling();
+    }
+  });
 
   function applyVisibility(visible: boolean): void {
     container.classList.toggle('hidden', !visible);
@@ -531,13 +562,27 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     },
   );
 
-  function renderIfVisible(): void {
-    if (store.getState().gitSidebar.visible) render();
+  // RAF-debounced render: coalesces multiple rapid state changes into a single DOM rebuild
+  function scheduleRender(): void {
+    if (!store.getState().gitSidebar.visible) return;
+    if (!renderRafId) {
+      renderRafId = requestAnimationFrame(() => {
+        renderRafId = 0;
+        render();
+      });
+    }
   }
-  store.select((s) => s.gitStates, renderIfVisible);
-  store.select((s) => s.projects, renderIfVisible);
-  store.select((s) => s.gitSidebar.expandedProjectIds, renderIfVisible);
-  store.select((s) => s.gitSidebar.graphExpanded, renderIfVisible);
+  store.select((s) => s.gitStates, scheduleRender);
+  store.select((s) => s.projects, (projects) => {
+    // Clean stale commit messages for removed projects
+    const ids = new Set(projects.map((p) => p.id));
+    for (const key of localCommitMessages.keys()) {
+      if (!ids.has(key)) localCommitMessages.delete(key);
+    }
+    scheduleRender();
+  });
+  store.select((s) => s.gitSidebar.expandedProjectIds, scheduleRender);
+  store.select((s) => s.gitSidebar.graphExpanded, scheduleRender);
 
   store.select(
     (s) => s.gitSidebar.activeProjectId,

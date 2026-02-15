@@ -55,12 +55,14 @@ export interface AppSettings {
   shellPath: string;
   fontSize: number;
   fontFamily: string;
+  lineHeight: number;
   uiFontFamily: string;
   uiFontSize: number;
   scrollbackLines: number;
   cursorStyle: 'block' | 'underline' | 'bar';
   cursorBlink: boolean;
   copyOnSelect: boolean;
+  webglRenderer: boolean;
   bellStyle: 'visual' | 'none';
   debugLogging: boolean;
   debugLoggingExpiry: string | null;

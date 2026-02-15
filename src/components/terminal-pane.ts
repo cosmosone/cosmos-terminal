@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { ImageAddon } from '@xterm/addon-image';
 import { open } from '@tauri-apps/plugin-shell';
 import { createPtySession, writeToPtySession, resizePtySession, killPtySession } from '../services/pty-service';
 import { store } from '../state/store';
@@ -9,7 +10,7 @@ import { logger } from '../services/logger';
 import { keybindings } from '../utils/keybindings';
 import type { AppSettings } from '../state/types';
 import { buildTerminalFont } from '../services/settings-service';
-import { debounce } from '../utils/debounce';
+
 
 const XTERM_THEME = {
   background: '#0f0f14',
@@ -67,6 +68,7 @@ export class TerminalPane {
   private projectPath: string;
   private disposed = false;
   private resizeObserver: ResizeObserver;
+  private resizeRafId = 0;
   private onProcessExit?: () => void;
   private onCwdChange?: (cwd: string) => void;
   private lastReportedCwd: string;
@@ -94,6 +96,15 @@ export class TerminalPane {
       theme: XTERM_THEME,
       fontSize: settings.fontSize,
       fontFamily: buildTerminalFont(settings.fontFamily),
+      fontWeight: 'normal',
+      fontWeightBold: 'bold',
+      lineHeight: settings.lineHeight,
+      letterSpacing: 0,
+      allowTransparency: false,       // Opaque background — enables subpixel AA in canvas renderer
+      customGlyphs: true,             // Pixel-perfect box-drawing & powerline characters
+      rescaleOverlappingGlyphs: true, // Rescale glyphs that would bleed into adjacent cells
+      drawBoldTextInBrightColors: false, // Use actual bold weight, not just bright colors
+      minimumContrastRatio: 1,        // Disable contrast adjustment — match native terminal colors exactly
       scrollback: settings.scrollbackLines,
       cursorStyle: settings.cursorStyle,
       cursorBlink: settings.cursorBlink,
@@ -104,12 +115,16 @@ export class TerminalPane {
 
     this.terminal.loadAddon(this.fitAddon);
     this.terminal.loadAddon(new WebLinksAddon((_e, uri) => open(uri)));
+    this.terminal.loadAddon(new ImageAddon());
 
-    this.resizeObserver = new ResizeObserver(
-      debounce(() => {
-        if (!this.disposed) this.fit();
-      }, 16),
-    );
+    this.resizeObserver = new ResizeObserver(() => {
+      if (!this.resizeRafId && !this.disposed) {
+        this.resizeRafId = requestAnimationFrame(() => {
+          this.resizeRafId = 0;
+          if (!this.disposed) this.fit();
+        });
+      }
+    });
   }
 
   async mount(): Promise<void> {
@@ -118,11 +133,24 @@ export class TerminalPane {
 
     // Let global keybindings pass through instead of being consumed by xterm
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if (e.type === 'keydown' && keybindings.matchesBinding(e)) return false;
+      if (e.type !== 'keydown') return true;
+      if (keybindings.matchesBinding(e)) return false;
+
+      // Explicit Ctrl+V paste — Tauri webview may not fire browser paste events
+      // reliably for TUI applications (e.g. Claude Code)
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'v') {
+        navigator.clipboard.readText().then((text) => {
+          if (text) this.terminal.paste(text);
+        }).catch(() => {});
+        return false;
+      }
+
       return true;
     });
 
-    this.tryWebgl();
+    if (store.getState().settings.webglRenderer) {
+      this.tryWebgl();
+    }
 
     this.resizeObserver.observe(this.element);
 
@@ -265,9 +293,28 @@ export class TerminalPane {
     logger.debug('pty', 'Applying settings to terminal', { paneId: this.paneId, fontSize: settings.fontSize });
     this.terminal.options.fontSize = settings.fontSize;
     this.terminal.options.fontFamily = buildTerminalFont(settings.fontFamily);
+    this.terminal.options.fontWeight = 'normal';
+    this.terminal.options.fontWeightBold = 'bold';
+    this.terminal.options.lineHeight = settings.lineHeight;
+    this.terminal.options.letterSpacing = 0;
+    this.terminal.options.allowTransparency = false;
+    this.terminal.options.customGlyphs = true;
+    this.terminal.options.rescaleOverlappingGlyphs = true;
+    this.terminal.options.drawBoldTextInBrightColors = false;
+    this.terminal.options.minimumContrastRatio = 1;
     this.terminal.options.scrollback = settings.scrollbackLines;
     this.terminal.options.cursorStyle = settings.cursorStyle;
     this.terminal.options.cursorBlink = settings.cursorBlink;
+
+    // Toggle renderer: WebGL (fast, bypasses ClearType) vs Canvas (native font rendering)
+    if (settings.webglRenderer && !this.webglAddon) {
+      this.tryWebgl();
+    } else if (!settings.webglRenderer && this.webglAddon) {
+      this.webglAddon.dispose();
+      this.webglAddon = null;
+      logger.debug('pty', 'Switched to canvas renderer', { paneId: this.paneId });
+    }
+
     this.fit();
   }
 
@@ -279,6 +326,7 @@ export class TerminalPane {
     if (this.disposed) return;
     this.disposed = true;
     if (this.outputRafId) cancelAnimationFrame(this.outputRafId);
+    if (this.resizeRafId) cancelAnimationFrame(this.resizeRafId);
     this.pendingOutput = [];
     logger.info('pty', 'Disposing terminal pane', { paneId: this.paneId, backendId: this.backendId });
     this.resizeObserver.disconnect();

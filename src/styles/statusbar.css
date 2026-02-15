@@ -14,7 +14,7 @@
 .status-item {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .status-log-btn {

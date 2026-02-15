@@ -145,6 +145,12 @@ async function main(): Promise<void> {
     handler: toggleGitSidebar,
   });
 
+  keybindings.register({
+    key: 'd',
+    alt: true,
+    handler: toggleGitSidebar,
+  });
+
   // --- Configurable keybindings ---
   let cleanupConfigBindings: (() => void)[] = [];
 

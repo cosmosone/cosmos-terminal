@@ -42,6 +42,27 @@ fn set_title_bar_color(window: &tauri::WebviewWindow) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Force Chromium/WebView2 to use LCD (subpixel / ClearType) text rendering
+    // instead of grayscale antialiasing. This must be set before the WebView2
+    // environment is created by Tauri.
+    #[cfg(target_os = "windows")]
+    {
+        use std::env;
+        let key = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+        let extra = env::var(key).unwrap_or_default();
+        let flags = "\
+            --enable-lcd-text \
+            --force-color-profile=srgb \
+            --use-angle=d3d11 \
+            --disable-features=RendererCodeIntegrity";
+        let combined = if extra.is_empty() {
+            flags.to_string()
+        } else {
+            format!("{extra} {flags}")
+        };
+        env::set_var(key, combined);
+    }
+
     let session_manager = SessionManager::new();
     let system_monitor = SystemMonitor::new();
 

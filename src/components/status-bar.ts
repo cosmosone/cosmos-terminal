@@ -2,7 +2,7 @@ import { getSystemStats } from '../services/system-monitor';
 import { logger } from '../services/logger';
 import { $ } from '../utils/dom';
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 5000;
 
 export function initStatusBar(onCleanup?: () => void): void {
   const bar = $('#status-bar')!;

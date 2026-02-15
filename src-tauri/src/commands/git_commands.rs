@@ -4,6 +4,17 @@ use git2::{Repository, Sort, StatusOptions};
 
 use crate::models::{GitCommitResult, GitFileStatus, GitLogEntry, GitPushResult, GitStatusResult};
 
+fn open_repo(path: &str) -> Result<Repository, String> {
+    Repository::discover(path).map_err(|e| e.to_string())
+}
+
+fn current_branch(repo: &Repository) -> String {
+    match repo.head() {
+        Ok(head) => head.shorthand().unwrap_or("HEAD").to_string(),
+        Err(_) => "HEAD".to_string(),
+    }
+}
+
 fn status_string(status: git2::Status) -> &'static str {
     if status.is_index_new() || status.is_wt_new() {
         "added"
@@ -42,31 +53,25 @@ pub async fn git_status(path: String) -> Result<GitStatusResult, String> {
 }
 
 fn git_status_sync(path: &str) -> Result<GitStatusResult, String> {
-    let repo = Repository::discover(path).map_err(|e| e.to_string())?;
-
-    let branch = match repo.head() {
-        Ok(head) => head.shorthand().unwrap_or("HEAD").to_string(),
-        Err(_) => "HEAD".to_string(),
-    };
+    let repo = open_repo(path)?;
+    let branch = current_branch(&repo);
 
     let mut opts = StatusOptions::new();
-    opts.include_untracked(true).recurse_untracked_dirs(true);
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false); // Skip ignored files entirely — they were filtered post-hoc before
 
     let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
 
-    let mut files = Vec::new();
+    let mut files = Vec::with_capacity(statuses.len());
     let mut dirty = false;
 
     for entry in statuses.iter() {
-        let s = entry.status();
-        if s.is_ignored() {
-            continue;
-        }
         dirty = true;
         files.push(GitFileStatus {
             path: entry.path().unwrap_or("").to_string(),
-            status: status_string(s).to_string(),
-            staged: is_staged(s),
+            status: status_string(entry.status()).to_string(),
+            staged: is_staged(entry.status()),
         });
     }
 
@@ -85,7 +90,7 @@ pub async fn git_log(path: String, limit: Option<usize>) -> Result<Vec<GitLogEnt
 }
 
 fn git_log_sync(path: &str, limit: Option<usize>) -> Result<Vec<GitLogEntry>, String> {
-    let repo = Repository::discover(path).map_err(|e| e.to_string())?;
+    let repo = open_repo(path)?;
     let max = limit.unwrap_or(50);
 
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
@@ -150,7 +155,7 @@ fn append_diff(diff: &git2::Diff, out: &mut String) {
 #[tauri::command]
 pub async fn git_diff(path: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+        let repo = open_repo(&path)?;
         let mut diff_text = String::new();
 
         // Staged changes: diff HEAD tree against index
@@ -182,7 +187,7 @@ pub async fn git_diff(path: String) -> Result<String, String> {
 #[tauri::command]
 pub async fn git_stage_all(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+        let repo = open_repo(&path)?;
         let mut index = repo.index().map_err(|e| e.to_string())?;
         index
             .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
@@ -197,7 +202,7 @@ pub async fn git_stage_all(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn git_commit(path: String, message: String) -> Result<GitCommitResult, String> {
     tokio::task::spawn_blocking(move || {
-        let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+        let repo = open_repo(&path)?;
         let sig = repo.signature().map_err(|e| e.to_string())?;
         let mut index = repo.index().map_err(|e| e.to_string())?;
         let tree_oid = index.write_tree().map_err(|e| e.to_string())?;
@@ -226,17 +231,13 @@ pub async fn git_commit(path: String, message: String) -> Result<GitCommitResult
 #[tauri::command]
 pub async fn git_push(path: String) -> Result<GitPushResult, String> {
     tokio::task::spawn_blocking(move || {
-        let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+        let repo = open_repo(&path)?;
         let repo_path = repo
             .workdir()
             .ok_or("Not a working directory")?
             .to_path_buf();
 
-        // Get current branch name
-        let branch = match repo.head() {
-            Ok(head) => head.shorthand().unwrap_or("HEAD").to_string(),
-            Err(_) => "HEAD".to_string(),
-        };
+        let branch = current_branch(&repo);
 
         let mut cmd = std::process::Command::new("git");
         cmd.args(["push", "-u", "origin", &branch])

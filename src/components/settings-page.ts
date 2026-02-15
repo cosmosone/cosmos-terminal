@@ -76,13 +76,16 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       createFontRow('Terminal Font', settings.fontFamily, TERMINAL_FONT_PRESETS, (v) => apply({ fontFamily: v })),
     );
     font.content.appendChild(
-      createNumberRow('Font Size', settings.fontSize, 8, 32, (v) => apply({ fontSize: v })),
+      createNumberRow('Font Size', settings.fontSize, 8, 32, (v) => apply({ fontSize: v }), 0.5),
+    );
+    font.content.appendChild(
+      createLineHeightRow(settings.lineHeight, (v) => apply({ lineHeight: v })),
     );
     font.content.appendChild(
       createFontRow('UI Font', settings.uiFontFamily, UI_FONT_PRESETS, (v) => apply({ uiFontFamily: v })),
     );
     font.content.appendChild(
-      createNumberRow('UI Font Size', settings.uiFontSize, 8, 32, (v) => apply({ uiFontSize: v })),
+      createNumberRow('UI Font Size', settings.uiFontSize, 8, 32, (v) => apply({ uiFontSize: v }), 0.5),
     );
     inner.appendChild(font.wrapper);
 
@@ -103,6 +106,9 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     );
     term.content.appendChild(
       createToggleRow('Copy on Select', settings.copyOnSelect, (v) => apply({ copyOnSelect: v })),
+    );
+    term.content.appendChild(
+      createToggleRow('WebGL Renderer', settings.webglRenderer, (v) => apply({ webglRenderer: v })),
     );
     term.content.appendChild(
       createSelectRow('Bell Style', settings.bellStyle, ['visual', 'none'], (v) =>
@@ -148,6 +154,7 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       ['Ctrl+Shift+w', 'Close Session'],
       ['Ctrl+,', 'Settings'],
       ['Ctrl+Shift+g', 'Git Sidebar'],
+      ['Alt+d', 'Git Sidebar'],
     ];
     const comboToLabels = new Map<string, string[]>();
 
@@ -261,7 +268,9 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     min: number,
     max: number,
     onChange: (v: number) => void,
+    step = 1,
   ): HTMLElement {
+    const fmt = (n: number) => step % 1 !== 0 ? n.toFixed(1) : String(n);
     const row = createElement('div', { className: 'settings-row' });
     const lbl = createElement('label');
     lbl.textContent = label;
@@ -271,29 +280,80 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     const downBtn = createElement('button', { className: 'number-btn' });
     downBtn.innerHTML = '&#9662;';
     downBtn.addEventListener('click', () => {
-      const n = parseInt(input.value, 10);
-      if (!isNaN(n) && n - 1 >= min) {
-        input.value = String(n - 1);
-        onChange(n - 1);
+      const n = parseFloat(input.value);
+      if (!isNaN(n) && n - step >= min) {
+        const next = Math.round((n - step) * 10) / 10;
+        input.value = fmt(next);
+        onChange(next);
       }
     });
 
     const input = createElement('input', { type: 'number' });
-    input.value = String(value);
+    input.value = fmt(value);
     input.min = String(min);
     input.max = String(max);
+    input.step = String(step);
     input.addEventListener('change', () => {
-      const n = parseInt(input.value, 10);
-      if (!isNaN(n) && n >= min && n <= max) onChange(n);
+      const n = parseFloat(input.value);
+      if (!isNaN(n) && n >= min && n <= max) onChange(Math.round(n * 10) / 10);
     });
 
     const upBtn = createElement('button', { className: 'number-btn' });
     upBtn.innerHTML = '&#9652;';
     upBtn.addEventListener('click', () => {
-      const n = parseInt(input.value, 10);
-      if (!isNaN(n) && n + 1 <= max) {
-        input.value = String(n + 1);
-        onChange(n + 1);
+      const n = parseFloat(input.value);
+      if (!isNaN(n) && n + step <= max) {
+        const next = Math.round((n + step) * 10) / 10;
+        input.value = fmt(next);
+        onChange(next);
+      }
+    });
+
+    wrapper.appendChild(downBtn);
+    wrapper.appendChild(input);
+    wrapper.appendChild(upBtn);
+
+    row.appendChild(lbl);
+    row.appendChild(wrapper);
+    return row;
+  }
+
+  function createLineHeightRow(value: number, onChange: (v: number) => void): HTMLElement {
+    const row = createElement('div', { className: 'settings-row' });
+    const lbl = createElement('label');
+    lbl.textContent = 'Line Height';
+
+    const wrapper = createElement('div', { className: 'number-input-wrapper' });
+
+    const downBtn = createElement('button', { className: 'number-btn' });
+    downBtn.innerHTML = '&#9662;';
+    downBtn.addEventListener('click', () => {
+      const n = parseFloat(input.value);
+      if (!isNaN(n) && n - 0.05 >= 1.0) {
+        const next = Math.round((n - 0.05) * 100) / 100;
+        input.value = next.toFixed(2);
+        onChange(next);
+      }
+    });
+
+    const input = createElement('input', { type: 'number' });
+    input.value = value.toFixed(2);
+    input.min = '1.00';
+    input.max = '2.00';
+    input.step = '0.05';
+    input.addEventListener('change', () => {
+      const n = parseFloat(input.value);
+      if (!isNaN(n) && n >= 1.0 && n <= 2.0) onChange(Math.round(n * 100) / 100);
+    });
+
+    const upBtn = createElement('button', { className: 'number-btn' });
+    upBtn.innerHTML = '&#9652;';
+    upBtn.addEventListener('click', () => {
+      const n = parseFloat(input.value);
+      if (!isNaN(n) && n + 0.05 <= 2.0) {
+        const next = Math.round((n + 0.05) * 100) / 100;
+        input.value = next.toFixed(2);
+        onChange(next);
       }
     });
 

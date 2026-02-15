@@ -29,7 +29,7 @@ const SYSTEM_FONT_STACK = '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, 
 /** Build a full CSS font-family string with monospace fallback. */
 export function buildTerminalFont(name: string): string {
   if (name === 'monospace') return 'monospace';
-  return `${name}, monospace`;
+  return `'${name}', monospace`;
 }
 
 /** Build a full CSS font-family string with sans-serif fallback. */
@@ -53,12 +53,14 @@ function defaultSettings(): AppSettings {
     shellPath: defaultShell(),
     fontSize: 14,
     fontFamily: 'JetBrains Mono',
+    lineHeight: 1.2,
     uiFontFamily: 'System Default',
     uiFontSize: 13,
     scrollbackLines: 10000,
     cursorStyle: 'block',
     cursorBlink: true,
     copyOnSelect: false,
+    webglRenderer: false,
     bellStyle: 'visual',
     debugLogging: false,
     debugLoggingExpiry: null,

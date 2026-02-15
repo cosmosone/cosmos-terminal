@@ -104,6 +104,26 @@ export class SplitContainer {
     handle.style.height = `${d.rect.height + (isHz ? 0 : expand * 2)}px`;
   }
 
+  /** Position panes and defer fit(). When activeOnly is true, skip hidden panes. */
+  private applyPaneRects(paneRects: Map<string, Rect>, activeOnly: boolean): void {
+    const panesToFit: TerminalPane[] = [];
+    for (const [paneId, r] of paneRects) {
+      const tp = this.terminals.get(paneId);
+      if (!tp) continue;
+      if (activeOnly && tp.element.style.display === 'none') continue;
+      tp.element.style.left = `${r.x}px`;
+      tp.element.style.top = `${r.y}px`;
+      tp.element.style.width = `${r.width}px`;
+      tp.element.style.height = `${r.height}px`;
+      panesToFit.push(tp);
+    }
+    if (panesToFit.length > 0) {
+      requestAnimationFrame(() => {
+        for (const tp of panesToFit) tp.fit();
+      });
+    }
+  }
+
   /** Lightweight position-only update (no handle recreation). */
   private updatePositions(tree: PaneNode): void {
     const rect: Rect = {
@@ -115,17 +135,7 @@ export class SplitContainer {
 
     const { paneRects, dividers } = computeLayout(tree, rect);
     this.lastPaneRects = paneRects;
-
-    for (const [paneId, r] of paneRects) {
-      const tp = this.terminals.get(paneId);
-      if (tp && tp.element.style.display !== 'none') {
-        tp.element.style.left = `${r.x}px`;
-        tp.element.style.top = `${r.y}px`;
-        tp.element.style.width = `${r.width}px`;
-        tp.element.style.height = `${r.height}px`;
-        tp.fit();
-      }
-    }
+    this.applyPaneRects(paneRects, true);
 
     for (let i = 0; i < this.handles.length && i < dividers.length; i++) {
       this.positionHandle(this.handles[i], dividers[i]);
@@ -149,16 +159,7 @@ export class SplitContainer {
       treeType: tree.type,
       direction: tree.type === 'branch' ? tree.direction : 'leaf',
     });
-    for (const [paneId, r] of paneRects) {
-      const tp = this.terminals.get(paneId);
-      if (tp) {
-        tp.element.style.left = `${r.x}px`;
-        tp.element.style.top = `${r.y}px`;
-        tp.element.style.width = `${r.width}px`;
-        tp.element.style.height = `${r.height}px`;
-        tp.fit();
-      }
-    }
+    this.applyPaneRects(paneRects, false);
 
     // Remove old handles
     for (const h of this.handles) h.remove();

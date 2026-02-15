@@ -2,18 +2,47 @@
   position: absolute;
   background: var(--bg-terminal);
   overflow: hidden;
-  opacity: 0.4;
-  transition: opacity 0.15s;
+  /* contain: content tells the browser this subtree is independent, enabling
+     more aggressive paint/layout optimizations and preventing stray compositing. */
+  contain: content;
+}
+
+/* Dim unfocused panes via an overlay instead of opacity on the container.
+   This keeps the xterm canvas un-composited so it retains subpixel AA. */
+.terminal-pane::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* When focused, completely remove the overlay from the render tree.
+   Using content:none instead of opacity:0 so absolutely nothing sits above
+   the xterm canvas that could interfere with compositing/subpixel rendering. */
+.terminal-pane.focused::after {
+  content: none;
 }
 
 .terminal-pane.focused {
-  opacity: 1;
   box-shadow: inset 0 0 0 1px var(--accent-dim);
 }
 
 .terminal-pane .xterm {
   height: 100%;
   padding: 4px;
+  box-sizing: border-box;
+}
+
+/* Subpixel (ClearType) rendering hints for the xterm canvas */
+.terminal-pane .xterm canvas {
+  image-rendering: auto;
+  -webkit-font-smoothing: subpixel-antialiased;
+}
+
+.terminal-pane .xterm-screen {
+  -webkit-font-smoothing: subpixel-antialiased;
 }
 
 .terminal-pane .xterm-viewport::-webkit-scrollbar {

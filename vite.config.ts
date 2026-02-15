@@ -23,5 +23,6 @@ export default defineConfig(async () => ({
     target: "esnext",
     minify: "esbuild",
     cssMinify: true,
+    chunkSizeWarningLimit: 600,
   },
 }));

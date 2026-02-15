@@ -368,15 +368,6 @@
   transition: background var(--transition-fast), opacity var(--transition-fast);
 }
 
-.git-commit-btn.primary {
-  background: var(--accent);
-  color: #fff;
-}
-
-.git-commit-btn.primary:hover {
-  background: var(--accent-hover);
-}
-
 .git-commit-btn.secondary {
   background: var(--bg-hover);
   color: var(--text-primary);
