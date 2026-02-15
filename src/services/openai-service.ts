@@ -210,19 +210,22 @@ export async function generateCommitMessage(diff: string, onProgress?: ProgressC
   logger.debug('git', 'Two-tier batches', { fileCount: files.length, batchCount: totalBatches });
 
   // Step 1: Summarise all batches in parallel
-  onProgress?.(`Summarising ${totalBatches} batch${totalBatches > 1 ? 'es' : ''}...`);
+  let completed = 0;
+  onProgress?.(`Working 0/${totalBatches}...`);
 
   const summaries = await Promise.all(
     batches.map(async (batch, i) => {
       const batchContent = batch.map((f) => f.content).join('\n');
       const summary = await callApi(apiKey, SUMMARISE_PROMPT, `Summarise the changes in this diff batch:\n\n${batchContent}`);
       logger.debug('git', `Batch ${i + 1}/${totalBatches} summary`, { summary: summary.slice(0, 300) });
+      completed++;
+      onProgress?.(`Working ${completed}/${totalBatches}...`);
       return summary;
     }),
   );
 
   // Step 2: Synthesise final commit message from combined summaries
-  onProgress?.('Generating...');
+  onProgress?.('Finalising...');
 
   const synthesisInput = buildFileListHeader(files) + `Summaries of all changes:\n${summaries.join('\n\n')}`;
   const raw = await callApi(apiKey, SYSTEM_PROMPT, `Generate a commit message based on these change summaries:\n\n${synthesisInput}`);

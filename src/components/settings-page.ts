@@ -79,7 +79,7 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       createNumberRow('Font Size', settings.fontSize, 8, 32, (v) => apply({ fontSize: v }), 0.5),
     );
     font.content.appendChild(
-      createLineHeightRow(settings.lineHeight, (v) => apply({ lineHeight: v })),
+      createNumberRow('Line Height', settings.lineHeight, 1.0, 2.0, (v) => apply({ lineHeight: v }), 0.05, 2),
     );
     font.content.appendChild(
       createFontRow('UI Font', settings.uiFontFamily, UI_FONT_PRESETS, (v) => apply({ uiFontFamily: v })),
@@ -98,6 +98,10 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     );
     term.content.appendChild(
       createToggleRow('Copy on Select', settings.copyOnSelect, (v) => apply({ copyOnSelect: v })),
+    );
+    term.content.appendChild(
+      createToggleRow('Confirm Close Terminal Tab', settings.confirmCloseTerminalTab, (v) =>
+        apply({ confirmCloseTerminalTab: v })),
     );
     inner.appendChild(term.wrapper);
 
@@ -130,6 +134,9 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       ['cycleSessionPrev', 'Previous Terminal Tab'],
       ['cycleProjectNext', 'Next Project Tab'],
       ['cycleProjectPrev', 'Previous Project Tab'],
+      ['toggleGitSidebar', 'Toggle Git Sidebar'],
+      ['closeTerminalTab', 'Close Terminal Tab'],
+      ['closeProjectTab', 'Close Project Tab'],
     ];
 
     // Build conflict map: combo -> list of labels that use it
@@ -138,7 +145,6 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       ['Ctrl+Shift+w', 'Close Session'],
       ['Ctrl+,', 'Settings'],
       ['Ctrl+Shift+g', 'Git Sidebar'],
-      ['Alt+d', 'Git Sidebar'],
     ];
     const comboToLabels = new Map<string, string[]>();
 
@@ -253,8 +259,11 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     max: number,
     onChange: (v: number) => void,
     step = 1,
+    decimals?: number,
   ): HTMLElement {
-    const fmt = (n: number) => step % 1 !== 0 ? n.toFixed(1) : String(n);
+    const dp = decimals ?? (step % 1 !== 0 ? 1 : 0);
+    const factor = Math.pow(10, dp);
+    const fmt = (n: number) => dp > 0 ? n.toFixed(dp) : String(n);
     const row = createElement('div', { className: 'settings-row' });
     const lbl = createElement('label');
     lbl.textContent = label;
@@ -266,7 +275,7 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     downBtn.addEventListener('click', () => {
       const n = parseFloat(input.value);
       if (!isNaN(n) && n - step >= min) {
-        const next = Math.round((n - step) * 10) / 10;
+        const next = Math.round((n - step) * factor) / factor;
         input.value = fmt(next);
         onChange(next);
       }
@@ -279,7 +288,7 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     input.step = String(step);
     input.addEventListener('change', () => {
       const n = parseFloat(input.value);
-      if (!isNaN(n) && n >= min && n <= max) onChange(Math.round(n * 10) / 10);
+      if (!isNaN(n) && n >= min && n <= max) onChange(Math.round(n * factor) / factor);
     });
 
     const upBtn = createElement('button', { className: 'number-btn' });
@@ -287,56 +296,8 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     upBtn.addEventListener('click', () => {
       const n = parseFloat(input.value);
       if (!isNaN(n) && n + step <= max) {
-        const next = Math.round((n + step) * 10) / 10;
+        const next = Math.round((n + step) * factor) / factor;
         input.value = fmt(next);
-        onChange(next);
-      }
-    });
-
-    wrapper.appendChild(downBtn);
-    wrapper.appendChild(input);
-    wrapper.appendChild(upBtn);
-
-    row.appendChild(lbl);
-    row.appendChild(wrapper);
-    return row;
-  }
-
-  function createLineHeightRow(value: number, onChange: (v: number) => void): HTMLElement {
-    const row = createElement('div', { className: 'settings-row' });
-    const lbl = createElement('label');
-    lbl.textContent = 'Line Height';
-
-    const wrapper = createElement('div', { className: 'number-input-wrapper' });
-
-    const downBtn = createElement('button', { className: 'number-btn' });
-    downBtn.innerHTML = '&#9662;';
-    downBtn.addEventListener('click', () => {
-      const n = parseFloat(input.value);
-      if (!isNaN(n) && n - 0.05 >= 1.0) {
-        const next = Math.round((n - 0.05) * 100) / 100;
-        input.value = next.toFixed(2);
-        onChange(next);
-      }
-    });
-
-    const input = createElement('input', { type: 'number' });
-    input.value = value.toFixed(2);
-    input.min = '1.00';
-    input.max = '2.00';
-    input.step = '0.05';
-    input.addEventListener('change', () => {
-      const n = parseFloat(input.value);
-      if (!isNaN(n) && n >= 1.0 && n <= 2.0) onChange(Math.round(n * 100) / 100);
-    });
-
-    const upBtn = createElement('button', { className: 'number-btn' });
-    upBtn.innerHTML = '&#9652;';
-    upBtn.addEventListener('click', () => {
-      const n = parseFloat(input.value);
-      if (!isNaN(n) && n + 0.05 <= 2.0) {
-        const next = Math.round((n + 0.05) * 100) / 100;
-        input.value = next.toFixed(2);
         onChange(next);
       }
     });

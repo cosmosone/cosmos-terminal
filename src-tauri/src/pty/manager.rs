@@ -23,7 +23,7 @@ impl SessionManager {
         cwd: String,
         rows: u16,
         cols: u16,
-        output_channel: Channel<Vec<u8>>,
+        output_channel: Channel<String>,
         exit_channel: Channel<bool>,
     ) -> Result<PtySessionInfo, String> {
         let id = Uuid::new_v4().to_string();

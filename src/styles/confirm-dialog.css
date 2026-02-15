@@ -1,0 +1,107 @@
+/* ── Backdrop ── */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* ── Dialog ── */
+.confirm-dialog {
+  width: 90%;
+  max-width: 400px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  padding: 24px;
+}
+
+/* ── Title ── */
+.confirm-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+/* ── Message ── */
+.confirm-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+/* ── Checkbox row ── */
+.confirm-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.confirm-checkbox input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ── Actions ── */
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-btn-cancel,
+.confirm-btn-confirm {
+  height: 30px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.confirm-btn-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.confirm-btn-cancel:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+.confirm-btn-confirm {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #1a1b26;
+  font-weight: 600;
+}
+
+.confirm-btn-confirm:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.confirm-btn-confirm.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.confirm-btn-confirm.danger:hover {
+  background: #ff8fa3;
+  border-color: #ff8fa3;
+}

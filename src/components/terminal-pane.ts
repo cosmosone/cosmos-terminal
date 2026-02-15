@@ -88,6 +88,8 @@ export class TerminalPane {
   private lastReportedCwd: string;
   private lastSentRows = 0;
   private lastSentCols = 0;
+  private resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastResizeTime = 0;
   private pendingOutput: Uint8Array[] = [];
   private outputRafId = 0;
 
@@ -266,6 +268,8 @@ export class TerminalPane {
     this.pendingOutput = [];
   }
 
+  private static readonly RESIZE_THROTTLE_MS = 100;
+
   fit(): void {
     if (this.disposed || this.element.offsetWidth === 0) return;
     try {
@@ -275,13 +279,32 @@ export class TerminalPane {
         if (dims.rows !== this.lastSentRows || dims.cols !== this.lastSentCols) {
           this.lastSentRows = dims.rows;
           this.lastSentCols = dims.cols;
-          resizePtySession(this.backendId, dims.rows, dims.cols);
-          logger.debug('pty', 'Terminal fit', { paneId: this.paneId, rows: dims.rows, cols: dims.cols });
+          // Throttle PTY resize IPC: fire immediately on leading edge,
+          // then at most once per RESIZE_THROTTLE_MS, with a trailing call
+          // to ensure the final dimensions are always sent.
+          const now = Date.now();
+          const elapsed = now - this.lastResizeTime;
+          if (this.resizeTimer) clearTimeout(this.resizeTimer);
+          if (elapsed >= TerminalPane.RESIZE_THROTTLE_MS) {
+            this.sendResize();
+          } else {
+            this.resizeTimer = setTimeout(() => {
+              this.resizeTimer = null;
+              this.sendResize();
+            }, TerminalPane.RESIZE_THROTTLE_MS - elapsed);
+          }
         }
       }
     } catch {
       // Fit can throw if element not visible
     }
+  }
+
+  private sendResize(): void {
+    if (this.disposed || !this.backendId) return;
+    this.lastResizeTime = Date.now();
+    resizePtySession(this.backendId, this.lastSentRows, this.lastSentCols).catch(() => {});
+    logger.debug('pty', 'Terminal fit', { paneId: this.paneId, rows: this.lastSentRows, cols: this.lastSentCols });
   }
 
   focus(): void {
@@ -319,6 +342,7 @@ export class TerminalPane {
     this.disposed = true;
     if (this.outputRafId) cancelAnimationFrame(this.outputRafId);
     if (this.resizeRafId) cancelAnimationFrame(this.resizeRafId);
+    if (this.resizeTimer) clearTimeout(this.resizeTimer);
     this.pendingOutput = [];
     logger.info('pty', 'Disposing terminal pane', { paneId: this.paneId, backendId: this.backendId });
     this.resizeObserver.disconnect();

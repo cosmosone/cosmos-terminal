@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+use base64::Engine as _;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tauri::ipc::Channel;
@@ -23,7 +24,7 @@ impl SessionHandle {
         cwd: String,
         rows: u16,
         cols: u16,
-        output_channel: Channel<Vec<u8>>,
+        output_channel: Channel<String>,
         exit_channel: Channel<bool>,
     ) -> Result<Self, String> {
         let pty_system = native_pty_system();
@@ -99,7 +100,7 @@ impl SessionHandle {
 
     fn reader_loop(
         mut reader: Box<dyn Read + Send>,
-        channel: Channel<Vec<u8>>,
+        channel: Channel<String>,
         alive: Arc<AtomicBool>,
     ) {
         let mut buf = [0u8; 16384];
@@ -107,7 +108,8 @@ impl SessionHandle {
             match reader.read(&mut buf) {
                 Ok(0) => break, // EOF
                 Ok(n) => {
-                    if channel.send(buf[..n].to_vec()).is_err() {
+                    let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
+                    if channel.send(encoded).is_err() {
                         break; // Channel closed
                     }
                 }

@@ -58,6 +58,7 @@ function defaultSettings(): AppSettings {
     uiFontSize: 13,
     scrollbackLines: 10000,
     copyOnSelect: false,
+    confirmCloseTerminalTab: true,
     debugLogging: false,
     debugLoggingExpiry: null,
     openaiApiKey: '',
@@ -72,8 +73,11 @@ function defaultSettings(): AppSettings {
       splitRight: 'Alt+c',
       cycleSessionNext: 'Alt+;',
       cycleSessionPrev: 'Alt+l',
-      cycleProjectNext: 'Alt+p',
-      cycleProjectPrev: 'Alt+o',
+      cycleProjectNext: 'Alt+o',
+      cycleProjectPrev: 'Alt+i',
+      toggleGitSidebar: 'Alt+d',
+      closeTerminalTab: 'Alt+j',
+      closeProjectTab: 'Alt+u',
     },
   };
 }
@@ -83,7 +87,12 @@ export async function loadSettings(): Promise<AppSettings> {
     const s = await getStore();
     const saved = await s.get<AppSettings>('settings');
     if (saved) {
-      const merged = { ...defaultSettings(), ...saved };
+      const defaults = defaultSettings();
+      const merged = {
+        ...defaults,
+        ...saved,
+        keybindings: { ...defaults.keybindings, ...saved.keybindings },
+      };
       // Migrate old comma-separated font stacks to single names
       merged.fontFamily = migrateFontValue(merged.fontFamily, TERMINAL_FONT_PRESETS);
       merged.uiFontFamily = migrateFontValue(merged.uiFontFamily, UI_FONT_PRESETS);

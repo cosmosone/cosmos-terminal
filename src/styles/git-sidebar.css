@@ -380,6 +380,7 @@
 .git-commit-btn:disabled {
   opacity: 0.4;
   cursor: default;
+  pointer-events: none;
 }
 
 .git-generate-btn {

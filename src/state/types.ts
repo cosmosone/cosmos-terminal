@@ -49,6 +49,9 @@ export interface KeybindingConfig {
   cycleSessionPrev: string;
   cycleProjectNext: string;
   cycleProjectPrev: string;
+  toggleGitSidebar: string;
+  closeTerminalTab: string;
+  closeProjectTab: string;
 }
 
 export interface AppSettings {
@@ -62,6 +65,7 @@ export interface AppSettings {
   copyOnSelect: boolean;
   debugLogging: boolean;
   debugLoggingExpiry: string | null;
+  confirmCloseTerminalTab: boolean;
   keybindings: KeybindingConfig;
   openaiApiKey: string;
 }

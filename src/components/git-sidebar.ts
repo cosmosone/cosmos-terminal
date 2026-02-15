@@ -246,22 +246,13 @@ export function initGitSidebar(onLayoutChange: () => void): void {
       }
     }
 
-    const actions = createElement('div', { className: 'git-project-actions' });
-    const refreshBtn = createElement('button', { className: 'git-project-action-btn', title: 'Refresh' });
-    refreshBtn.innerHTML = '&#8635;';
-    refreshBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      refreshProject(project);
-    });
-    actions.appendChild(refreshBtn);
-    row.appendChild(actions);
-
     row.addEventListener('click', () => {
       if (hasFiles) {
         toggleProjectExpanded(project.id);
       }
       setGitSidebarActiveProject(project.id);
       fetchLog(project);
+      refreshProject(project, true);
     });
 
     wrap.appendChild(row);

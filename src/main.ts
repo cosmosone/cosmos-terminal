@@ -1,6 +1,6 @@
 import '@xterm/xterm/css/xterm.css';
 import { initStore, store } from './state/store';
-import { addProject, addSession, getActiveProject, getActiveSession, removeSession, splitPane, cycleSession, cycleProject, toggleSettingsView, toggleGitSidebar, defaultGitSidebarState } from './state/actions';
+import { addProject, addSession, getActiveProject, getActiveSession, removeProject, removeSession, splitPane, cycleSession, cycleProject, toggleSettingsView, toggleGitSidebar, updateSettings, defaultGitSidebarState } from './state/actions';
 import { loadSettings, saveSettings, buildUiFont } from './services/settings-service';
 import { loadWorkspace, saveWorkspace } from './services/workspace-service';
 import { findLeafPaneIds } from './layout/pane-tree';
@@ -14,11 +14,12 @@ import { initStatusBar } from './components/status-bar';
 import { initLogViewer } from './components/log-viewer';
 import { initGitSidebar } from './components/git-sidebar';
 import { keybindings, parseKeybinding } from './utils/keybindings';
+import { showConfirmDialog } from './components/confirm-dialog';
 import { $ } from './utils/dom';
 import { debounce } from './utils/debounce';
 
 async function main(): Promise<void> {
-  const settings = await loadSettings();
+  const [settings, saved] = await Promise.all([loadSettings(), loadWorkspace()]);
 
   // Check 24h auto-disable for debug logging
   if (settings.debugLogging && settings.debugLoggingExpiry) {
@@ -33,8 +34,6 @@ async function main(): Promise<void> {
   }
 
   logger.info('app', 'App starting', { settingsLoaded: true });
-
-  const saved = await loadWorkspace();
 
   initStore({
     projects: saved?.projects ?? [],
@@ -145,12 +144,6 @@ async function main(): Promise<void> {
     handler: toggleGitSidebar,
   });
 
-  keybindings.register({
-    key: 'd',
-    alt: true,
-    handler: toggleGitSidebar,
-  });
-
   // --- Configurable keybindings ---
   let cleanupConfigBindings: (() => void)[] = [];
 
@@ -195,6 +188,45 @@ async function main(): Promise<void> {
     bind(kb.cycleSessionPrev, () => doCycleSession(-1));
     bind(kb.cycleProjectNext, () => { cycleProject(1); refresh(); });
     bind(kb.cycleProjectPrev, () => { cycleProject(-1); refresh(); });
+
+    bind(kb.toggleGitSidebar, toggleGitSidebar);
+
+    bind(kb.closeTerminalTab, async () => {
+      const project = getActiveProject();
+      if (!project?.activeSessionId || project.sessions.length <= 1) return;
+      const currentSettings = store.getState().settings;
+      if (currentSettings.confirmCloseTerminalTab) {
+        const result = await showConfirmDialog({
+          title: 'Close Terminal Tab',
+          message: `Close "${project.sessions.find(s => s.id === project.activeSessionId)?.title ?? 'terminal'}"?`,
+          confirmText: 'Close',
+          showCheckbox: true,
+          checkboxLabel: "Don't ask again",
+          danger: true,
+        });
+        if (!result.confirmed) return;
+        if (result.checkboxChecked) {
+          updateSettings({ confirmCloseTerminalTab: false });
+          saveSettings(store.getState().settings);
+        }
+      }
+      removeSession(project.id, project.activeSessionId);
+      refresh();
+    });
+
+    bind(kb.closeProjectTab, async () => {
+      const project = getActiveProject();
+      if (!project) return;
+      const result = await showConfirmDialog({
+        title: 'Close Project Tab',
+        message: `Close project "${project.name}"? All terminal sessions in this project will be closed.`,
+        confirmText: 'Close',
+        danger: true,
+      });
+      if (!result.confirmed) return;
+      removeProject(project.id);
+      refresh();
+    });
   }
 
   registerConfigurableBindings(settings.keybindings);

@@ -277,7 +277,7 @@ export function toggleDebugLogging(): void {
 
 // --- View actions ---
 
-export function setView(view: 'terminal' | 'settings'): void {
+function setView(view: 'terminal' | 'settings'): void {
   store.setState((s) => ({ ...s, view }));
 }
 

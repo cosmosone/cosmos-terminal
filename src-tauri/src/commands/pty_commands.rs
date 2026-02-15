@@ -11,7 +11,7 @@ pub fn create_session(
     shell_path: Option<String>,
     rows: u16,
     cols: u16,
-    on_output: Channel<Vec<u8>>,
+    on_output: Channel<String>,
     on_exit: Channel<bool>,
 ) -> Result<PtySessionInfo, String> {
     session_manager.create_session(shell_path, project_path, rows, cols, on_output, on_exit)

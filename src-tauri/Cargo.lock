@@ -379,8 +379,9 @@ dependencies = [
 
 [[package]]
 name = "cosmos-terminal"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
+ "base64 0.22.1",
  "git2",
  "parking_lot",
  "portable-pty",

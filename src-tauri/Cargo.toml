@@ -25,6 +25,7 @@ uuid = { version = "1", features = ["v4"] }
 sysinfo = "0.33"
 parking_lot = "0.12"
 git2 = "0.19"
+base64 = "0.22"
 tokio = { version = "1", features = ["rt"] }
 
 [profile.release]
