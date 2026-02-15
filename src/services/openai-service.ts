@@ -16,17 +16,17 @@ const SYSTEM_PROMPT = `You are a commit message generator that analyses git diff
 
 Rules:
 1. Use exactly one conventional commit prefix: feat, fix, chore, refactor, docs, style, test, perf.
-2. Format: <prefix>: <Description starting with a capital letter>
-3. The description after the colon MUST start with a capital letter.
+2. Format: <prefix>: <description starting with a lowercase letter>
+3. The description after the colon MUST start with a lowercase letter.
 4. Use Australian English spelling (e.g. colour, initialise, behaviour, organisation, analyse, centre).
 5. Keep the entire message on a single line, max 72 characters.
 6. Summarise the overall intent of the change, not individual file edits.
 7. Output ONLY the commit message — no quotes, no explanation, no body.
 
 Examples:
-- feat: Add colour picker to the settings page
-- fix: Correct initialisation order for the auth service
-- refactor: Reorganise middleware into separate modules`;
+- feat: add colour picker to the settings page
+- fix: correct initialisation order for the auth service
+- refactor: reorganise middleware into separate modules`;
 
 const SUMMARISE_PROMPT = `You are a code-change summariser. You will receive a batch of git diff hunks.
 For each file in the batch, output exactly ONE bullet point describing the factual change.
@@ -169,11 +169,11 @@ async function callApi(apiKey: string, systemPrompt: string, userContent: string
   throw new Error('API returned an empty response after retry. Check logs for details.');
 }
 
-/** Strip wrapping quotes and ensure the description starts with a capital letter. */
+/** Strip wrapping quotes and ensure the description starts with a lowercase letter. */
 function cleanCommitMessage(raw: string): string {
   return raw
     .replace(/^(['"])(.+)\1$/, '$2')
-    .replace(/^(\w+):\s*([a-z])/, (_, prefix, ch) => `${prefix}: ${ch.toUpperCase()}`);
+    .replace(/^(\w+):\s*([A-Z])/, (_, prefix, ch) => `${prefix}: ${ch.toLowerCase()}`);
 }
 
 // ---------------------------------------------------------------------------
