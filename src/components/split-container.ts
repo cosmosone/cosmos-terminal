@@ -211,6 +211,12 @@ export class SplitContainer {
     }
   }
 
+  scrollToBottom(): void {
+    if (this.focusedPaneId) {
+      this.terminals.get(this.focusedPaneId)?.scrollToBottom();
+    }
+  }
+
   reLayout(): void {
     const project = getActiveProject();
     if (!project) return;

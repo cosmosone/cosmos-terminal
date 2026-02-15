@@ -334,6 +334,13 @@
   margin-top: 2px;
 }
 
+.keybinding-reset-row {
+  justify-content: flex-end;
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
 /* ── Font selector ── */
 .font-input-wrapper {
   display: flex;

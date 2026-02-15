@@ -1,7 +1,8 @@
 import { store } from '../state/store';
-import { addSession, removeSession, setActiveSession, splitPane, renameSession } from '../state/actions';
+import { addSession, removeSession, removeProject, setActiveSession, splitPane, renameSession } from '../state/actions';
 import { findLeafPaneIds } from '../layout/pane-tree';
 import { logger } from '../services/logger';
+import { confirmCloseProject } from './confirm-dialog';
 import { showContextMenu, startInlineRename } from './context-menu';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import type { Project } from '../state/types';
@@ -25,8 +26,15 @@ export function initSessionTabBar(onTabChange: () => void): void {
 
       const close = createElement('span', { className: 'tab-close' });
       close.textContent = '\u00d7';
-      close.addEventListener('click', (e) => {
+      close.addEventListener('click', async (e) => {
         e.stopPropagation();
+        if (project.sessions.length <= 1) {
+          if (!await confirmCloseProject(project.name)) return;
+          logger.info('project', 'Remove project via last session tab close', { projectId: project.id, name: project.name });
+          removeProject(project.id);
+          onTabChange();
+          return;
+        }
         logger.info('session', 'Remove session via tab close', { sessionId: session.id, title: session.title });
         removeSession(project.id, session.id);
         onTabChange();

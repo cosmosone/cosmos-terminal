@@ -92,6 +92,7 @@ export class TerminalPane {
   private lastResizeTime = 0;
   private pendingOutput: Uint8Array[] = [];
   private outputRafId = 0;
+  private scrollBtn: HTMLElement;
 
   constructor(paneId: string, projectId: string, projectPath: string, onProcessExit?: () => void, onCwdChange?: (cwd: string) => void) {
     this.paneId = paneId;
@@ -107,6 +108,15 @@ export class TerminalPane {
     this.element = document.createElement('div');
     this.element.className = 'terminal-pane';
     this.element.dataset.paneId = paneId;
+
+    this.scrollBtn = document.createElement('button');
+    this.scrollBtn.className = 'scroll-to-bottom-btn';
+    this.scrollBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+    this.scrollBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.scrollToBottom();
+    });
+    this.element.appendChild(this.scrollBtn);
 
     this.terminal = new Terminal({
       theme: XTERM_THEME,
@@ -146,11 +156,24 @@ export class TerminalPane {
       if (keybindings.matchesBinding(e)) return false;
 
       // Explicit Ctrl+V paste — Tauri webview may not fire browser paste events
-      // reliably for TUI applications (e.g. Claude Code)
+      // reliably for TUI applications (e.g. Claude Code).
+      // preventDefault() is required to suppress the browser's native paste event,
+      // which would otherwise cause xterm to paste the text a second time.
       if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'v') {
+        e.preventDefault();
         navigator.clipboard.readText().then((text) => {
           if (text) this.terminal.paste(text);
         }).catch(() => {});
+        return false;
+      }
+
+      // Send CSI u sequences for modified Enter so TUI apps (e.g. Claude Code)
+      // can distinguish Ctrl+Enter / Shift+Enter from plain Enter.
+      // xterm.js sends bare \r for all Enter variants, which loses modifier info.
+      // CSI u modifier encoding: 1 + Shift(1) + Alt(2) + Ctrl(4) + Meta(8)
+      if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
+        const modifier = 1 + (e.shiftKey ? 1 : 0) + (e.ctrlKey ? 4 : 0);
+        if (this.backendId) writeToPtySession(this.backendId, `\x1b[13;${modifier}u`);
         return false;
       }
 
@@ -186,6 +209,12 @@ export class TerminalPane {
         const text = this.terminal.getSelection();
         if (text) navigator.clipboard.writeText(text);
       }
+    });
+
+    this.terminal.onScroll(() => {
+      const isAtBottom = this.terminal.buffer.active.viewportY >=
+        this.terminal.buffer.active.baseY;
+      this.scrollBtn.classList.toggle('visible', !isAtBottom);
     });
 
     this.terminal.onTitleChange((title) => {
@@ -335,6 +364,11 @@ export class TerminalPane {
 
   clearScrollback(): void {
     this.terminal.clear();
+  }
+
+  scrollToBottom(): void {
+    this.terminal.scrollToBottom();
+    this.scrollBtn.classList.remove('visible');
   }
 
   async dispose(): Promise<void> {

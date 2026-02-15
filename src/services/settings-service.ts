@@ -1,4 +1,4 @@
-import type { AppSettings } from '../state/types';
+import type { AppSettings, KeybindingConfig } from '../state/types';
 import { defaultShell } from '../utils/platform';
 import { createStoreLazy } from './store-loader';
 
@@ -48,6 +48,25 @@ function migrateFontValue(value: string, presets: string[]): string {
   return match ?? first;
 }
 
+export const DEFAULT_KEYBINDINGS: KeybindingConfig = {
+  navigatePaneLeft: 'Alt+ArrowLeft',
+  navigatePaneRight: 'Alt+ArrowRight',
+  navigatePaneUp: 'Alt+ArrowUp',
+  navigatePaneDown: 'Alt+ArrowDown',
+  splitDown: 'Alt+x',
+  splitUp: 'Alt+s',
+  splitLeft: 'Alt+z',
+  splitRight: 'Alt+c',
+  cycleSessionNext: 'Alt+k',
+  cycleSessionPrev: 'Alt+j',
+  cycleProjectNext: 'Alt+i',
+  cycleProjectPrev: 'Alt+u',
+  toggleGitSidebar: 'Alt+d',
+  closeTerminalTab: 'Alt+l',
+  closeProjectTab: 'Alt+o',
+  scrollToBottom: 'Alt+m',
+};
+
 function defaultSettings(): AppSettings {
   return {
     shellPath: defaultShell(),
@@ -59,26 +78,11 @@ function defaultSettings(): AppSettings {
     scrollbackLines: 10000,
     copyOnSelect: false,
     confirmCloseTerminalTab: true,
+    confirmCloseProjectTab: true,
     debugLogging: false,
     debugLoggingExpiry: null,
     openaiApiKey: '',
-    keybindings: {
-      navigatePaneLeft: 'Alt+ArrowLeft',
-      navigatePaneRight: 'Alt+ArrowRight',
-      navigatePaneUp: 'Alt+ArrowUp',
-      navigatePaneDown: 'Alt+ArrowDown',
-      splitDown: 'Alt+x',
-      splitUp: 'Alt+s',
-      splitLeft: 'Alt+z',
-      splitRight: 'Alt+c',
-      cycleSessionNext: 'Alt+;',
-      cycleSessionPrev: 'Alt+l',
-      cycleProjectNext: 'Alt+o',
-      cycleProjectPrev: 'Alt+i',
-      toggleGitSidebar: 'Alt+d',
-      closeTerminalTab: 'Alt+j',
-      closeProjectTab: 'Alt+u',
-    },
+    keybindings: { ...DEFAULT_KEYBINDINGS },
   };
 }
 

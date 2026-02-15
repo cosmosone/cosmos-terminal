@@ -14,7 +14,7 @@ import { initStatusBar } from './components/status-bar';
 import { initLogViewer } from './components/log-viewer';
 import { initGitSidebar } from './components/git-sidebar';
 import { keybindings, parseKeybinding } from './utils/keybindings';
-import { showConfirmDialog } from './components/confirm-dialog';
+import { showConfirmDialog, confirmCloseProject } from './components/confirm-dialog';
 import { $ } from './utils/dom';
 import { debounce } from './utils/debounce';
 
@@ -121,13 +121,18 @@ async function main(): Promise<void> {
     key: 'w',
     ctrl: true,
     shift: true,
-    handler: () => {
+    handler: async () => {
       const project = getActiveProject();
-      if (project?.activeSessionId && project.sessions.length > 1) {
-        logger.info('session', 'Close session via Ctrl+Shift+W', { sessionId: project.activeSessionId });
-        removeSession(project.id, project.activeSessionId);
+      if (!project?.activeSessionId) return;
+      if (project.sessions.length <= 1) {
+        if (!await confirmCloseProject(project.name)) return;
+        removeProject(project.id);
         refresh();
+        return;
       }
+      logger.info('session', 'Close session via Ctrl+Shift+W', { sessionId: project.activeSessionId });
+      removeSession(project.id, project.activeSessionId);
+      refresh();
     },
   });
 
@@ -190,12 +195,19 @@ async function main(): Promise<void> {
     bind(kb.cycleProjectPrev, () => { cycleProject(-1); refresh(); });
 
     bind(kb.toggleGitSidebar, toggleGitSidebar);
+    bind(kb.scrollToBottom, () => splitContainer.scrollToBottom());
 
     bind(kb.closeTerminalTab, async () => {
       const project = getActiveProject();
-      if (!project?.activeSessionId || project.sessions.length <= 1) return;
-      const currentSettings = store.getState().settings;
-      if (currentSettings.confirmCloseTerminalTab) {
+      if (!project?.activeSessionId) return;
+      if (project.sessions.length <= 1) {
+        if (!await confirmCloseProject(project.name)) return;
+        removeProject(project.id);
+        refresh();
+        return;
+      }
+      const { confirmCloseTerminalTab } = store.getState().settings;
+      if (confirmCloseTerminalTab) {
         const result = await showConfirmDialog({
           title: 'Close Terminal Tab',
           message: `Close "${project.sessions.find(s => s.id === project.activeSessionId)?.title ?? 'terminal'}"?`,
@@ -217,13 +229,7 @@ async function main(): Promise<void> {
     bind(kb.closeProjectTab, async () => {
       const project = getActiveProject();
       if (!project) return;
-      const result = await showConfirmDialog({
-        title: 'Close Project Tab',
-        message: `Close project "${project.name}"? All terminal sessions in this project will be closed.`,
-        confirmText: 'Close',
-        danger: true,
-      });
-      if (!result.confirmed) return;
+      if (!await confirmCloseProject(project.name)) return;
       removeProject(project.id);
       refresh();
     });

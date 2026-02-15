@@ -52,6 +52,7 @@ export interface KeybindingConfig {
   toggleGitSidebar: string;
   closeTerminalTab: string;
   closeProjectTab: string;
+  scrollToBottom: string;
 }
 
 export interface AppSettings {
@@ -66,6 +67,7 @@ export interface AppSettings {
   debugLogging: boolean;
   debugLoggingExpiry: string | null;
   confirmCloseTerminalTab: boolean;
+  confirmCloseProjectTab: boolean;
   keybindings: KeybindingConfig;
   openaiApiKey: string;
 }

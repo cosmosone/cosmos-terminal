@@ -1,5 +1,6 @@
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,8 @@ PACKAGE_JSON = ROOT / "package.json"
 CARGO_TOML = ROOT / "src-tauri" / "Cargo.toml"
 TAURI_CONF = ROOT / "src-tauri" / "tauri.conf.json"
 BUNDLE_DIR = ROOT / "src-tauri" / "target" / "release" / "bundle"
+EXE_SRC = ROOT / "src-tauri" / "target" / "release" / "cosmos-terminal.exe"
+APP_DIR = Path(r"D:\Apps\Cosmos-Terminal")
 
 
 def read_version() -> str:
@@ -117,6 +120,16 @@ def main():
     if bumped:
         commit_and_tag(version)
         create_release(version)
+
+    if EXE_SRC.exists():
+        answer = input(
+            "\033[1;33mCopy exe to app folder? [Y/n] \033[0m"
+        ).strip().lower()
+        if answer in ("", "y", "yes"):
+            APP_DIR.mkdir(parents=True, exist_ok=True)
+            dest = APP_DIR / "cosmos-terminal.exe"
+            shutil.copy2(EXE_SRC, dest)
+            print(f"\033[1;32mCopied to {dest}\033[0m")
 
 
 if __name__ == "__main__":

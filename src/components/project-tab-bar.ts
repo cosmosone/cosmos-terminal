@@ -2,6 +2,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { store } from '../state/store';
 import { addProject, removeProject, setActiveProject, reorderProject, toggleSettingsView, toggleGitSidebar, renameProject } from '../state/actions';
 import { logger } from '../services/logger';
+import { confirmCloseProject } from './confirm-dialog';
 import { showContextMenu, startInlineRename } from './context-menu';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import type { Project } from '../state/types';
@@ -116,8 +117,9 @@ export function initProjectTabBar(onProjectChange: () => void): void {
 
       const close = createElement('span', { className: 'tab-close' });
       close.textContent = '\u00d7';
-      close.addEventListener('click', (e) => {
+      close.addEventListener('click', async (e) => {
         e.stopPropagation();
+        if (!await confirmCloseProject(project.name)) return;
         logger.info('project', 'Remove project', { projectId: project.id, name: project.name });
         removeProject(project.id);
         onProjectChange();

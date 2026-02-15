@@ -1,6 +1,6 @@
 import { store } from '../state/store';
 import { toggleDebugLogging, updateSettings, toggleSettingsView } from '../state/actions';
-import { saveSettings, TERMINAL_FONT_PRESETS, UI_FONT_PRESETS } from '../services/settings-service';
+import { saveSettings, TERMINAL_FONT_PRESETS, UI_FONT_PRESETS, DEFAULT_KEYBINDINGS } from '../services/settings-service';
 import { logger } from '../services/logger';
 import type { AppSettings, KeybindingConfig } from '../state/types';
 import { keybindings } from '../utils/keybindings';
@@ -103,6 +103,10 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       createToggleRow('Confirm Close Terminal Tab', settings.confirmCloseTerminalTab, (v) =>
         apply({ confirmCloseTerminalTab: v })),
     );
+    term.content.appendChild(
+      createToggleRow('Confirm Close Project Tab', settings.confirmCloseProjectTab, (v) =>
+        apply({ confirmCloseProjectTab: v })),
+    );
     inner.appendChild(term.wrapper);
 
     // ── 3. Shell (fundamental but set-and-forget) ──
@@ -137,6 +141,7 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       ['toggleGitSidebar', 'Toggle Git Sidebar'],
       ['closeTerminalTab', 'Close Terminal Tab'],
       ['closeProjectTab', 'Close Project Tab'],
+      ['scrollToBottom', 'Scroll to Bottom'],
     ];
 
     // Build conflict map: combo -> list of labels that use it
@@ -171,6 +176,17 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
         ),
       );
     }
+
+    // Reset keybindings button
+    const resetRow = createElement('div', { className: 'settings-row keybinding-reset-row' });
+    const resetBtn = createElement('button', { className: 'settings-btn' });
+    resetBtn.textContent = 'Reset All Keybindings';
+    resetBtn.addEventListener('click', () => {
+      apply({ keybindings: { ...DEFAULT_KEYBINDINGS } });
+    });
+    resetRow.appendChild(resetBtn);
+    kb.content.appendChild(resetRow);
+
     inner.appendChild(kb.wrapper);
 
     // ── 6. Logging & Debugging (rarely needed) ──

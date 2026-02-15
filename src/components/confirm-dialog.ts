@@ -1,3 +1,6 @@
+import { store } from '../state/store';
+import { updateSettings } from '../state/actions';
+import { saveSettings } from '../services/settings-service';
 import { createElement } from '../utils/dom';
 import { keybindings } from '../utils/keybindings';
 
@@ -106,4 +109,32 @@ export function showConfirmDialog(options: ConfirmOptions): Promise<ConfirmResul
 
     window.addEventListener('keydown', onKeydown, true);
   });
+}
+
+/**
+ * Show a confirmation dialog before closing a project tab, if the setting is enabled.
+ * Handles the "Don't ask again" checkbox by persisting the setting change.
+ * Returns true if the close should proceed, false if cancelled.
+ */
+export async function confirmCloseProject(projectName: string): Promise<boolean> {
+  const { confirmCloseProjectTab } = store.getState().settings;
+  if (!confirmCloseProjectTab) return true;
+
+  const result = await showConfirmDialog({
+    title: 'Close Project Tab',
+    message: `Close project "${projectName}"? All terminal sessions in this project will be closed.`,
+    confirmText: 'Close',
+    showCheckbox: true,
+    checkboxLabel: "Don't ask again",
+    danger: true,
+  });
+
+  if (!result.confirmed) return false;
+
+  if (result.checkboxChecked) {
+    updateSettings({ confirmCloseProjectTab: false });
+    saveSettings(store.getState().settings);
+  }
+
+  return true;
 }

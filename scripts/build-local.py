@@ -1,6 +1,11 @@
 import os
+import shutil
 import subprocess
 import sys
+
+EXE_SRC = os.path.join("src-tauri", "target", "release", "cosmos-terminal.exe")
+APP_DIR = r"D:\Apps\Cosmos-Terminal"
+
 
 def main():
     env = os.environ.copy()
@@ -21,7 +26,21 @@ def main():
     print(f"\033[1;36mRunning: {cmd}\033[0m")
     print("-" * 40)
     result = subprocess.run(cmd, shell=True, env=env)
-    sys.exit(result.returncode)
+
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = os.path.join(project_root, EXE_SRC)
+    if os.path.isfile(src):
+        answer = input(
+            "\033[1;33mCopy exe to app folder? [Y/n] \033[0m"
+        ).strip().lower()
+        if answer in ("", "y", "yes"):
+            os.makedirs(APP_DIR, exist_ok=True)
+            dest = os.path.join(APP_DIR, "cosmos-terminal.exe")
+            shutil.copy2(src, dest)
+            print(f"\033[1;32mCopied to {dest}\033[0m")
 
 if __name__ == "__main__":
     main()
