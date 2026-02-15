@@ -354,6 +354,7 @@ export function defaultGitState(): ProjectGitState {
     commitMessage: '',
     generating: false,
     generatingLabel: '',
+    notification: null,
   };
 }
 

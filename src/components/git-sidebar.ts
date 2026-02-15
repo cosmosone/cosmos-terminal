@@ -23,7 +23,7 @@ import {
 import { generateCommitMessage } from '../services/openai-service';
 import { logger } from '../services/logger';
 import { createElement, clearChildren, $ } from '../utils/dom';
-import type { Project, ProjectGitState, GitFileStatus, GitFileStatusKind, GitStatusResult, GitLogEntry } from '../state/types';
+import type { Project, ProjectGitState, GitFileStatus, GitFileStatusKind, GitStatusResult, GitLogEntry, GitNotificationType } from '../state/types';
 
 const STATUS_LETTERS: Record<GitFileStatusKind, string> = {
   modified: 'M',
@@ -42,6 +42,25 @@ export function initGitSidebar(onLayoutChange: () => void): void {
 
   // Local commit message buffer – avoids store updates (and full re-renders) on every keystroke
   const localCommitMessages = new Map<string, string>();
+
+  // Notification auto-clear timers
+  const notificationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function showNotification(projectId: string, message: string, type: GitNotificationType, durationMs = 5000): void {
+    const existing = notificationTimers.get(projectId);
+    if (existing) clearTimeout(existing);
+
+    updateGitState(projectId, { notification: { message, type } });
+
+    const timer = setTimeout(() => {
+      const current = store.getState().gitStates[projectId];
+      if (current?.notification?.message === message) {
+        updateGitState(projectId, { notification: null });
+      }
+      notificationTimers.delete(projectId);
+    }, durationMs);
+    notificationTimers.set(projectId, timer);
+  }
 
   // --- Left-edge resize handle (sidebar width) ---
   const resizeHandle = createElement('div', { className: 'git-sidebar-resize' });
@@ -266,6 +285,13 @@ export function initGitSidebar(onLayoutChange: () => void): void {
         }
         wrap.appendChild(fileList);
       }
+
+      // Show notification inline (doesn't replace commit area)
+      if (gs.notification) {
+        const notif = createElement('div', { className: `git-sidebar-notification ${gs.notification.type}` });
+        notif.textContent = gs.notification.message;
+        wrap.appendChild(notif);
+      }
     }
 
     return wrap;
@@ -467,9 +493,13 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   async function doCommit(project: Project, push: boolean): Promise<void> {
     const gs = store.getState().gitStates[project.id] || defaultGitState();
     const message = (localCommitMessages.get(project.id) ?? gs.commitMessage).trim();
-    if (!message) return;
 
-    updateGitState(project.id, { loading: true, error: null });
+    if (!message) {
+      showNotification(project.id, 'Please enter a commit message.', 'warning');
+      return;
+    }
+
+    updateGitState(project.id, { loading: true, error: null, notification: null });
     try {
       await gitStageAll(project.path);
       const result = await gitCommit(project.path, message);
@@ -480,7 +510,10 @@ export function initGitSidebar(onLayoutChange: () => void): void {
       if (push) {
         const pushResult = await gitPush(project.path);
         if (!pushResult.success) {
-          updateGitState(project.id, { loading: false, error: `Push failed: ${pushResult.message}` });
+          updateGitState(project.id, { loading: false });
+          showNotification(project.id, `Committed, but push failed: ${pushResult.message}`, 'error', 8000);
+          await refreshProject(project);
+          await fetchLog(project);
           return;
         }
         logger.info('git', 'Push completed', { projectId: project.id });
@@ -489,23 +522,42 @@ export function initGitSidebar(onLayoutChange: () => void): void {
       await refreshProject(project);
       await fetchLog(project);
     } catch (err: any) {
-      updateGitState(project.id, { loading: false, error: err?.message || 'Commit failed' });
+      updateGitState(project.id, { loading: false });
+      showNotification(project.id, err?.message || 'Commit failed', 'error');
     }
   }
 
   async function doPush(project: Project): Promise<void> {
-    updateGitState(project.id, { loading: true, error: null });
+    const gs = store.getState().gitStates[project.id] || defaultGitState();
+
+    // Warn if there are uncommitted changes
+    if (gs.status?.dirty) {
+      showNotification(project.id, 'You have uncommitted changes. Commit first, or use Commit & Push.', 'warning');
+      return;
+    }
+
+    updateGitState(project.id, { loading: true, error: null, notification: null });
     try {
       const pushResult = await gitPush(project.path);
       if (!pushResult.success) {
-        updateGitState(project.id, { loading: false, error: `Push failed: ${pushResult.message}` });
+        updateGitState(project.id, { loading: false });
+        showNotification(project.id, `Push failed: ${pushResult.message}`, 'error');
         return;
       }
-      logger.info('git', 'Push completed', { projectId: project.id });
-      updateGitState(project.id, { loading: false });
+
+      const msg = pushResult.message.toLowerCase();
+      if (msg.includes('up-to-date') || msg.includes('up to date')) {
+        updateGitState(project.id, { loading: false });
+        showNotification(project.id, 'Already up-to-date. Nothing to push.', 'info');
+      } else {
+        logger.info('git', 'Push completed', { projectId: project.id });
+        updateGitState(project.id, { loading: false });
+        showNotification(project.id, 'Pushed successfully.', 'info');
+      }
       await fetchLog(project);
     } catch (err: any) {
-      updateGitState(project.id, { loading: false, error: err?.message || 'Push failed' });
+      updateGitState(project.id, { loading: false });
+      showNotification(project.id, err?.message || 'Push failed', 'error');
     }
   }
 

@@ -2,9 +2,6 @@
   position: absolute;
   background: var(--bg-terminal);
   overflow: hidden;
-  /* contain: content tells the browser this subtree is independent, enabling
-     more aggressive paint/layout optimizations and preventing stray compositing. */
-  contain: content;
 }
 
 /* Overlay dims unfocused panes without opacity on the container,

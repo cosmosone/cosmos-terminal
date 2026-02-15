@@ -468,3 +468,28 @@
 .git-sidebar-loading {
   color: var(--text-secondary);
 }
+
+/* ===== Inline Notifications ===== */
+.git-sidebar-notification {
+  padding: 6px 12px;
+  margin: 4px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  line-height: 1.4;
+  border-left: 3px solid;
+}
+
+.git-sidebar-notification.info {
+  border-left-color: var(--accent);
+  color: var(--text-secondary);
+}
+
+.git-sidebar-notification.warning {
+  border-left-color: var(--warning);
+  color: var(--warning);
+}
+
+.git-sidebar-notification.error {
+  border-left-color: var(--danger);
+  color: var(--danger);
+}

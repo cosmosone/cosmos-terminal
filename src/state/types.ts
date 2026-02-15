@@ -104,6 +104,13 @@ export interface GitLogEntry {
   refsList: string[];
 }
 
+export type GitNotificationType = 'info' | 'warning' | 'error';
+
+export interface GitNotification {
+  message: string;
+  type: GitNotificationType;
+}
+
 export interface ProjectGitState {
   isRepo: boolean | null;
   status: GitStatusResult | null;
@@ -113,6 +120,7 @@ export interface ProjectGitState {
   commitMessage: string;
   generating: boolean;
   generatingLabel: string;
+  notification: GitNotification | null;
 }
 
 export interface GitSidebarState {
