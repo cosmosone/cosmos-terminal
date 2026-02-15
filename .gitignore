@@ -41,3 +41,6 @@ src-tauri/NSIS/
 
 # Claude Code
 .claude/
+
+# Internal dev notes
+docs/gpt-5-nano-api-notes.md

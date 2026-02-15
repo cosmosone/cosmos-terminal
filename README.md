@@ -1,68 +1,132 @@
 # Cosmos Terminal
 
-A high-performance terminal emulator built with [Tauri v2](https://v2.tauri.app/) and [xterm.js](https://xtermjs.org/).
+**A terminal built for coding on Windows.** Project-level workspace organization, split panes, and a built-in Git sidebar — so you can write, navigate, and commit without ever leaving the terminal.
 
-![Cosmos Terminal](app-icon.png)
+Built with [Tauri v2](https://v2.tauri.app/) + Rust. Native on Windows 11, GPU-accelerated, ~8MB installed.
+
+![Cosmos Terminal in action — terminal with integrated Git sidebar showing source control, commit history, and file changes](resources/cosmos-tauri-terminal.png)
+
+---
+
+## The Problem
+
+Developers on Windows don't have many great options. Windows Terminal is fast but it's just a shell — no project awareness, no source control. VS Code has an integrated terminal but you're running an entire IDE just to use a terminal with Git. Tabby and Hyper are Electron-based, cross-platform afterthoughts that don't feel native on Windows.
+
+**Cosmos Terminal fills the gap**: a lightweight, native Windows terminal that understands your coding workflow.
+
+## What Makes It Different
+
+### Project-Level Organization
+
+Most terminals give you a flat list of tabs. That breaks down when you're working across multiple codebases. Cosmos Terminal organizes terminals in two levels — **projects** at the top, **sessions** within each project:
+
+```
+cosmos-api          ← project tab
+  ├── terminal 1    →  dev server
+  ├── terminal 2    →  database
+  └── terminal 3    →  tests
+
+cosmos-frontend     ← project tab
+  ├── terminal 1    →  vite dev
+  └── terminal 2    →  playwright
+```
+
+Switch projects with one click. Each project keeps its own terminals, split layouts, and working directory — all persisted across restarts.
+
+### Built-in Git Sidebar
+
+Stage files, review diffs, write commit messages, and push — right next to your terminal. No context switching to another app. Toggle it with `Ctrl+Shift+G`.
+
+Optionally generate conventional commit messages with AI (OpenAI) for large changesets.
+
+### Built and Tested on Windows 11
+
+This isn't a Linux terminal ported to Windows. Cosmos Terminal is developed and tested on Windows 11 from day one:
+
+- **Native ConPTY** backend for PowerShell, CMD, WSL, and Git Bash
+- **ClearType-optimized** WebGL rendering with DirectWrite LCD text
+- **Native title bar** with Windows 11 dark mode integration
+- **Lightweight** — Tauri v2 with a Rust backend, not Electron
+
+### How It Compares
+
+| | Windows Terminal | Tabby | Hyper | **Cosmos Terminal** |
+|---|:---:|:---:|:---:|:---:|
+| Split panes | Yes | Yes | No | **Yes** |
+| Tabs | Yes | Yes | Yes | **Yes** |
+| **Project-level grouping** | No | No | No | **Yes** |
+| **Sessions per project** | No | No | No | **Yes** |
+| **Built-in Git sidebar** | No | No | No | **Yes** |
+| **AI commit messages** | No | No | No | **Yes** |
+| **Commit history** | No | No | No | **Yes** |
+| Workspace persistence | No | Partial | No | **Yes** |
+| GPU-accelerated | Yes | Yes | No | **Yes** |
+| Native on Windows | Yes | No (Electron) | No (Electron) | **Yes (Tauri)** |
+| Install size | ~30MB | ~200MB | ~150MB | **~8MB** |
+
+---
 
 ## Features
 
-- **Multi-project workspaces** — Organize terminal sessions by project with a tab bar
+- **Multi-project workspaces** — Top-level project tabs, each with its own terminals and layout
+- **Sessions per project** — Tabbed sessions within each project, each with independent split panes
 - **Split panes** — Horizontal and vertical splits with keyboard navigation
-- **Multiple sessions** — Tabbed sessions within each project
-- **Git integration** — Built-in sidebar for staging, diffing, and committing with optional AI-generated commit messages (OpenAI)
-- **Configurable keybindings** — Customizable shortcuts for splits, pane navigation, and session cycling
-- **Settings panel** — Font, theme, cursor style, scrollback, and shell configuration
+- **Git sidebar** — Stage, diff, commit, push, and browse commit history from a collapsible panel
+- **AI commit messages** — Generate conventional commit messages from staged changes (OpenAI, optional)
+- **GPU-accelerated rendering** — WebGL terminal with ClearType optimizations for crisp text
+- **Workspace persistence** — Projects, sessions, splits, and sidebar state restored on restart
+- **Configurable keybindings** — Customize shortcuts for splits, navigation, and session cycling
 - **System monitor** — CPU and memory usage in the status bar
-- **WebGL rendering** — GPU-accelerated terminal rendering via xterm.js addon
-- **Workspace persistence** — Restores your projects, sessions, and layout on restart
-
-## Prerequisites
-
-- [Node.js](https://nodejs.org/) (v18+)
-- [Rust](https://www.rust-lang.org/tools/install) (stable)
-- [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform
+- **Lightweight** — Tauri v2 + Rust backend, ~8MB installed
 
 ## Getting Started
 
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18+)
+- [Rust](https://www.rust-lang.org/tools/install) (stable)
+- [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/)
+
+### Build and Run
+
 ```bash
-# Install frontend dependencies
 npm install
-
-# Run in development mode
 npm run tauri dev
+```
 
-# Build for production
+### Build for Production
+
+```bash
 npm run tauri build
 ```
 
-## Project Structure
+The installer will be in `src-tauri/target/release/bundle/`.
 
-```
-src/                  # Frontend (TypeScript + xterm.js)
-  components/         # UI components (tabs, settings, git sidebar, etc.)
-  services/           # PTY, settings, git, logging services
-  state/              # Centralized state management
-  styles/             # CSS stylesheets
-  utils/              # Keybindings, DOM helpers, utilities
-  layout/             # Pane tree layout logic
-
-src-tauri/            # Backend (Rust + Tauri)
-  src/
-    commands/          # Tauri IPC command handlers
-    pty/               # PTY session management
-```
-
-## Default Keybindings
+## Keybindings
 
 | Action | Shortcut |
 |--------|----------|
 | New session | `Ctrl+Shift+T` |
 | Close session | `Ctrl+Shift+W` |
 | Settings | `Ctrl+,` |
-| Git sidebar | `Ctrl+Shift+G` |
-| Split down/up/left/right | Configurable in settings |
+| Git sidebar | `Ctrl+Shift+G` / `Alt+D` |
+| Split panes | Configurable in settings |
 | Navigate panes | Configurable in settings |
 | Cycle sessions/projects | Configurable in settings |
+
+## Project Structure
+
+```
+src/                  # Frontend (TypeScript + xterm.js)
+  components/         # UI components (tabs, settings, git sidebar)
+  services/           # PTY, settings, git, system monitor
+  state/              # Centralized state management
+  layout/             # Pane tree and split layout logic
+
+src-tauri/            # Backend (Rust + Tauri v2)
+  src/commands/       # Tauri IPC handlers (git, PTY, system)
+  src/pty/            # PTY session management (ConPTY)
+```
 
 ## License
 
