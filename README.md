@@ -2,7 +2,7 @@
 
 **A terminal built for coding on Windows.** Project-level workspace organization, split panes, and a built-in Git sidebar — so you can write, navigate, and commit without ever leaving the terminal.
 
-Built with [Tauri v2](https://v2.tauri.app/) + Rust. Native on Windows 11, GPU-accelerated, ~8MB installed.
+Built with [Tauri v2](https://v2.tauri.app/) + Rust. Developed and tested on Windows 11.
 
 ![Cosmos Terminal in action — terminal with integrated Git sidebar showing source control, commit history, and file changes](resources/cosmos-tauri-terminal.png)
 
@@ -12,7 +12,7 @@ Built with [Tauri v2](https://v2.tauri.app/) + Rust. Native on Windows 11, GPU-a
 
 Developers on Windows don't have many great options. Windows Terminal is fast but it's just a shell — no project awareness, no source control. VS Code has an integrated terminal but you're running an entire IDE just to use a terminal with Git. Tabby and Hyper are Electron-based, cross-platform afterthoughts that don't feel native on Windows.
 
-**Cosmos Terminal fills the gap**: a lightweight, native Windows terminal that understands your coding workflow.
+**Cosmos Terminal fills the gap**: a lightweight Windows terminal that understands your coding workflow.
 
 ## What Makes It Different
 
@@ -43,10 +43,10 @@ Optionally generate conventional commit messages with AI (OpenAI) for large chan
 
 This isn't a Linux terminal ported to Windows. Cosmos Terminal is developed and tested on Windows 11 from day one:
 
-- **Native ConPTY** backend for PowerShell, CMD, WSL, and Git Bash
-- **ClearType-optimized** WebGL rendering with DirectWrite LCD text
-- **Native title bar** with Windows 11 dark mode integration
-- **Lightweight** — Tauri v2 with a Rust backend, not Electron
+- **ConPTY** backend — works with PowerShell, CMD, Git Bash, and other Windows shells
+- **WebGL rendering** with ClearType LCD text optimizations
+- **Windows 11 dark mode** title bar integration
+- **Tauri v2 + Rust** backend — uses the system WebView2 already on Windows 11, no bundled browser
 
 ### How It Compares
 
@@ -60,9 +60,8 @@ This isn't a Linux terminal ported to Windows. Cosmos Terminal is developed and 
 | **AI commit messages** | No | No | No | **Yes** |
 | **Commit history** | No | No | No | **Yes** |
 | Workspace persistence | No | Partial | No | **Yes** |
-| GPU-accelerated | Yes | Yes | No | **Yes** |
-| Native on Windows | Yes | No (Electron) | No (Electron) | **Yes (Tauri)** |
-| Install size | ~30MB | ~200MB | ~150MB | **~8MB** |
+| Rendering | DirectX | WebGL (Electron) | DOM (Electron) | **WebGL (WebView2)** |
+| Runtime | Native C++ | Electron (~200MB) | Electron (~150MB) | **Tauri + Rust** |
 
 ---
 
@@ -73,11 +72,11 @@ This isn't a Linux terminal ported to Windows. Cosmos Terminal is developed and 
 - **Split panes** — Horizontal and vertical splits with keyboard navigation
 - **Git sidebar** — Stage, diff, commit, push, and browse commit history from a collapsible panel
 - **AI commit messages** — Generate conventional commit messages from staged changes (OpenAI, optional)
-- **GPU-accelerated rendering** — WebGL terminal with ClearType optimizations for crisp text
+- **WebGL rendering** — GPU-accelerated terminal via xterm.js WebGL addon with ClearType optimizations
 - **Workspace persistence** — Projects, sessions, splits, and sidebar state restored on restart
 - **Configurable keybindings** — Customize shortcuts for splits, navigation, and session cycling
 - **System monitor** — CPU and memory usage in the status bar
-- **Lightweight** — Tauri v2 + Rust backend, ~8MB installed
+- **Lightweight** — Tauri v2 + Rust backend, small install footprint
 
 ## Getting Started
 
