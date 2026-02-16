@@ -87,23 +87,12 @@
 }
 
 .project-tab .tab-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: 14px;
   height: 14px;
-  border-radius: 3px;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
 }
 
 .project-tab:hover .tab-close {
   opacity: 0.6;
-}
-
-.project-tab .tab-close:hover {
-  opacity: 1;
-  background: var(--bg-hover);
 }
 
 .project-tab-add {

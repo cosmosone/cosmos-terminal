@@ -1,0 +1,31 @@
+/* Shared tab styles used by both project-tabs and session-tabs. */
+
+/* Activity indicator dot — pulsing accent circle */
+.tab-activity {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: tab-activity-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes tab-activity-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Close button base — hidden until parent tab is hovered */
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.tab-close:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}

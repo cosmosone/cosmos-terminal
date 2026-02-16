@@ -62,7 +62,7 @@ class Logger {
   }
 
   log(level: LogLevel, category: LogCategory, message: string, data?: unknown): void {
-    if (!this._enabled) return;
+    if (!this._enabled && level !== 'WARN' && level !== 'ERROR') return;
 
     const entry: LogEntry = {
       timestamp: Date.now(),

@@ -115,6 +115,13 @@ export function initProjectTabBar(onProjectChange: () => void): void {
       tabLabel.textContent = project.name;
       tab.appendChild(tabLabel);
 
+      const hasBackgroundActivity = project.sessions.some(
+        s => s.hasActivity && s.id !== project.activeSessionId,
+      );
+      if (hasBackgroundActivity) {
+        tab.appendChild(createElement('span', { className: 'tab-activity' }));
+      }
+
       const close = createElement('span', { className: 'tab-close' });
       close.textContent = '\u00d7';
       close.addEventListener('click', async (e) => {
@@ -207,8 +214,11 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     bar.appendChild(actions);
   }
 
-  // Use two targeted selectors instead of subscribe() to avoid re-rendering
+  // Two targeted selectors instead of subscribe() to avoid re-rendering
   // on unrelated state changes (e.g. pane resize, settings, view toggle).
+  // Note: these use reference equality, so a combined object selector would
+  // defeat deduplication. A rare double render on simultaneous changes is
+  // acceptable for correctness.
   let lastProjects = store.getState().projects;
   let lastActiveId = store.getState().activeProjectId;
 

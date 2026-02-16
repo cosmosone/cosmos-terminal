@@ -72,6 +72,29 @@ function csiModifier(e: KeyboardEvent): number {
     + (e.metaKey ? 8 : 0);
 }
 
+/** Decode a Uint8Array as latin-1 (one char per byte) for regex matching. */
+function toLatin1(data: Uint8Array): string {
+  let text = '';
+  for (let i = 0; i < data.length; i++) text += String.fromCharCode(data[i]);
+  return text;
+}
+
+/** Remove byte ranges from a Uint8Array, returning a new array without those regions. */
+function stripRanges(data: Uint8Array, ranges: [number, number][]): Uint8Array {
+  let strippedLen = data.length;
+  for (const [start, end] of ranges) strippedLen -= end - start;
+  const result = new Uint8Array(strippedLen);
+  let pos = 0;
+  let dest = 0;
+  for (const [start, end] of ranges) {
+    result.set(data.subarray(pos, start), dest);
+    dest += start - pos;
+    pos = end;
+  }
+  result.set(data.subarray(pos), dest);
+  return result;
+}
+
 function extractCwdFromTitle(title: string): string | null {
   let cleaned = title.trim();
 
@@ -122,6 +145,20 @@ export class TerminalPane {
   private outputRafId = 0;
   private scrollBtn: HTMLElement;
 
+  // Activity detection — fire onActivity at most once per rolling window
+  // when cumulative output exceeds a byte threshold (filters idle TUI noise).
+  private activityBytes = 0;
+  private activityWindowStart = 0;
+  private activityFiredThisWindow = false;
+  private static readonly ACTIVITY_BYTE_THRESHOLD = 512;
+  private static readonly ACTIVITY_WINDOW_MS = 1_000;
+
+  // OSC-based busy/idle detection (primary signal when available)
+  private oscBusy = false;
+  private hasOscSupport = false;
+  private onOscBusy?: (paneId: string) => void;
+  private onOscIdle?: (paneId: string) => void;
+
   constructor(
     paneId: string,
     projectId: string,
@@ -130,6 +167,8 @@ export class TerminalPane {
       onProcessExit?: () => void;
       onCwdChange?: (cwd: string) => void;
       onActivity?: () => void;
+      onOscBusy?: (paneId: string) => void;
+      onOscIdle?: (paneId: string) => void;
     },
   ) {
     this.paneId = paneId;
@@ -137,9 +176,11 @@ export class TerminalPane {
     this.onProcessExit = callbacks?.onProcessExit;
     this.onCwdChange = callbacks?.onCwdChange;
     this.onActivity = callbacks?.onActivity;
+    this.onOscBusy = callbacks?.onOscBusy;
+    this.onOscIdle = callbacks?.onOscIdle;
     this.lastReportedCwd = projectPath;
 
-    logger.debug('pty', 'TerminalPane created', { paneId, projectId, projectPath });
+    logger.info('pty', 'TerminalPane created', { paneId, projectId, projectPath });
 
     const settings = store.getState().settings;
 
@@ -180,17 +221,32 @@ export class TerminalPane {
         });
       }
     });
+
+    logger.debug('pty', 'Terminal instance configured', {
+      paneId,
+      fontSize: settings.fontSize,
+      scrollback: settings.scrollbackLines,
+    });
   }
 
   async mount(): Promise<void> {
-    logger.debug('pty', 'Mounting terminal pane', { paneId: this.paneId });
+    logger.info('pty', 'Mounting terminal pane', { paneId: this.paneId });
     this.terminal.open(this.element);
     this.element.appendChild(this.scrollBtn);
 
     // Let global keybindings pass through instead of being consumed by xterm
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== 'keydown') return true;
-      if (keybindings.matchesBinding(e)) return false;
+      if (keybindings.matchesBinding(e)) {
+        logger.debug('pty', 'Key intercepted by global binding', {
+          paneId: this.paneId,
+          key: e.key,
+          ctrl: e.ctrlKey,
+          shift: e.shiftKey,
+          alt: e.altKey,
+        });
+        return false;
+      }
 
       // Explicit Ctrl+V paste — Tauri webview may not fire browser paste events
       // reliably for TUI applications (e.g. Claude Code).
@@ -199,26 +255,62 @@ export class TerminalPane {
       if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'v') {
         e.preventDefault();
         navigator.clipboard.readText().then((text) => {
-          if (text) this.terminal.paste(text);
-        }).catch(() => {});
+          if (text) {
+            logger.debug('pty', 'Clipboard paste', { paneId: this.paneId, length: text.length });
+            this.terminal.paste(text);
+          }
+        }).catch((err) => {
+          logger.warn('pty', 'Clipboard read failed', { paneId: this.paneId, error: String(err) });
+        });
         return false;
       }
 
-      // CSI u encoding for functional keys (Kitty keyboard protocol).
-      // When the protocol is active, encode Enter/Tab/Backspace/Escape as
-      // CSI u so the child app receives full key identity and modifiers.
-      // When inactive, only encode modified Enter (Ctrl/Shift+Enter).
+      // Modified Enter handling (Ctrl+Enter / Shift+Enter).
+      //
+      // When the Kitty keyboard protocol is active, encode all functional
+      // keys (Enter, Tab, Backspace, Escape) as CSI u so the child app
+      // receives full key identity and modifiers.
+      //
+      // When inactive (legacy mode), send a plain line-feed (\n, 0x0A)
+      // for Ctrl+Enter and Shift+Enter.  Most TUI apps (e.g. Claude Code)
+      // treat \n as "insert newline" vs \r as "submit".  CSI u sequences
+      // are NOT understood by apps that haven't negotiated Kitty protocol.
+      if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
+        const usingKitty = !!(this.kittyFlags & 1);
+        logger.info('pty', 'Modified Enter intercepted', {
+          paneId: this.paneId,
+          ctrl: e.ctrlKey,
+          shift: e.shiftKey,
+          kittyFlags: this.kittyFlags,
+          path: usingKitty ? 'kitty-csiu' : 'legacy-lf',
+        });
+      }
       if (this.kittyFlags & 1) {
         const code = FUNCTIONAL_KEY_CODES[e.key];
         if (code !== undefined) {
           const mod = csiModifier(e);
           const seq = mod > 1 ? `\x1b[${code};${mod}u` : `\x1b[${code}u`;
-          if (this.backendId) writeToPtySession(this.backendId, seq);
+          if (this.backendId) {
+            writeToPtySession(this.backendId, seq);
+          } else {
+            logger.warn('pty', 'Kitty CSI u key dropped — no backend', {
+              paneId: this.paneId,
+              key: e.key,
+              seq,
+            });
+          }
           return false;
         }
       } else if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
-        const mod = csiModifier(e);
-        if (this.backendId) writeToPtySession(this.backendId, `\x1b[13;${mod}u`);
+        // Legacy mode: send \n (line feed) which TUI apps recognise as
+        // "insert newline" without needing any keyboard protocol extension.
+        if (this.backendId) {
+          writeToPtySession(this.backendId, '\n');
+        } else {
+          logger.warn('pty', 'Legacy modified Enter dropped — no backend', {
+            paneId: this.paneId,
+          });
+        }
         return false;
       }
 
@@ -232,12 +324,20 @@ export class TerminalPane {
     this.resizeObserver.observe(this.element);
 
     await new Promise((r) => requestAnimationFrame(r));
-    if (this.disposed) return;
+    if (this.disposed) {
+      logger.warn('pty', 'Terminal disposed before first fit', { paneId: this.paneId });
+      return;
+    }
     this.fit();
 
     this.terminal.onData((data) => {
       if (this.backendId) {
         writeToPtySession(this.backendId, data);
+      } else {
+        logger.warn('pty', 'Terminal data dropped — no backend', {
+          paneId: this.paneId,
+          length: data.length,
+        });
       }
     });
 
@@ -252,7 +352,14 @@ export class TerminalPane {
     this.terminal.onSelectionChange(() => {
       if (store.getState().settings.copyOnSelect) {
         const text = this.terminal.getSelection();
-        if (text) navigator.clipboard.writeText(text);
+        if (text) {
+          navigator.clipboard.writeText(text).catch((err) => {
+            logger.warn('pty', 'Copy-on-select clipboard write failed', {
+              paneId: this.paneId,
+              error: String(err),
+            });
+          });
+        }
       }
     });
 
@@ -265,6 +372,11 @@ export class TerminalPane {
     this.terminal.onTitleChange((title) => {
       const cwd = extractCwdFromTitle(title);
       if (cwd && cwd.toLowerCase() !== this.lastReportedCwd.toLowerCase()) {
+        logger.debug('pty', 'Working directory changed', {
+          paneId: this.paneId,
+          from: this.lastReportedCwd,
+          to: cwd,
+        });
         this.lastReportedCwd = cwd;
         this.onCwdChange?.(cwd);
       }
@@ -272,41 +384,74 @@ export class TerminalPane {
 
     const settings = store.getState().settings;
     const dims = this.fitAddon.proposeDimensions();
-    const info = await createPtySession(
-      {
-        projectPath: this.projectPath,
-        shellPath: settings.shellPath,
-        rows: dims?.rows ?? 24,
-        cols: dims?.cols ?? 80,
-      },
-      (data) => {
-        if (!this.disposed) {
-          this.pendingOutput.push(data);
-          if (!this.outputRafId) {
-            this.outputRafId = requestAnimationFrame(() => this.flushOutput());
+    logger.info('pty', 'Creating PTY session', {
+      paneId: this.paneId,
+      projectPath: this.projectPath,
+      shell: settings.shellPath ?? '(default)',
+      rows: dims?.rows ?? 24,
+      cols: dims?.cols ?? 80,
+    });
+
+    let info;
+    try {
+      info = await createPtySession(
+        {
+          projectPath: this.projectPath,
+          shellPath: settings.shellPath,
+          rows: dims?.rows ?? 24,
+          cols: dims?.cols ?? 80,
+        },
+        (data) => {
+          if (!this.disposed) {
+            this.pendingOutput.push(data);
+            if (!this.outputRafId) {
+              this.outputRafId = requestAnimationFrame(() => this.flushOutput());
+            }
+            this.trackActivity(data.length);
           }
-          this.onActivity?.();
-        }
-      },
-      () => {
-        if (!this.disposed) {
-          logger.info('pty', 'Process exited', { paneId: this.paneId });
-          this.onProcessExit?.();
-        }
-      },
-    );
+        },
+        () => {
+          if (!this.disposed) {
+            logger.warn('pty', 'Shell process exited', {
+              paneId: this.paneId,
+              backendId: this.backendId,
+            });
+            this.onProcessExit?.();
+          }
+        },
+      );
+    } catch (err) {
+      logger.error('pty', 'Failed to create PTY session', {
+        paneId: this.paneId,
+        projectPath: this.projectPath,
+        shell: settings.shellPath ?? '(default)',
+        error: String(err),
+      });
+      return;
+    }
 
     if (this.disposed) {
-      logger.warn('pty', 'Terminal disposed during mount, killing orphaned PTY', { paneId: this.paneId, backendId: info.id });
+      logger.warn('pty', 'Terminal disposed during mount, killing orphaned PTY', {
+        paneId: this.paneId,
+        backendId: info.id,
+      });
       await killPtySession(info.id).catch(() => {});
       return;
     }
 
     this.backendId = info.id;
-    logger.info('pty', 'PTY session created', { paneId: this.paneId, backendId: info.id, pid: info.pid });
+    logger.info('pty', 'PTY session created', {
+      paneId: this.paneId,
+      backendId: info.id,
+      pid: info.pid,
+    });
 
     const initialCmd = consumeInitialCommand(this.paneId);
     if (initialCmd) {
+      logger.info('pty', 'Sending initial command', {
+        paneId: this.paneId,
+        command: initialCmd,
+      });
       writeToPtySession(this.backendId, initialCmd + '\r');
     }
   }
@@ -320,10 +465,33 @@ export class TerminalPane {
         this.webglAddon = null;
       });
       this.terminal.loadAddon(this.webglAddon);
-      logger.debug('pty', 'WebGL addon loaded', { paneId: this.paneId });
-    } catch {
-      logger.debug('pty', 'WebGL not available, using canvas renderer', { paneId: this.paneId });
+      logger.info('pty', 'WebGL renderer loaded', { paneId: this.paneId });
+    } catch (err) {
+      logger.warn('pty', 'WebGL not available, using canvas renderer', {
+        paneId: this.paneId,
+        error: String(err),
+      });
       this.webglAddon = null;
+    }
+  }
+
+  /**
+   * Accumulate PTY output bytes and fire onActivity at most once per rolling
+   * window when cumulative volume exceeds ACTIVITY_BYTE_THRESHOLD.
+   * This filters out small idle TUI updates (cursor blinks, status bar
+   * refreshes) that don't represent real work.
+   */
+  private trackActivity(bytes: number): void {
+    const now = Date.now();
+    if (now - this.activityWindowStart > TerminalPane.ACTIVITY_WINDOW_MS) {
+      this.activityBytes = 0;
+      this.activityWindowStart = now;
+      this.activityFiredThisWindow = false;
+    }
+    this.activityBytes += bytes;
+    if (!this.activityFiredThisWindow && this.activityBytes >= TerminalPane.ACTIVITY_BYTE_THRESHOLD) {
+      this.activityFiredThisWindow = true;
+      this.onActivity?.();
     }
   }
 
@@ -338,10 +506,7 @@ export class TerminalPane {
     // Fast path: skip if no ESC byte present
     if (!data.includes(0x1b)) return data;
 
-    // Build a latin-1 string so we can regex-match byte values directly
-    let text = '';
-    for (let i = 0; i < data.length; i++) text += String.fromCharCode(data[i]);
-
+    const text = toLatin1(data);
     const re = /\x1b\[([?><])(\d*)(u)/g;
     let match: RegExpExecArray | null;
     const ranges: [number, number][] = [];
@@ -351,18 +516,39 @@ export class TerminalPane {
       const num = match[2] ? parseInt(match[2], 10) : 0;
 
       if (marker === '?') {
+        logger.info('pty', 'Kitty protocol QUERY from child app', {
+          paneId: this.paneId,
+          respondingWith: this.kittyFlags,
+          stack: JSON.stringify(this.kittyModeStack),
+        });
         if (this.backendId) {
           writeToPtySession(this.backendId, `\x1b[?${this.kittyFlags}u`);
+        } else {
+          logger.warn('pty', 'Kitty QUERY response dropped — no backend', { paneId: this.paneId });
         }
       } else if (marker === '>') {
         this.kittyModeStack.push(num);
+        logger.info('pty', 'Kitty protocol PUSH — child app enabled keyboard protocol', {
+          paneId: this.paneId,
+          pushedFlags: num,
+          newStack: JSON.stringify(this.kittyModeStack),
+          activeFlags: this.kittyFlags,
+        });
       } else if (marker === '<') {
+        const stackBefore = JSON.stringify(this.kittyModeStack);
         // Pop N entries (default 1 when no digit given, 0 = pop all)
         const count = match[2] ? num : 1;
         const toPop = count === 0
           ? this.kittyModeStack.length
           : Math.min(count, this.kittyModeStack.length);
         if (toPop > 0) this.kittyModeStack.splice(-toPop);
+        logger.info('pty', 'Kitty protocol POP — child app released keyboard protocol', {
+          paneId: this.paneId,
+          popCount: toPop,
+          stackBefore,
+          newStack: JSON.stringify(this.kittyModeStack),
+          activeFlags: this.kittyFlags,
+        });
       }
 
       ranges.push([match.index, match.index + match[0].length]);
@@ -370,25 +556,114 @@ export class TerminalPane {
 
     if (ranges.length === 0) return data;
 
-    // Strip matched sequences — pre-allocate based on exact remaining size
-    let strippedLen = data.length;
-    for (const [start, end] of ranges) strippedLen -= end - start;
-    const result = new Uint8Array(strippedLen);
-    let pos = 0;
-    let dest = 0;
-    for (const [start, end] of ranges) {
-      result.set(data.subarray(pos, start), dest);
-      dest += start - pos;
-      pos = end;
-    }
-    result.set(data.subarray(pos), dest);
+    logger.debug('pty', 'Stripped Kitty protocol sequences from PTY output', {
+      paneId: this.paneId,
+      sequenceCount: ranges.length,
+      bytesStripped: ranges.reduce((sum, [s, e]) => sum + (e - s), 0),
+    });
 
-    return result;
+    return stripRanges(data, ranges);
+  }
+
+  /** Mark OSC support detected on first occurrence. */
+  private markOscDetected(source: string): void {
+    if (this.hasOscSupport) return;
+    this.hasOscSupport = true;
+    logger.info('pty', `${source} detected`, { paneId: this.paneId });
+  }
+
+  /** Transition to OSC busy state if not already busy. */
+  private setOscBusy(reason: string): void {
+    if (this.oscBusy) return;
+    this.oscBusy = true;
+    logger.debug('pty', reason, { paneId: this.paneId });
+    this.onOscBusy?.(this.paneId);
+  }
+
+  /** Transition to OSC idle state if currently busy. */
+  private setOscIdle(reason: string): void {
+    if (!this.oscBusy) return;
+    this.oscBusy = false;
+    logger.debug('pty', reason, { paneId: this.paneId });
+    this.onOscIdle?.(this.paneId);
+  }
+
+  /**
+   * Intercept OSC 133 (shell integration) sequences in PTY output.
+   * These mark prompt/command boundaries:
+   *   133;A → prompt start (command finished, back at prompt)
+   *   133;B → prompt end / command input start
+   *   133;C → command started executing
+   *   133;D → command finished (often followed by 133;A)
+   * Does NOT strip sequences -- xterm.js can use them for shell integration.
+   */
+  private interceptOsc133(data: Uint8Array): void {
+    // Fast path: skip if no ESC byte present
+    if (!data.includes(0x1b)) return;
+
+    const text = toLatin1(data);
+    // Match OSC 133;X where X is A/B/C/D, terminated by ST (\x1b\\) or BEL (\x07)
+    const re = /\x1b\]133;([ABCD])[^\x07\x1b]*(?:\x07|\x1b\\)/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = re.exec(text)) !== null) {
+      const marker = match[1];
+      this.markOscDetected('OSC 133 shell integration');
+
+      if (marker === 'C') {
+        this.setOscBusy('OSC 133;C — command started');
+      } else if (marker === 'D' || marker === 'A') {
+        this.setOscIdle(`OSC 133;${marker} — command finished`);
+      }
+    }
+  }
+
+  /**
+   * Intercept OSC 9;4 (ConEmu/Windows Terminal progress indicator) sequences.
+   * Format: ESC ]9;4;state;value ST
+   *   state 0 → hidden (done)
+   *   state 1 → default (busy)
+   *   state 2 → error
+   *   state 3 → indeterminate (busy)
+   *   state 4 → paused
+   * Strips matched sequences from the data (xterm.js doesn't handle these).
+   */
+  private interceptOsc9_4(data: Uint8Array): Uint8Array {
+    // Fast path: skip if no ESC byte present
+    if (!data.includes(0x1b)) return data;
+
+    const text = toLatin1(data);
+    const re = /\x1b\]9;4;(\d+);[^\x07\x1b]*(?:\x07|\x1b\\)/g;
+    let match: RegExpExecArray | null;
+    const ranges: [number, number][] = [];
+
+    while ((match = re.exec(text)) !== null) {
+      const state = parseInt(match[1], 10);
+      this.markOscDetected('OSC 9;4 progress indicator');
+
+      if (state === 0) {
+        this.setOscIdle('OSC 9;4;0 — progress done');
+      } else if (state >= 1 && state <= 4) {
+        this.setOscBusy(`OSC 9;4;${state} — progress active`);
+      }
+
+      ranges.push([match.index, match.index + match[0].length]);
+    }
+
+    if (ranges.length === 0) return data;
+
+    return stripRanges(data, ranges);
   }
 
   private flushOutput(): void {
     this.outputRafId = 0;
     if (this.disposed || this.pendingOutput.length === 0) return;
+
+    // Detect whether the viewport is at the bottom before writing.
+    // xterm.js's built-in auto-scroll can desync during large batch writes
+    // (ydisp falls behind ybase), so we re-sync explicitly in the callback.
+    const buf = this.terminal.buffer.active;
+    const wasAtBottom = buf.viewportY >= buf.baseY;
 
     let data: Uint8Array;
     if (this.pendingOutput.length === 1) {
@@ -406,10 +681,18 @@ export class TerminalPane {
     }
     this.pendingOutput = [];
 
+    // Intercept OSC sequences for busy/idle detection
+    this.interceptOsc133(data);          // read-only (does not strip)
+    data = this.interceptOsc9_4(data);   // strips OSC 9;4 sequences
+
     // Handle Kitty keyboard protocol negotiation before xterm sees the data
     data = this.interceptKittyProtocol(data);
     if (data.length > 0) {
-      this.terminal.write(data);
+      this.terminal.write(data, () => {
+        if (!this.disposed && wasAtBottom) {
+          this.terminal.scrollToBottom();
+        }
+      });
     }
   }
 
@@ -440,16 +723,31 @@ export class TerminalPane {
           }
         }
       }
-    } catch {
-      // Fit can throw if element not visible
+    } catch (err) {
+      logger.warn('pty', 'Fit failed (element may not be visible)', {
+        paneId: this.paneId,
+        error: String(err),
+      });
     }
   }
 
   private sendResize(): void {
     if (this.disposed || !this.backendId) return;
     this.lastResizeTime = Date.now();
-    resizePtySession(this.backendId, this.lastSentRows, this.lastSentCols).catch(() => {});
-    logger.debug('pty', 'Terminal fit', { paneId: this.paneId, rows: this.lastSentRows, cols: this.lastSentCols });
+    resizePtySession(this.backendId, this.lastSentRows, this.lastSentCols).catch((err) => {
+      logger.error('pty', 'PTY resize IPC failed', {
+        paneId: this.paneId,
+        backendId: this.backendId,
+        rows: this.lastSentRows,
+        cols: this.lastSentCols,
+        error: String(err),
+      });
+    });
+    logger.debug('pty', 'Terminal resized', {
+      paneId: this.paneId,
+      rows: this.lastSentRows,
+      cols: this.lastSentCols,
+    });
   }
 
   focus(): void {
@@ -462,7 +760,12 @@ export class TerminalPane {
   }
 
   applySettings(settings: AppSettings): void {
-    logger.debug('pty', 'Applying settings to terminal', { paneId: this.paneId, fontSize: settings.fontSize });
+    logger.info('pty', 'Applying settings to terminal', {
+      paneId: this.paneId,
+      fontSize: settings.fontSize,
+      lineHeight: settings.lineHeight,
+      scrollback: settings.scrollbackLines,
+    });
 
     Object.assign(this.terminal.options, XTERM_RENDERING_OPTIONS);
     this.terminal.options.fontSize = settings.fontSize;
@@ -479,6 +782,7 @@ export class TerminalPane {
   }
 
   clearScrollback(): void {
+    logger.debug('pty', 'Clearing scrollback', { paneId: this.paneId });
     this.terminal.clear();
   }
 
@@ -494,12 +798,25 @@ export class TerminalPane {
     if (this.resizeRafId) cancelAnimationFrame(this.resizeRafId);
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
     this.pendingOutput = [];
-    logger.info('pty', 'Disposing terminal pane', { paneId: this.paneId, backendId: this.backendId });
+    // Clean up OSC busy state so tracking Sets stay consistent
+    this.setOscIdle('Pane disposed while busy');
+    logger.info('pty', 'Disposing terminal pane', {
+      paneId: this.paneId,
+      backendId: this.backendId,
+      kittyStack: JSON.stringify(this.kittyModeStack),
+    });
     this.resizeObserver.disconnect();
     if (this.backendId) {
-      await killPtySession(this.backendId).catch(() => {});
+      await killPtySession(this.backendId).catch((err) => {
+        logger.error('pty', 'Failed to kill PTY session during dispose', {
+          paneId: this.paneId,
+          backendId: this.backendId,
+          error: String(err),
+        });
+      });
     }
     this.webglAddon?.dispose();
     this.terminal.dispose();
+    logger.debug('pty', 'Terminal pane disposed', { paneId: this.paneId });
   }
 }

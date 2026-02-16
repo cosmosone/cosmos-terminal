@@ -33,6 +33,15 @@ cosmos-frontend     ← project tab
 
 Switch projects with one click. Each project keeps its own terminals, split layouts, and working directory — all persisted across restarts.
 
+### Tab Activity Indicators
+
+When a background terminal has a running command, a pulsing blue dot appears on its session tab and project tab — so you always know where work is happening without switching tabs to check.
+
+- Detects activity via **OSC 133 shell integration** (precise command start/finish signals) with automatic fallback to **output volume heuristics** for shells without OSC support
+- Dots only appear on **background tabs** — never on the tab you're already looking at
+- Auto-clears when the command finishes (OSC) or output stops for 5 seconds (fallback)
+- Suppresses false positives from terminal resize/repaint bursts after tab switches
+
 ### Built-in Git Sidebar
 
 Stage files, review diffs, write commit messages, and push — right next to your terminal. No context switching to another app. Toggle it with `Ctrl+Shift+G`.
@@ -48,21 +57,6 @@ This isn't a Linux terminal ported to Windows. Cosmos Terminal is developed and 
 - **Windows 11 dark mode** title bar integration
 - **Tauri v2 + Rust** backend — uses the system WebView2 already on Windows 11, no bundled browser
 
-### How It Compares
-
-| | Windows Terminal | Tabby | Hyper | **Cosmos Terminal** |
-|---|:---:|:---:|:---:|:---:|
-| Split panes | Yes | Yes | No | **Yes** |
-| Tabs | Yes | Yes | Yes | **Yes** |
-| **Project-level grouping** | No | No | No | **Yes** |
-| **Sessions per project** | No | No | No | **Yes** |
-| **Built-in Git sidebar** | No | No | No | **Yes** |
-| **AI commit messages** | No | No | No | **Yes** |
-| **Commit history** | No | No | No | **Yes** |
-| Workspace persistence | No | Partial | No | **Yes** |
-| Rendering | DirectX | WebGL (Electron) | DOM (Electron) | **WebGL (WebView2)** |
-| Runtime | Native C++ | Electron (~200MB) | Electron (~150MB) | **Tauri + Rust** |
-
 ---
 
 ## Features
@@ -70,6 +64,7 @@ This isn't a Linux terminal ported to Windows. Cosmos Terminal is developed and 
 - **Multi-project workspaces** — Top-level project tabs, each with its own terminals and layout
 - **Sessions per project** — Tabbed sessions within each project, each with independent split panes
 - **Split panes** — Horizontal and vertical splits with keyboard navigation
+- **Activity indicators** — Pulsing blue dots on project and session tabs when background terminals have running commands or output, powered by OSC 133 shell integration with volume-based fallback
 - **Git sidebar** — Stage, diff, commit, push, and browse commit history from a collapsible panel
 - **AI commit messages** — Generate conventional commit messages from staged changes (OpenAI, optional)
 - **WebGL rendering** — GPU-accelerated terminal via xterm.js WebGL addon with ClearType optimizations

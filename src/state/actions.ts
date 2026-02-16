@@ -37,6 +37,20 @@ export function addProject(name: string, path: string): Project {
 
 export function removeProject(projectId: string): void {
   logger.info('project', 'removeProject', { projectId });
+
+  // Clean up activity timers and OSC tracking for all sessions in this project
+  const project = store.getState().projects.find((p) => p.id === projectId);
+  if (project) {
+    for (const session of project.sessions) {
+      const key = sessionKey(projectId, session.id);
+      clearActivityTimer(key);
+      sessionActivatedAt.delete(key);
+      for (const paneId of findLeafPaneIds(session.paneTree)) {
+        cleanupOscPanes(paneId);
+      }
+    }
+  }
+
   store.setState((s) => {
     const projects = s.projects.filter((p) => p.id !== projectId);
     let activeProjectId = s.activeProjectId;
@@ -48,6 +62,12 @@ export function removeProject(projectId: string): void {
 }
 
 export function setActiveProject(projectId: string): void {
+  // Record activation timestamp for the project's active session so the
+  // resize/repaint burst from showing its terminal is suppressed.
+  const project = store.getState().projects.find((p) => p.id === projectId);
+  if (project?.activeSessionId) {
+    sessionActivatedAt.set(sessionKey(projectId, project.activeSessionId), Date.now());
+  }
   store.setState((s) => ({ ...s, activeProjectId: projectId }));
 }
 
@@ -99,6 +119,18 @@ export function addSession(projectId: string, opts?: { title?: string }): Sessio
 
 export function removeSession(projectId: string, sessionId: string): void {
   logger.info('session', 'removeSession', { projectId, sessionId });
+
+  // Clean up OSC tracking and timers for all panes in this session
+  const session = findSession(projectId, sessionId);
+  if (session) {
+    for (const paneId of findLeafPaneIds(session.paneTree)) {
+      cleanupOscPanes(paneId);
+    }
+  }
+  const key = sessionKey(projectId, sessionId);
+  clearActivityTimer(key);
+  sessionActivatedAt.delete(key);
+
   updateProject(projectId, (p) => {
     const sessions = p.sessions.filter((s) => s.id !== sessionId);
     let activeSessionId = p.activeSessionId;
@@ -110,23 +142,123 @@ export function removeSession(projectId: string, sessionId: string): void {
 }
 
 export function setActiveSession(projectId: string, sessionId: string): void {
+  // Record activation timestamp so we can suppress false-positive activity
+  // from the resize/repaint burst that follows a tab switch.
+  sessionActivatedAt.set(sessionKey(projectId, sessionId), Date.now());
+
+  // Clear activity dot — user is now looking at this session
+  clearActivityTimer(sessionKey(projectId, sessionId));
+  clearSessionActivity(projectId, sessionId);
+
   updateProject(projectId, (p) => ({
     ...p,
     activeSessionId: sessionId,
-    sessions: p.sessions.map((s) =>
-      s.id === sessionId ? { ...s, hasActivity: false } : s,
-    ),
   }));
 }
 
-export function markSessionActivity(projectId: string, sessionId: string): void {
+// --- Activity tracking internals ---
+
+const activityTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const ACTIVITY_IDLE_MS = 5_000;
+
+const oscBusyPanes = new Set<string>();
+const oscCapablePanes = new Set<string>();
+const sessionActivatedAt = new Map<string, number>();
+const ACTIVATION_SUPPRESS_MS = 2_000;
+
+function sessionKey(projectId: string, sessionId: string): string {
+  return `${projectId}:${sessionId}`;
+}
+
+function findSession(projectId: string, sessionId: string): Session | undefined {
+  return store.getState().projects.find((p) => p.id === projectId)
+    ?.sessions.find((s) => s.id === sessionId);
+}
+
+function clearActivityTimer(key: string): void {
+  const timer = activityTimers.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    activityTimers.delete(key);
+  }
+}
+
+function cleanupOscPanes(paneId: string): void {
+  oscBusyPanes.delete(paneId);
+  oscCapablePanes.delete(paneId);
+}
+
+/** True when the session is the one the user is currently looking at. */
+function isVisibleSession(projectId: string, sessionId: string): boolean {
   const state = store.getState();
+  if (state.activeProjectId !== projectId) return false;
   const project = state.projects.find((p) => p.id === projectId);
-  if (!project) return;
-  if (project.activeSessionId === sessionId && state.activeProjectId === projectId) return;
-  const session = project.sessions.find((s) => s.id === sessionId);
-  if (!session || session.hasActivity) return;
-  updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true }));
+  return project?.activeSessionId === sessionId;
+}
+
+// --- Activity tracking actions ---
+
+export function markSessionActivity(projectId: string, sessionId: string, paneId?: string): void {
+  const session = findSession(projectId, sessionId);
+  if (!session) return;
+
+  // If this pane has OSC support, skip the volume heuristic -- OSC signals drive state
+  if (paneId && oscCapablePanes.has(paneId)) return;
+
+  // Skip the visible session -- no dot needed, and this also filters
+  // false positives from resize/redraw output on the active terminal.
+  if (isVisibleSession(projectId, sessionId)) return;
+
+  // Suppress activity from the resize/repaint burst after a tab switch
+  const key = sessionKey(projectId, sessionId);
+  const activatedAt = sessionActivatedAt.get(key);
+  if (activatedAt && Date.now() - activatedAt < ACTIVATION_SUPPRESS_MS) return;
+
+  if (!session.hasActivity) {
+    updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true }));
+  }
+
+  // Reset idle timer -- when output stops for ACTIVITY_IDLE_MS, clear the dot
+  clearActivityTimer(key);
+  activityTimers.set(key, setTimeout(() => {
+    activityTimers.delete(key);
+    clearSessionActivity(projectId, sessionId);
+  }, ACTIVITY_IDLE_MS));
+}
+
+export function markPaneOscBusy(projectId: string, sessionId: string, paneId: string): void {
+  oscBusyPanes.add(paneId);
+  oscCapablePanes.add(paneId);
+
+  // Cancel any pending idle timer -- OSC is driving state now
+  clearActivityTimer(sessionKey(projectId, sessionId));
+
+  // Skip the visible session -- no dot needed for the tab you're looking at
+  if (isVisibleSession(projectId, sessionId)) return;
+
+  const session = findSession(projectId, sessionId);
+  if (session && !session.hasActivity) {
+    updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true }));
+  }
+}
+
+export function markPaneOscIdle(projectId: string, sessionId: string, paneId: string): void {
+  oscBusyPanes.delete(paneId);
+
+  // Check if any other pane in this session is still busy
+  const session = findSession(projectId, sessionId);
+  if (!session) return;
+
+  const anyStillBusy = findLeafPaneIds(session.paneTree).some((id) => oscBusyPanes.has(id));
+  if (!anyStillBusy && session.hasActivity) {
+    updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: false }));
+  }
+}
+
+export function clearSessionActivity(projectId: string, sessionId: string): void {
+  const session = findSession(projectId, sessionId);
+  if (!session?.hasActivity) return;
+  updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: false }));
 }
 
 export function renameProject(projectId: string, name: string): void {
@@ -175,6 +307,7 @@ export function splitPane(
 
 export function removePane(projectId: string, sessionId: string, paneId: string): void {
   logger.info('layout', 'removePane', { projectId, sessionId, paneId });
+  cleanupOscPanes(paneId);
   updateSession(projectId, sessionId, (s) => {
     const newTree = removePaneFromTree(s.paneTree, paneId);
     if (!newTree) {
@@ -334,6 +467,11 @@ export function toggleProjectExpanded(projectId: string): void {
 
 export function collapseAllProjects(): void {
   updateGitSidebar(() => ({ expandedProjectIds: [] }));
+}
+
+export function expandAllProjects(): void {
+  const projects = store.getState().projects;
+  updateGitSidebar(() => ({ expandedProjectIds: projects.map((p) => p.id) }));
 }
 
 export function setGitSidebarActiveProject(projectId: string | null): void {

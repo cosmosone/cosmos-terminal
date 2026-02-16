@@ -42,7 +42,7 @@ export function initSessionTabBar(onTabChange: () => void): void {
       tabLabel.textContent = session.title;
       tab.appendChild(tabLabel);
 
-      if (session.hasActivity) {
+      if (session.hasActivity && !isActive) {
         tab.appendChild(createElement('span', { className: 'tab-activity' }));
       }
 

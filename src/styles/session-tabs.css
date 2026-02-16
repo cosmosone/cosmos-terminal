@@ -53,24 +53,13 @@
 }
 
 .session-tab .tab-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: 3px;
   font-size: 12px;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
 }
 
 .session-tab:hover .tab-close {
   opacity: 0.6;
-}
-
-.session-tab .tab-close:hover {
-  opacity: 1;
-  background: var(--bg-hover);
 }
 
 .session-tab-add {
@@ -99,19 +88,5 @@
 
 .session-tab-agent:hover {
   color: var(--text-primary);
-}
-
-.session-tab .tab-activity {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-  animation: tab-activity-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes tab-activity-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
 }
 

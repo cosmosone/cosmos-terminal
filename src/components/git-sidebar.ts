@@ -4,6 +4,7 @@ import {
   setGitSidebarWidth,
   toggleProjectExpanded,
   collapseAllProjects,
+  expandAllProjects,
   setGitSidebarActiveProject,
   toggleGraphExpanded,
   updateGitState,
@@ -99,15 +100,17 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   const headerTitle = createElement('span', { className: 'git-sidebar-header-title' });
   headerTitle.textContent = 'Source Control';
   const headerActions = createElement('div', { className: 'git-sidebar-header-actions' });
-  const collapseAllBtn = createElement('button', { className: 'git-sidebar-header-btn', title: 'Collapse All' });
-  collapseAllBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 3 12 8 17 3"/><polyline points="7 21 12 16 17 21"/></svg>';
-  collapseAllBtn.addEventListener('click', collapseAllProjects);
-  headerActions.appendChild(collapseAllBtn);
 
-  const closeBtn = createElement('button', { className: 'git-sidebar-header-btn', title: 'Collapse Sidebar' });
-  closeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
-  closeBtn.addEventListener('click', toggleGitSidebar);
-  headerActions.appendChild(closeBtn);
+  function addHeaderButton(title: string, svgPaths: string, handler: () => void): void {
+    const btn = createElement('button', { className: 'git-sidebar-header-btn', title });
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svgPaths}</svg>`;
+    btn.addEventListener('click', handler);
+    headerActions.appendChild(btn);
+  }
+
+  addHeaderButton('Collapse All', '<polyline points="7 3 12 8 17 3"/><polyline points="7 21 12 16 17 21"/>', collapseAllProjects);
+  addHeaderButton('Expand All', '<polyline points="7 8 12 3 17 8"/><polyline points="7 16 12 21 17 16"/>', expandAllProjects);
+  addHeaderButton('Collapse Sidebar', '<polyline points="9 18 15 12 9 6"/>', toggleGitSidebar);
   header.appendChild(headerTitle);
   header.appendChild(headerActions);
   container.appendChild(header);
