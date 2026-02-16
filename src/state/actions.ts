@@ -42,12 +42,7 @@ export function removeProject(projectId: string): void {
   const project = store.getState().projects.find((p) => p.id === projectId);
   if (project) {
     for (const session of project.sessions) {
-      const key = sessionKey(projectId, session.id);
-      clearActivityTimer(key);
-      sessionActivatedAt.delete(key);
-      for (const paneId of findLeafPaneIds(session.paneTree)) {
-        cleanupOscPanes(paneId);
-      }
+      cleanupSessionTracking(projectId, session);
     }
   }
 
@@ -123,13 +118,8 @@ export function removeSession(projectId: string, sessionId: string): void {
   // Clean up OSC tracking and timers for all panes in this session
   const session = findSession(projectId, sessionId);
   if (session) {
-    for (const paneId of findLeafPaneIds(session.paneTree)) {
-      cleanupOscPanes(paneId);
-    }
+    cleanupSessionTracking(projectId, session);
   }
-  const key = sessionKey(projectId, sessionId);
-  clearActivityTimer(key);
-  sessionActivatedAt.delete(key);
 
   updateProject(projectId, (p) => {
     const sessions = p.sessions.filter((s) => s.id !== sessionId);
@@ -183,9 +173,19 @@ function clearActivityTimer(key: string): void {
   }
 }
 
-function cleanupOscPanes(paneId: string): void {
+function cleanupOscPane(paneId: string): void {
   oscBusyPanes.delete(paneId);
   oscCapablePanes.delete(paneId);
+}
+
+/** Release all activity tracking state for a session (timers, OSC sets, timestamps). */
+function cleanupSessionTracking(projectId: string, session: Session): void {
+  const key = sessionKey(projectId, session.id);
+  clearActivityTimer(key);
+  sessionActivatedAt.delete(key);
+  for (const paneId of findLeafPaneIds(session.paneTree)) {
+    cleanupOscPane(paneId);
+  }
 }
 
 /** True when the session is the one the user is currently looking at. */
@@ -307,7 +307,7 @@ export function splitPane(
 
 export function removePane(projectId: string, sessionId: string, paneId: string): void {
   logger.info('layout', 'removePane', { projectId, sessionId, paneId });
-  cleanupOscPanes(paneId);
+  cleanupOscPane(paneId);
   updateSession(projectId, sessionId, (s) => {
     const newTree = removePaneFromTree(s.paneTree, paneId);
     if (!newTree) {

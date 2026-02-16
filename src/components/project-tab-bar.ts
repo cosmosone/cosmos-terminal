@@ -116,7 +116,7 @@ export function initProjectTabBar(onProjectChange: () => void): void {
       tab.appendChild(tabLabel);
 
       const hasBackgroundActivity = project.sessions.some(
-        s => s.hasActivity && s.id !== project.activeSessionId,
+        (s) => s.hasActivity && s.id !== project.activeSessionId,
       );
       if (hasBackgroundActivity) {
         tab.appendChild(createElement('span', { className: 'tab-activity' }));

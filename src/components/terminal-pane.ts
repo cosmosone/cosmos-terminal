@@ -144,6 +144,8 @@ export class TerminalPane {
   private pendingOutput: Uint8Array[] = [];
   private outputRafId = 0;
   private scrollBtn: HTMLElement;
+  /** Persistent auto-scroll intent — true when the user is following output at the bottom. */
+  private autoScroll = true;
 
   // Activity detection — fire onActivity at most once per rolling window
   // when cumulative output exceeds a byte threshold (filters idle TUI noise).
@@ -366,6 +368,7 @@ export class TerminalPane {
     this.terminal.onScroll(() => {
       const isAtBottom = this.terminal.buffer.active.viewportY >=
         this.terminal.buffer.active.baseY;
+      this.autoScroll = isAtBottom;
       this.scrollBtn.classList.toggle('visible', !isAtBottom);
     });
 
@@ -659,12 +662,6 @@ export class TerminalPane {
     this.outputRafId = 0;
     if (this.disposed || this.pendingOutput.length === 0) return;
 
-    // Detect whether the viewport is at the bottom before writing.
-    // xterm.js's built-in auto-scroll can desync during large batch writes
-    // (ydisp falls behind ybase), so we re-sync explicitly in the callback.
-    const buf = this.terminal.buffer.active;
-    const wasAtBottom = buf.viewportY >= buf.baseY;
-
     let data: Uint8Array;
     if (this.pendingOutput.length === 1) {
       data = this.pendingOutput[0];
@@ -688,8 +685,13 @@ export class TerminalPane {
     // Handle Kitty keyboard protocol negotiation before xterm sees the data
     data = this.interceptKittyProtocol(data);
     if (data.length > 0) {
+      // Use the persistent autoScroll flag instead of re-deriving from buffer
+      // state on each flush.  Re-deriving can race: when multiple flushes
+      // overlap, baseY increases from the first write but viewportY hasn't
+      // caught up, causing the second flush to think the user scrolled up.
+      const shouldScroll = this.autoScroll;
       this.terminal.write(data, () => {
-        if (!this.disposed && wasAtBottom) {
+        if (!this.disposed && shouldScroll) {
           this.terminal.scrollToBottom();
         }
       });
@@ -722,6 +724,13 @@ export class TerminalPane {
             }, TerminalPane.RESIZE_THROTTLE_MS - elapsed);
           }
         }
+      }
+
+      // Re-sync scroll position after resize or visibility change.
+      // scrollToBottom() calls in write callbacks may have been no-ops while
+      // the terminal was hidden (display:none), leaving the viewport stuck.
+      if (this.autoScroll) {
+        this.terminal.scrollToBottom();
       }
     } catch (err) {
       logger.warn('pty', 'Fit failed (element may not be visible)', {
@@ -787,6 +796,7 @@ export class TerminalPane {
   }
 
   scrollToBottom(): void {
+    this.autoScroll = true;
     this.terminal.scrollToBottom();
     this.scrollBtn.classList.remove('visible');
   }
