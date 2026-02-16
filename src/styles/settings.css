@@ -409,8 +409,8 @@
 }
 
 .api-key-test-btn.test-pass {
-  border-color: var(--green, #9ece6a);
-  color: var(--green, #9ece6a);
+  border-color: var(--success);
+  color: var(--success);
   background: rgba(158, 206, 106, 0.1);
 }
 

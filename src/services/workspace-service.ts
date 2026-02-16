@@ -27,6 +27,10 @@ export async function saveWorkspace(
   activeProjectId: string | null,
   gitSidebar: GitSidebarState,
 ): Promise<void> {
+  const cleaned = projects.map((p) => ({
+    ...p,
+    sessions: p.sessions.map((s) => ({ ...s, hasActivity: false })),
+  }));
   const s = await getStore();
-  await s.set('workspace', { projects, activeProjectId, gitSidebar } satisfies SavedWorkspace);
+  await s.set('workspace', { projects: cleaned, activeProjectId, gitSidebar } satisfies SavedWorkspace);
 }

@@ -92,3 +92,26 @@
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+.session-tab-agent {
+  color: var(--text-secondary);
+}
+
+.session-tab-agent:hover {
+  color: var(--text-primary);
+}
+
+.session-tab .tab-activity {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: tab-activity-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes tab-activity-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+

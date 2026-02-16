@@ -15,6 +15,7 @@ pub struct SessionHandle {
     master_pty: Mutex<Option<Box<dyn portable_pty::MasterPty + Send>>>,
     alive: Arc<AtomicBool>,
     reader_thread: Mutex<Option<JoinHandle<()>>>,
+    exit_thread: Mutex<Option<JoinHandle<()>>>,
     pub pid: u32,
 }
 
@@ -79,7 +80,7 @@ impl SessionHandle {
 
         // Thread 2: Wait for child process to exit, then notify frontend
         let alive_for_exit = alive.clone();
-        std::thread::spawn(move || {
+        let exit_handle = std::thread::spawn(move || {
             let mut child = child;
             let _ = child.wait();
             alive_for_exit.store(false, Ordering::Relaxed);
@@ -94,6 +95,7 @@ impl SessionHandle {
             master_pty: Mutex::new(Some(pair.master)),
             alive,
             reader_thread: Mutex::new(Some(reader_handle)),
+            exit_thread: Mutex::new(Some(exit_handle)),
             pid,
         })
     }
@@ -150,8 +152,11 @@ impl SessionHandle {
         self.master_write.lock().take();
         self.master_pty.lock().take();
 
-        // Wait for reader thread to finish
+        // Wait for spawned threads to finish
         if let Some(handle) = self.reader_thread.lock().take() {
+            let _ = handle.join();
+        }
+        if let Some(handle) = self.exit_thread.lock().take() {
             let _ = handle.join();
         }
     }

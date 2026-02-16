@@ -1,18 +1,17 @@
 :root {
   /* Background colors */
-  --bg-primary: #1a1b26;
-  --bg-secondary: #1e1f2e;
-  --bg-tertiary: #1e1e2e;
+  --bg-primary: #212335;
+  --bg-secondary: #272a3c;
+  --bg-tertiary: #252839;
   --bg-terminal: #0f0f14;
-  --bg-hover: #292e42;
+  --bg-hover: #303548;
   --bg-active: #33467c;
-  --bg-input: #1e1e2e;
+  --bg-input: #252839;
 
   /* Text colors */
   --text-primary: #c0caf5;
   --text-secondary: #565f89;
   --text-muted: #414868;
-  --text-bright: #e0e0e0;
 
   /* Accent colors */
   --accent: #7aa2f7;
@@ -26,7 +25,7 @@
   --info: #7dcfff;
 
   /* Border colors */
-  --border: #292e42;
+  --border: #313548;
   --border-active: #7aa2f7;
 
   /* Sizing */

@@ -20,6 +20,7 @@ export interface Session {
   title: string;
   paneTree: PaneNode;
   activePaneId: string | null;
+  hasActivity: boolean;
 }
 
 export type PaneNode = PaneLeaf | PaneBranch;

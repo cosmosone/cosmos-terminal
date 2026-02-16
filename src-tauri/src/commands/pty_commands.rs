@@ -4,6 +4,16 @@ use tauri::State;
 use crate::models::PtySessionInfo;
 use crate::pty::manager::SessionManager;
 
+fn validate_dimensions(rows: u16, cols: u16) -> Result<(), String> {
+    if rows == 0 || cols == 0 || rows > 500 || cols > 500 {
+        return Err(format!(
+            "Invalid terminal dimensions: {}x{} (must be 1–500)",
+            cols, rows
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn create_session(
     session_manager: State<'_, SessionManager>,
@@ -14,6 +24,7 @@ pub fn create_session(
     on_output: Channel<String>,
     on_exit: Channel<bool>,
 ) -> Result<PtySessionInfo, String> {
+    validate_dimensions(rows, cols)?;
     session_manager.create_session(shell_path, project_path, rows, cols, on_output, on_exit)
 }
 
@@ -33,6 +44,7 @@ pub fn resize_session(
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
+    validate_dimensions(rows, cols)?;
     session_manager.resize_session(&session_id, rows, cols)
 }
 

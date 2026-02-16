@@ -23,6 +23,7 @@ export function addProject(name: string, path: string): Project {
       title: 'terminal 1',
       paneTree: { type: 'leaf', paneId },
       activePaneId: paneId,
+      hasActivity: false,
     }],
     activeSessionId: sessionId,
   };
@@ -76,16 +77,17 @@ function updateSession(projectId: string, sessionId: string, updater: (s: Sessio
   }));
 }
 
-export function addSession(projectId: string): Session {
+export function addSession(projectId: string, opts?: { title?: string }): Session {
   logger.info('session', 'addSession', { projectId });
   const project = store.getState().projects.find((p) => p.id === projectId);
   const num = (project?.sessions.length ?? 0) + 1;
   const paneId = genId();
   const session: Session = {
     id: genId(),
-    title: `terminal ${num}`,
+    title: opts?.title ?? `terminal ${num}`,
     paneTree: { type: 'leaf', paneId },
     activePaneId: paneId,
+    hasActivity: false,
   };
   updateProject(projectId, (p) => ({
     ...p,
@@ -108,7 +110,23 @@ export function removeSession(projectId: string, sessionId: string): void {
 }
 
 export function setActiveSession(projectId: string, sessionId: string): void {
-  updateProject(projectId, (p) => ({ ...p, activeSessionId: sessionId }));
+  updateProject(projectId, (p) => ({
+    ...p,
+    activeSessionId: sessionId,
+    sessions: p.sessions.map((s) =>
+      s.id === sessionId ? { ...s, hasActivity: false } : s,
+    ),
+  }));
+}
+
+export function markSessionActivity(projectId: string, sessionId: string): void {
+  const state = store.getState();
+  const project = state.projects.find((p) => p.id === projectId);
+  if (!project) return;
+  if (project.activeSessionId === sessionId && state.activeProjectId === projectId) return;
+  const session = project.sessions.find((s) => s.id === sessionId);
+  if (!session || session.hasActivity) return;
+  updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true }));
 }
 
 export function renameProject(projectId: string, name: string): void {

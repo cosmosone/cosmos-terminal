@@ -6,6 +6,7 @@ import { ImageAddon } from '@xterm/addon-image';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { open } from '@tauri-apps/plugin-shell';
 import { createPtySession, writeToPtySession, resizePtySession, killPtySession } from '../services/pty-service';
+import { consumeInitialCommand } from '../services/initial-command';
 import { store } from '../state/store';
 import { logger } from '../services/logger';
 import { keybindings } from '../utils/keybindings';
@@ -51,6 +52,26 @@ const XTERM_THEME = {
   brightWhite: '#c0caf5',
 };
 
+/**
+ * CSI u key codes for functional keys that need explicit encoding
+ * under the Kitty keyboard protocol.
+ */
+const FUNCTIONAL_KEY_CODES: Record<string, number> = {
+  Enter: 13,
+  Tab: 9,
+  Backspace: 127,
+  Escape: 27,
+};
+
+/** Compute CSI u modifier parameter: 1 + Shift(1) + Alt(2) + Ctrl(4) + Meta(8). */
+function csiModifier(e: KeyboardEvent): number {
+  return 1
+    + (e.shiftKey ? 1 : 0)
+    + (e.altKey ? 2 : 0)
+    + (e.ctrlKey ? 4 : 0)
+    + (e.metaKey ? 8 : 0);
+}
+
 function extractCwdFromTitle(title: string): string | null {
   let cleaned = title.trim();
 
@@ -79,12 +100,19 @@ export class TerminalPane {
   private fitAddon: FitAddon;
   private webglAddon: WebglAddon | null = null;
   private backendId: string | null = null;
+  /** Kitty keyboard protocol mode stack — pushed/popped by child applications. */
+  private kittyModeStack: number[] = [];
+  /** Current Kitty keyboard protocol flags (top of stack, 0 = legacy). */
+  private get kittyFlags(): number {
+    return this.kittyModeStack[this.kittyModeStack.length - 1] ?? 0;
+  }
   private projectPath: string;
   private disposed = false;
   private resizeObserver: ResizeObserver;
   private resizeRafId = 0;
   private onProcessExit?: () => void;
   private onCwdChange?: (cwd: string) => void;
+  private onActivity?: () => void;
   private lastReportedCwd: string;
   private lastSentRows = 0;
   private lastSentCols = 0;
@@ -94,11 +122,21 @@ export class TerminalPane {
   private outputRafId = 0;
   private scrollBtn: HTMLElement;
 
-  constructor(paneId: string, projectId: string, projectPath: string, onProcessExit?: () => void, onCwdChange?: (cwd: string) => void) {
+  constructor(
+    paneId: string,
+    projectId: string,
+    projectPath: string,
+    callbacks?: {
+      onProcessExit?: () => void;
+      onCwdChange?: (cwd: string) => void;
+      onActivity?: () => void;
+    },
+  ) {
     this.paneId = paneId;
     this.projectPath = projectPath;
-    this.onProcessExit = onProcessExit;
-    this.onCwdChange = onCwdChange;
+    this.onProcessExit = callbacks?.onProcessExit;
+    this.onCwdChange = callbacks?.onCwdChange;
+    this.onActivity = callbacks?.onActivity;
     this.lastReportedCwd = projectPath;
 
     logger.debug('pty', 'TerminalPane created', { paneId, projectId, projectPath });
@@ -116,8 +154,6 @@ export class TerminalPane {
       e.stopPropagation();
       this.scrollToBottom();
     });
-    this.element.appendChild(this.scrollBtn);
-
     this.terminal = new Terminal({
       theme: XTERM_THEME,
       ...XTERM_RENDERING_OPTIONS,
@@ -149,6 +185,7 @@ export class TerminalPane {
   async mount(): Promise<void> {
     logger.debug('pty', 'Mounting terminal pane', { paneId: this.paneId });
     this.terminal.open(this.element);
+    this.element.appendChild(this.scrollBtn);
 
     // Let global keybindings pass through instead of being consumed by xterm
     this.terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -167,13 +204,21 @@ export class TerminalPane {
         return false;
       }
 
-      // Send CSI u sequences for modified Enter so TUI apps (e.g. Claude Code)
-      // can distinguish Ctrl+Enter / Shift+Enter from plain Enter.
-      // xterm.js sends bare \r for all Enter variants, which loses modifier info.
-      // CSI u modifier encoding: 1 + Shift(1) + Alt(2) + Ctrl(4) + Meta(8)
-      if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
-        const modifier = 1 + (e.shiftKey ? 1 : 0) + (e.ctrlKey ? 4 : 0);
-        if (this.backendId) writeToPtySession(this.backendId, `\x1b[13;${modifier}u`);
+      // CSI u encoding for functional keys (Kitty keyboard protocol).
+      // When the protocol is active, encode Enter/Tab/Backspace/Escape as
+      // CSI u so the child app receives full key identity and modifiers.
+      // When inactive, only encode modified Enter (Ctrl/Shift+Enter).
+      if (this.kittyFlags & 1) {
+        const code = FUNCTIONAL_KEY_CODES[e.key];
+        if (code !== undefined) {
+          const mod = csiModifier(e);
+          const seq = mod > 1 ? `\x1b[${code};${mod}u` : `\x1b[${code}u`;
+          if (this.backendId) writeToPtySession(this.backendId, seq);
+          return false;
+        }
+      } else if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
+        const mod = csiModifier(e);
+        if (this.backendId) writeToPtySession(this.backendId, `\x1b[13;${mod}u`);
         return false;
       }
 
@@ -240,6 +285,7 @@ export class TerminalPane {
           if (!this.outputRafId) {
             this.outputRafId = requestAnimationFrame(() => this.flushOutput());
           }
+          this.onActivity?.();
         }
       },
       () => {
@@ -258,6 +304,11 @@ export class TerminalPane {
 
     this.backendId = info.id;
     logger.info('pty', 'PTY session created', { paneId: this.paneId, backendId: info.id, pid: info.pid });
+
+    const initialCmd = consumeInitialCommand(this.paneId);
+    if (initialCmd) {
+      writeToPtySession(this.backendId, initialCmd + '\r');
+    }
   }
 
   private tryWebgl(): void {
@@ -276,25 +327,90 @@ export class TerminalPane {
     }
   }
 
+  /**
+   * Intercept Kitty keyboard protocol sequences in PTY output.
+   * - Responds to mode queries  (CSI ? u)
+   * - Tracks push/pop changes   (CSI > flags u  /  CSI < [count] u)
+   * - Strips handled sequences so xterm.js (which lacks Kitty support)
+   *   doesn't see them.
+   */
+  private interceptKittyProtocol(data: Uint8Array): Uint8Array {
+    // Fast path: skip if no ESC byte present
+    if (!data.includes(0x1b)) return data;
+
+    // Build a latin-1 string so we can regex-match byte values directly
+    let text = '';
+    for (let i = 0; i < data.length; i++) text += String.fromCharCode(data[i]);
+
+    const re = /\x1b\[([?><])(\d*)(u)/g;
+    let match: RegExpExecArray | null;
+    const ranges: [number, number][] = [];
+
+    while ((match = re.exec(text)) !== null) {
+      const marker = match[1];
+      const num = match[2] ? parseInt(match[2], 10) : 0;
+
+      if (marker === '?') {
+        if (this.backendId) {
+          writeToPtySession(this.backendId, `\x1b[?${this.kittyFlags}u`);
+        }
+      } else if (marker === '>') {
+        this.kittyModeStack.push(num);
+      } else if (marker === '<') {
+        // Pop N entries (default 1 when no digit given, 0 = pop all)
+        const count = match[2] ? num : 1;
+        const toPop = count === 0
+          ? this.kittyModeStack.length
+          : Math.min(count, this.kittyModeStack.length);
+        if (toPop > 0) this.kittyModeStack.splice(-toPop);
+      }
+
+      ranges.push([match.index, match.index + match[0].length]);
+    }
+
+    if (ranges.length === 0) return data;
+
+    // Strip matched sequences — pre-allocate based on exact remaining size
+    let strippedLen = data.length;
+    for (const [start, end] of ranges) strippedLen -= end - start;
+    const result = new Uint8Array(strippedLen);
+    let pos = 0;
+    let dest = 0;
+    for (const [start, end] of ranges) {
+      result.set(data.subarray(pos, start), dest);
+      dest += start - pos;
+      pos = end;
+    }
+    result.set(data.subarray(pos), dest);
+
+    return result;
+  }
+
   private flushOutput(): void {
     this.outputRafId = 0;
     if (this.disposed || this.pendingOutput.length === 0) return;
 
+    let data: Uint8Array;
     if (this.pendingOutput.length === 1) {
-      this.terminal.write(this.pendingOutput[0]);
+      data = this.pendingOutput[0];
     } else {
       // Concatenate all pending chunks into a single write
       let totalLen = 0;
       for (const chunk of this.pendingOutput) totalLen += chunk.length;
-      const merged = new Uint8Array(totalLen);
+      data = new Uint8Array(totalLen);
       let offset = 0;
       for (const chunk of this.pendingOutput) {
-        merged.set(chunk, offset);
+        data.set(chunk, offset);
         offset += chunk.length;
       }
-      this.terminal.write(merged);
     }
     this.pendingOutput = [];
+
+    // Handle Kitty keyboard protocol negotiation before xterm sees the data
+    data = this.interceptKittyProtocol(data);
+    if (data.length > 0) {
+      this.terminal.write(data);
+    }
   }
 
   private static readonly RESIZE_THROTTLE_MS = 100;

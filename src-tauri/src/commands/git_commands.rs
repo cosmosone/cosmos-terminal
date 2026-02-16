@@ -237,6 +237,14 @@ pub async fn git_push(path: String) -> Result<GitPushResult, String> {
 
         let branch = current_branch(&repo);
 
+        // Validate branch name to prevent shell metacharacter injection
+        if !branch
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'/' || b == b'.')
+        {
+            return Err("Invalid branch name".to_string());
+        }
+
         let mut cmd = std::process::Command::new("git");
         cmd.args(["push", "-u", "origin", &branch])
             .current_dir(&repo_path);
