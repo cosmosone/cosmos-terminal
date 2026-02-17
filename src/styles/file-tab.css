@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--bg-primary);
+  background: var(--bg-terminal);
   overflow: hidden;
 }
 
@@ -78,9 +78,9 @@
   border: none;
   outline: none;
   resize: none;
-  background: var(--bg-primary);
+  background: var(--bg-terminal);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--editor-font-size, 11px);
   line-height: 1.5;
   font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace);
   tab-size: 4;
@@ -93,7 +93,7 @@
 /* ===== Markdown viewer ===== */
 .file-tab-markdown {
   padding: 20px 24px;
-  font-size: 14px;
+  font-size: var(--viewer-font-size, 11px);
   line-height: 1.6;
   color: var(--text-primary);
 }

@@ -56,12 +56,14 @@ async function main(): Promise<void> {
 
   logger.debug('app', 'Store initialized', { restored: !!saved });
 
-  function applyUiFont(): void {
-    const { uiFontFamily, uiFontSize } = store.getState().settings;
+  function applyFontSettings(): void {
+    const { uiFontFamily, uiFontSize, viewerFontSize, editorFontSize } = store.getState().settings;
     document.documentElement.style.setProperty('--font-ui', buildUiFont(uiFontFamily));
     document.documentElement.style.setProperty('--font-ui-size', `${uiFontSize}px`);
+    document.documentElement.style.setProperty('--viewer-font-size', `${viewerFontSize}px`);
+    document.documentElement.style.setProperty('--editor-font-size', `${editorFontSize}px`);
   }
-  applyUiFont();
+  applyFontSettings();
 
   const terminalContainer = $('#terminal-container')! as HTMLElement;
   const splitContainer = new SplitContainer(terminalContainer);
@@ -69,7 +71,7 @@ async function main(): Promise<void> {
 
   initProjectTabBar(refresh);
   initSessionTabBar(refresh);
-  initSettingsPage(() => { splitContainer.applySettings(); applyUiFont(); });
+  initSettingsPage(() => { splitContainer.applySettings(); applyFontSettings(); });
   initStatusBar(() => splitContainer.clearAllScrollback());
   initLogViewer();
   initGitSidebar(() => splitContainer.reLayout());

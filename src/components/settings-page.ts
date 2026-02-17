@@ -87,6 +87,12 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     font.content.appendChild(
       createNumberRow('UI Font Size', settings.uiFontSize, 8, 32, (v) => apply({ uiFontSize: v }), 0.5),
     );
+    font.content.appendChild(
+      createNumberRow('Viewer Font Size', settings.viewerFontSize, 8, 32, (v) => apply({ viewerFontSize: v }), 0.5),
+    );
+    font.content.appendChild(
+      createNumberRow('Editor Font Size', settings.editorFontSize, 8, 32, (v) => apply({ editorFontSize: v }), 0.5),
+    );
     inner.appendChild(font.wrapper);
 
     // ── 2. Terminal (core behaviour) ──

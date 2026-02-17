@@ -18,6 +18,10 @@ export function lockIcon(size = 14): string {
   return `<svg ${svgAttrs(size)}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
 }
 
+export function gitBranchIcon(size = 14): string {
+  return `<svg ${svgAttrs(size)}><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>`;
+}
+
 export function searchIcon(size = 14): string {
   return `<svg ${svgAttrs(size)}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
 }

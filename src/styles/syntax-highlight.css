@@ -36,7 +36,7 @@
   margin: 0;
   border: none;
   overflow: auto;
-  font-size: 13px;
+  font-size: var(--editor-font-size, 11px);
   line-height: 1.5;
   font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace);
   tab-size: 4;
@@ -47,7 +47,7 @@
 
 .highlighted-editor-backdrop {
   pointer-events: none;
-  background: var(--bg-primary);
+  background: var(--bg-terminal);
   color: var(--text-primary);
 }
 

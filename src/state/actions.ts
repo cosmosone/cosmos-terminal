@@ -490,6 +490,14 @@ export function toggleSettingsView(): void {
 
 // --- Git sidebar actions ---
 
+function clampGitSidebarWidth(width: number): number {
+  return Math.max(250, Math.min(600, width));
+}
+
+function clampFileBrowserSidebarWidth(width: number): number {
+  return Math.max(200, Math.min(500, width));
+}
+
 function updateGitSidebar(updater: (sidebar: GitSidebarState) => Partial<GitSidebarState>): void {
   store.setState((s) => ({
     ...s,
@@ -498,19 +506,23 @@ function updateGitSidebar(updater: (sidebar: GitSidebarState) => Partial<GitSide
 }
 
 export function toggleGitSidebar(): void {
-  const opening = !store.getState().gitSidebar.visible;
-  if (opening) {
-    // Close file browser sidebar (mutual exclusion)
-    store.setState((s) => ({
+  store.setState((s) => {
+    const opening = !s.gitSidebar.visible;
+    const carryWidth = opening && s.fileBrowserSidebar.visible;
+    return {
       ...s,
-      fileBrowserSidebar: { ...s.fileBrowserSidebar, visible: false },
-    }));
-  }
-  updateGitSidebar((sb) => ({ visible: !sb.visible }));
+      fileBrowserSidebar: { ...s.fileBrowserSidebar, visible: opening ? false : s.fileBrowserSidebar.visible },
+      gitSidebar: {
+        ...s.gitSidebar,
+        visible: opening,
+        ...(carryWidth && { width: clampGitSidebarWidth(s.fileBrowserSidebar.width) }),
+      },
+    };
+  });
 }
 
 export function setGitSidebarWidth(width: number): void {
-  updateGitSidebar(() => ({ width: Math.max(250, Math.min(600, width)) }));
+  updateGitSidebar(() => ({ width: clampGitSidebarWidth(width) }));
 }
 
 export function toggleProjectExpanded(projectId: string): void {
@@ -601,16 +613,23 @@ export function defaultFileBrowserSidebarState(): FileBrowserSidebarState {
 }
 
 export function toggleFileBrowserSidebar(): void {
-  const opening = !store.getState().fileBrowserSidebar.visible;
-  if (opening) {
-    // Close git sidebar (mutual exclusion)
-    updateGitSidebar(() => ({ visible: false }));
-  }
-  updateFileBrowserSidebar((sb) => ({ visible: !sb.visible }));
+  store.setState((s) => {
+    const opening = !s.fileBrowserSidebar.visible;
+    const carryWidth = opening && s.gitSidebar.visible;
+    return {
+      ...s,
+      gitSidebar: { ...s.gitSidebar, visible: opening ? false : s.gitSidebar.visible },
+      fileBrowserSidebar: {
+        ...s.fileBrowserSidebar,
+        visible: opening,
+        ...(carryWidth && { width: clampFileBrowserSidebarWidth(s.gitSidebar.width) }),
+      },
+    };
+  });
 }
 
 export function setFileBrowserSidebarWidth(width: number): void {
-  updateFileBrowserSidebar(() => ({ width: Math.max(200, Math.min(500, width)) }));
+  updateFileBrowserSidebar(() => ({ width: clampFileBrowserSidebarWidth(width) }));
 }
 
 export function toggleFileBrowserPath(path: string): void {

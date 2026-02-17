@@ -78,6 +78,8 @@ function defaultSettings(): AppSettings {
     lineHeight: 1.2,
     uiFontFamily: 'System Default',
     uiFontSize: 13,
+    viewerFontSize: 11,
+    editorFontSize: 11,
     scrollbackLines: 10000,
     copyOnSelect: false,
     rightClickPaste: false,

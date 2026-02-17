@@ -71,6 +71,8 @@ export interface AppSettings {
   lineHeight: number;
   uiFontFamily: string;
   uiFontSize: number;
+  viewerFontSize: number;
+  editorFontSize: number;
   scrollbackLines: number;
   copyOnSelect: boolean;
   rightClickPaste: boolean;

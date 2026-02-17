@@ -95,6 +95,14 @@
   color: var(--text-primary);
 }
 
+/* ===== Session tab type icon ===== */
+.session-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 /* ===== Content tab extras ===== */
 .session-tab-separator {
   display: inline-block;
@@ -111,4 +119,29 @@
   align-items: center;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+
+/* ===== Sidebar toggle actions (right side) ===== */
+.session-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.session-tab-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--tab-border-radius);
+  color: var(--text-muted);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.session-tab-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
