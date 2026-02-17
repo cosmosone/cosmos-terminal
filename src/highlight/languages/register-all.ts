@@ -1,0 +1,22 @@
+// Side-effect barrel — importing this file registers all language grammars.
+import './javascript';
+import './typescript';
+import './python';
+import './rust';
+import './go';
+import './java';
+import './c';
+import './dart';
+import './kotlin';
+import './swift';
+import './ruby';
+import './php';
+import './shell';
+import './sql';
+import './json';
+import './html';
+import './xml';
+import './css';
+import './yaml';
+import './toml';
+import './markdown';

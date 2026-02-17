@@ -1,4 +1,4 @@
-import type { GitSidebarState, Project } from '../state/types';
+import type { FileBrowserSidebarState, GitSidebarState, Project } from '../state/types';
 import { createStoreLazy } from './store-loader';
 
 const getStore = createStoreLazy('workspace.json');
@@ -7,6 +7,7 @@ export interface SavedWorkspace {
   projects: Project[];
   activeProjectId: string | null;
   gitSidebar: GitSidebarState;
+  fileBrowserSidebar: FileBrowserSidebarState;
 }
 
 export async function loadWorkspace(): Promise<SavedWorkspace | null> {
@@ -26,11 +27,15 @@ export async function saveWorkspace(
   projects: Project[],
   activeProjectId: string | null,
   gitSidebar: GitSidebarState,
+  fileBrowserSidebar: FileBrowserSidebarState,
 ): Promise<void> {
   const cleaned = projects.map((p) => ({
     ...p,
-    sessions: p.sessions.map((s) => ({ ...s, hasActivity: false })),
+    sessions: p.sessions.map((s) => ({ ...s, hasActivity: false, activityCompleted: false })),
+    // Content tabs are ephemeral — don't persist
+    tabs: [],
+    activeTabId: null,
   }));
   const s = await getStore();
-  await s.set('workspace', { projects: cleaned, activeProjectId, gitSidebar } satisfies SavedWorkspace);
+  await s.set('workspace', { projects: cleaned, activeProjectId, gitSidebar, fileBrowserSidebar } satisfies SavedWorkspace);
 }

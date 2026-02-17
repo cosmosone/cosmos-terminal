@@ -24,6 +24,7 @@ import {
 import { generateCommitMessage } from '../services/openai-service';
 import { logger } from '../services/logger';
 import { createElement, clearChildren, $ } from '../utils/dom';
+import { setupSidebarResize } from '../utils/sidebar-resize';
 import type { Project, ProjectGitState, GitFileStatus, GitFileStatusKind, GitStatusResult, GitLogEntry, GitNotificationType } from '../state/types';
 
 const STATUS_LETTERS: Record<GitFileStatusKind, string> = {
@@ -66,34 +67,7 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   // --- Left-edge resize handle (sidebar width) ---
   const resizeHandle = createElement('div', { className: 'git-sidebar-resize' });
   container.appendChild(resizeHandle);
-
-  let resizing = false;
-  let startX = 0;
-  let startWidth = 0;
-
-  resizeHandle.addEventListener('mousedown', (e: MouseEvent) => {
-    e.preventDefault();
-    resizing = true;
-    startX = e.clientX;
-    startWidth = container.offsetWidth;
-    resizeHandle.classList.add('active');
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  });
-
-  window.addEventListener('mousemove', (e: MouseEvent) => {
-    if (!resizing) return;
-    const delta = startX - e.clientX;
-    setGitSidebarWidth(startWidth + delta);
-  });
-
-  window.addEventListener('mouseup', () => {
-    if (!resizing) return;
-    resizing = false;
-    resizeHandle.classList.remove('active');
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-  });
+  setupSidebarResize(resizeHandle, setGitSidebarWidth, () => container.offsetWidth);
 
   // --- Header ---
   const header = createElement('div', { className: 'git-sidebar-header' });

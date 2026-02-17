@@ -4,6 +4,7 @@ export interface AppState {
   settings: AppSettings;
   view: 'terminal' | 'settings';
   gitSidebar: GitSidebarState;
+  fileBrowserSidebar: FileBrowserSidebarState;
   gitStates: Record<string, ProjectGitState>;
 }
 
@@ -13,6 +14,8 @@ export interface Project {
   path: string;
   sessions: Session[];
   activeSessionId: string | null;
+  tabs: FileTab[];
+  activeTabId: string | null;
 }
 
 export interface Session {
@@ -22,6 +25,7 @@ export interface Session {
   activePaneId: string | null;
   hasActivity: boolean;
   activityCompleted: boolean;
+  locked: boolean;
 }
 
 export type PaneNode = PaneLeaf | PaneBranch;
@@ -39,6 +43,8 @@ export interface PaneBranch {
 }
 
 export interface KeybindingConfig {
+  newSession: string;
+  toggleSettings: string;
   navigatePaneLeft: string;
   navigatePaneRight: string;
   navigatePaneUp: string;
@@ -52,6 +58,7 @@ export interface KeybindingConfig {
   cycleProjectNext: string;
   cycleProjectPrev: string;
   toggleGitSidebar: string;
+  toggleFileBrowser: string;
   closeTerminalTab: string;
   closeProjectTab: string;
   scrollToBottom: string;
@@ -138,6 +145,24 @@ export interface GitSidebarState {
   expandedProjectIds: string[];
   activeProjectId: string | null;
   graphExpanded: boolean;
+}
+
+// --- File browser types ---
+
+export interface FileTab {
+  id: string;
+  title: string;
+  filePath: string;
+  fileType: string;
+  editing: boolean;
+  dirty: boolean;
+  locked: boolean;
+}
+
+export interface FileBrowserSidebarState {
+  visible: boolean;
+  width: number;
+  expandedPaths: string[];
 }
 
 export type StateListener<T> = (value: T) => void;

@@ -43,7 +43,9 @@ export async function createPtySession(
 }
 
 export function writeToPtySession(sessionId: string, data: string): void {
-  invoke('write_to_session', { sessionId, data }).catch(() => {});
+  invoke('write_to_session', { sessionId, data }).catch((err) => {
+    logger.debug('pty', 'write_to_session failed (session may have exited)', { sessionId, error: String(err) });
+  });
 }
 
 export async function resizePtySession(

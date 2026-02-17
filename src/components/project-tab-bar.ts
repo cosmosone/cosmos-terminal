@@ -1,15 +1,17 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { store } from '../state/store';
-import { addProject, removeProject, setActiveProject, reorderProject, toggleSettingsView, toggleGitSidebar, renameProject } from '../state/actions';
+import { addProject, removeProject, setActiveProject, reorderProject, toggleSettingsView, toggleGitSidebar, toggleFileBrowserSidebar, renameProject } from '../state/actions';
 import { logger } from '../services/logger';
 import { confirmCloseProject } from './confirm-dialog';
 import { showContextMenu, startInlineRename } from './context-menu';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { Project } from '../state/types';
+import { basename } from '../utils/path';
 
 const CHEVRON_LEFT_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
 const CHEVRON_RIGHT_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+const EXPLORER_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
 const GIT_BRANCH_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>';
 const SETTINGS_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 
@@ -129,12 +131,13 @@ export function initProjectTabBar(onProjectChange: () => void): void {
       tabLabel.textContent = project.name;
       tab.appendChild(tabLabel);
 
-      const isBackgroundSession = (s: { id: string }): boolean => s.id !== project.activeSessionId;
+      // For the active project, only surface activity from background (non-visible) sessions.
+      // For inactive projects, the user can't see ANY session, so all sessions count.
       const hasBackgroundActivity = project.sessions.some(
-        (s) => s.hasActivity && isBackgroundSession(s),
+        (s) => s.hasActivity && (!isActive || s.id !== project.activeSessionId),
       );
       const hasBackgroundCompleted = project.sessions.some(
-        (s) => s.activityCompleted && isBackgroundSession(s),
+        (s) => s.activityCompleted && (!isActive || s.id !== project.activeSessionId),
       );
       appendActivityIndicator(tab, hasBackgroundActivity, hasBackgroundCompleted);
 
@@ -205,7 +208,7 @@ export function initProjectTabBar(onProjectChange: () => void): void {
       const selected = await open({ directory: true, multiple: false });
       if (selected) {
         const path = selected as string;
-        const name = path.split(/[/\\]/).pop() || 'Project';
+        const name = basename(path, 'Project');
         logger.info('project', 'Add project via folder picker', { name, path });
         addProject(name, path);
         onProjectChange();
@@ -214,6 +217,11 @@ export function initProjectTabBar(onProjectChange: () => void): void {
 
     // Right-side actions
     const actions = createElement('div', { className: 'project-tab-actions' });
+
+    const explorerBtn = createElement('button', { className: 'project-tab-action', title: 'Explorer' });
+    explorerBtn.innerHTML = EXPLORER_SVG;
+    explorerBtn.addEventListener('click', toggleFileBrowserSidebar);
+    actions.appendChild(explorerBtn);
 
     const gitBtn = createElement('button', { className: 'project-tab-action', title: 'Source Control' });
     gitBtn.innerHTML = GIT_BRANCH_SVG;

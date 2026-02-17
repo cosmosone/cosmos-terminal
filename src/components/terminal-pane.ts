@@ -73,10 +73,9 @@ function csiModifier(e: KeyboardEvent): number {
 }
 
 /** Decode a Uint8Array as latin-1 (one char per byte) for regex matching. */
+const latin1Decoder = new TextDecoder('latin1');
 function toLatin1(data: Uint8Array): string {
-  let text = '';
-  for (let i = 0; i < data.length; i++) text += String.fromCharCode(data[i]);
-  return text;
+  return latin1Decoder.decode(data);
 }
 
 /** Remove byte ranges from a Uint8Array, returning a new array without those regions. */
@@ -366,8 +365,17 @@ export class TerminalPane {
     });
 
     this.terminal.onScroll(() => {
-      const isAtBottom = this.terminal.buffer.active.viewportY >=
-        this.terminal.buffer.active.baseY;
+      const buf = this.terminal.buffer.active;
+      const isAtBottom = buf.viewportY >= buf.baseY;
+      if (this.autoScroll !== isAtBottom) {
+        logger.debug('pty', 'autoScroll changed', {
+          paneId: this.paneId,
+          autoScroll: isAtBottom,
+          viewportY: buf.viewportY,
+          baseY: buf.baseY,
+          rows: this.terminal.rows,
+        });
+      }
       this.autoScroll = isAtBottom;
       this.scrollBtn.classList.toggle('visible', !isAtBottom);
     });
@@ -706,6 +714,21 @@ export class TerminalPane {
         if (!this.disposed && shouldScroll) {
           this.terminal.scrollToBottom();
         }
+        if (!this.disposed) {
+          const buf = this.terminal.buffer.active;
+          const atBottom = buf.viewportY >= buf.baseY;
+          if (shouldScroll && !atBottom) {
+            logger.debug('pty', 'scrollToBottom did not reach bottom after write', {
+              paneId: this.paneId,
+              viewportY: buf.viewportY,
+              baseY: buf.baseY,
+              rows: this.terminal.rows,
+              shouldScroll,
+              autoScroll: this.autoScroll,
+              hidden: this.element.offsetWidth === 0,
+            });
+          }
+        }
       });
     }
   }
@@ -714,6 +737,13 @@ export class TerminalPane {
 
   fit(): void {
     if (this.disposed || this.element.offsetWidth === 0) return;
+    // Snapshot scroll intent before resize.  fitAddon.fit() calls
+    // terminal.resize() which fires onScroll synchronously — during resize
+    // the viewport position is temporarily inconsistent (viewportY < baseY),
+    // causing the onScroll handler to incorrectly flip autoScroll to false.
+    const wasAutoScroll = this.autoScroll;
+    const prevRows = this.terminal.rows;
+    const prevCols = this.terminal.cols;
     try {
       this.fitAddon.fit();
       const dims = this.fitAddon.proposeDimensions();
@@ -737,18 +767,47 @@ export class TerminalPane {
           }
         }
       }
-
-      // Re-sync scroll position after resize or visibility change.
-      // scrollToBottom() calls in write callbacks may have been no-ops while
-      // the terminal was hidden (display:none), leaving the viewport stuck.
-      if (this.autoScroll) {
-        this.terminal.scrollToBottom();
-      }
     } catch (err) {
       logger.warn('pty', 'Fit failed (element may not be visible)', {
         paneId: this.paneId,
         error: String(err),
       });
+      return;
+    }
+
+    const newRows = this.terminal.rows;
+    const newCols = this.terminal.cols;
+    if (newRows !== prevRows || newCols !== prevCols) {
+      const buf = this.terminal.buffer.active;
+      logger.debug('pty', 'fit() resized terminal', {
+        paneId: this.paneId,
+        from: `${prevCols}x${prevRows}`,
+        to: `${newCols}x${newRows}`,
+        viewportY: buf.viewportY,
+        baseY: buf.baseY,
+        wasAutoScroll,
+        autoScrollAfterResize: this.autoScroll,
+      });
+    }
+
+    // Restore scroll intent and re-sync position after resize.
+    // This also recovers from the hidden-pane case: scrollToBottom() calls
+    // in write callbacks are no-ops while the terminal has display:none,
+    // so the viewport can be stuck when the pane becomes visible again.
+    if (wasAutoScroll) {
+      this.autoScroll = true;
+      this.terminal.scrollToBottom();
+      this.scrollBtn.classList.remove('visible');
+
+      const buf = this.terminal.buffer.active;
+      if (buf.viewportY < buf.baseY) {
+        logger.warn('pty', 'scrollToBottom did not reach bottom after fit()', {
+          paneId: this.paneId,
+          viewportY: buf.viewportY,
+          baseY: buf.baseY,
+          rows: newRows,
+        });
+      }
     }
   }
 
@@ -808,6 +867,13 @@ export class TerminalPane {
   }
 
   scrollToBottom(): void {
+    const buf = this.terminal.buffer.active;
+    logger.debug('pty', 'scrollToBottom (manual)', {
+      paneId: this.paneId,
+      viewportY: buf.viewportY,
+      baseY: buf.baseY,
+      rows: this.terminal.rows,
+    });
     this.autoScroll = true;
     this.terminal.scrollToBottom();
     this.scrollBtn.classList.remove('visible');

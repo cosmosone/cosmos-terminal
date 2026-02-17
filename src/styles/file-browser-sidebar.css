@@ -1,0 +1,236 @@
+/* ===== File Browser Sidebar Container ===== */
+#file-browser-sidebar-container {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+/* ===== Resize Handle (left edge) ===== */
+.fb-sidebar-resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background var(--transition-fast);
+}
+
+.fb-sidebar-resize:hover,
+.fb-sidebar-resize.active {
+  background: var(--accent);
+}
+
+/* ===== Header ===== */
+.fb-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--project-tab-height);
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.fb-sidebar-header-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: capitalize;
+  letter-spacing: 0.5px;
+}
+
+.fb-sidebar-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.fb-sidebar-header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.fb-sidebar-header-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ===== Shared scrollbar styling ===== */
+.fb-sidebar-body::-webkit-scrollbar,
+.fb-search-results::-webkit-scrollbar {
+  width: 6px;
+}
+
+.fb-sidebar-body::-webkit-scrollbar-track,
+.fb-search-results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.fb-sidebar-body::-webkit-scrollbar-thumb,
+.fb-search-results::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.fb-sidebar-body::-webkit-scrollbar-thumb:hover,
+.fb-search-results::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ===== Body ===== */
+.fb-sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+/* ===== Tree Node ===== */
+.fb-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast);
+  white-space: nowrap;
+}
+
+.fb-tree-node:hover {
+  background: var(--bg-hover);
+}
+
+.fb-tree-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  font-size: 8px;
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.fb-tree-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.fb-tree-arrow-spacer {
+  display: inline-block;
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.fb-tree-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.fb-tree-name {
+  flex: 1;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== Empty state ===== */
+.fb-sidebar-empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ===== Search ===== */
+.fb-search-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.fb-search-input {
+  margin: 8px;
+  padding: 5px 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.fb-search-input:focus {
+  border-color: var(--accent);
+}
+
+.fb-search-results {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+.fb-search-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast);
+}
+
+.fb-search-result:hover {
+  background: var(--bg-hover);
+}
+
+.fb-search-result-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.fb-search-result-name {
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fb-search-result-path {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fb-search-empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}

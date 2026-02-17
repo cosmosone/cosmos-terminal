@@ -216,9 +216,10 @@ pub async fn git_commit(path: String, message: String) -> Result<GitCommitResult
             .commit(Some("HEAD"), &sig, &sig, &message, &tree, &parents)
             .map_err(|e| e.to_string())?;
 
+        let full_id = oid.to_string();
         Ok(GitCommitResult {
             success: true,
-            commit_id: oid.to_string()[..7].to_string(),
+            commit_id: full_id[..7.min(full_id.len())].to_string(),
             message,
         })
     })

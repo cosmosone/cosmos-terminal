@@ -49,6 +49,8 @@ function migrateFontValue(value: string, presets: string[]): string {
 }
 
 export const DEFAULT_KEYBINDINGS: KeybindingConfig = {
+  newSession: 'Ctrl+Shift+t',
+  toggleSettings: 'Ctrl+,',
   navigatePaneLeft: 'Alt+ArrowLeft',
   navigatePaneRight: 'Alt+ArrowRight',
   navigatePaneUp: 'Alt+ArrowUp',
@@ -62,6 +64,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingConfig = {
   cycleProjectNext: 'Alt+i',
   cycleProjectPrev: 'Alt+u',
   toggleGitSidebar: 'Alt+d',
+  toggleFileBrowser: 'Alt+f',
   closeTerminalTab: 'Alt+l',
   closeProjectTab: 'Alt+o',
   scrollToBottom: 'Alt+m',

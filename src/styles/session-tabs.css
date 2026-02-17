@@ -62,6 +62,11 @@
   opacity: 0.6;
 }
 
+.session-tab .tab-lock {
+  width: 16px;
+  height: 16px;
+}
+
 .session-tab-add {
   display: flex;
   align-items: center;
@@ -88,4 +93,22 @@
 
 .session-tab-agent:hover {
   color: var(--text-primary);
+}
+
+/* ===== Content tab extras ===== */
+.session-tab-separator {
+  display: inline-block;
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.content-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }

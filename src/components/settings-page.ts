@@ -129,10 +129,12 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     // ── 5. Keybindings ──
     const kb = createCollapsibleSection('Keybindings');
     const kbLabels: [keyof KeybindingConfig, string][] = [
+      ['newSession', 'New Session'],
+      ['toggleSettings', 'Settings'],
       ['navigatePaneLeft', 'Move to Left Pane'],
       ['navigatePaneRight', 'Move to Right Pane'],
-      ['navigatePaneUp', 'Move to Up Pane'],
-      ['navigatePaneDown', 'Move to Down Pane'],
+      ['navigatePaneUp', 'Move to Pane Above'],
+      ['navigatePaneDown', 'Move to Pane Below'],
       ['splitDown', 'Split Down'],
       ['splitUp', 'Split Up'],
       ['splitLeft', 'Split Left'],
@@ -142,18 +144,13 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       ['cycleProjectNext', 'Next Project Tab'],
       ['cycleProjectPrev', 'Previous Project Tab'],
       ['toggleGitSidebar', 'Toggle Git Sidebar'],
+      ['toggleFileBrowser', 'Toggle File Browser'],
       ['closeTerminalTab', 'Close Terminal Tab'],
       ['closeProjectTab', 'Close Project Tab'],
       ['scrollToBottom', 'Scroll to Bottom'],
     ];
 
     // Build conflict map: combo -> list of labels that use it
-    const hardcodedBindings: [string, string][] = [
-      ['Ctrl+Shift+t', 'New Session'],
-      ['Ctrl+Shift+w', 'Close Session'],
-      ['Ctrl+,', 'Settings'],
-      ['Ctrl+Shift+g', 'Git Sidebar'],
-    ];
     const comboToLabels = new Map<string, string[]>();
 
     function addToConflictMap(combo: string, label: string): void {
@@ -165,9 +162,6 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
 
     for (const [key, label] of kbLabels) {
       addToConflictMap(settings.keybindings[key], label);
-    }
-    for (const [combo, label] of hardcodedBindings) {
-      addToConflictMap(combo, label);
     }
 
     for (const [key, label] of kbLabels) {

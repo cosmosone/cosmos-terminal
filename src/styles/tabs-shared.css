@@ -38,3 +38,21 @@
   opacity: 1;
   background: var(--bg-hover);
 }
+
+/* Lock icon — always visible when tab is locked */
+.tab-lock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+
+.tab-lock:hover {
+  opacity: 1;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}

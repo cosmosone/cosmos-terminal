@@ -34,6 +34,8 @@ export function startInlineRename(
       label.textContent = currentName;
     }
   });
+  // Prevent Space keyup from triggering a click on the parent <button>
+  input.addEventListener('keyup', (e) => e.stopPropagation());
 }
 
 export interface MenuItem {

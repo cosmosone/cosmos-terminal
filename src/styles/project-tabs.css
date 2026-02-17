@@ -23,12 +23,16 @@
   opacity: 0;
   pointer-events: none;
   flex-shrink: 0;
+  width: 0;
+  overflow: hidden;
   -webkit-app-region: no-drag;
+  transition: width var(--transition-fast), opacity var(--transition-fast);
 }
 
 #project-tab-bar .scroll-arrow.visible {
   opacity: 1;
   pointer-events: auto;
+  width: 26px;
 }
 
 .project-tab.dragging {
@@ -141,12 +145,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
   height: 26px;
   border-radius: var(--tab-border-radius);
   color: var(--text-muted);
   font-size: 18px;
-  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.project-tab-action {
+  width: 26px;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 #project-tab-bar .scroll-arrow:hover,

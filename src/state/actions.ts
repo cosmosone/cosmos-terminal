@@ -2,7 +2,8 @@ import { store } from './store';
 import { logger } from '../services/logger';
 import { saveSettings } from '../services/settings-service';
 import { findLeafPaneIds } from '../layout/pane-tree';
-import type { AppSettings, GitSidebarState, PaneNode, Project, ProjectGitState, Session } from './types';
+import { basename } from '../utils/path';
+import type { AppSettings, FileTab, FileBrowserSidebarState, GitSidebarState, PaneNode, Project, ProjectGitState, Session } from './types';
 
 function genId(): string {
   return crypto.randomUUID();
@@ -20,13 +21,16 @@ export function addProject(name: string, path: string): Project {
     path,
     sessions: [{
       id: sessionId,
-      title: 'terminal 1',
+      title: 'terminal',
       paneTree: { type: 'leaf', paneId },
       activePaneId: paneId,
       hasActivity: false,
       activityCompleted: false,
+      locked: false,
     }],
     activeSessionId: sessionId,
+    tabs: [],
+    activeTabId: null,
   };
   store.setState((s) => ({
     ...s,
@@ -97,21 +101,21 @@ function updateSession(projectId: string, sessionId: string, updater: (s: Sessio
 
 export function addSession(projectId: string, opts?: { title?: string }): Session {
   logger.info('session', 'addSession', { projectId });
-  const project = store.getState().projects.find((p) => p.id === projectId);
-  const num = (project?.sessions.length ?? 0) + 1;
   const paneId = genId();
   const session: Session = {
     id: genId(),
-    title: opts?.title ?? `terminal ${num}`,
+    title: opts?.title ?? 'terminal',
     paneTree: { type: 'leaf', paneId },
     activePaneId: paneId,
     hasActivity: false,
     activityCompleted: false,
+    locked: false,
   };
   updateProject(projectId, (p) => ({
     ...p,
     sessions: [...p.sessions, session],
     activeSessionId: session.id,
+    activeTabId: null,
   }));
   return session;
 }
@@ -128,10 +132,18 @@ export function removeSession(projectId: string, sessionId: string): void {
   updateProject(projectId, (p) => {
     const sessions = p.sessions.filter((s) => s.id !== sessionId);
     let activeSessionId = p.activeSessionId;
+    let activeTabId = p.activeTabId;
     if (activeSessionId === sessionId) {
-      activeSessionId = sessions.length > 0 ? sessions[sessions.length - 1].id : null;
+      if (sessions.length > 0) {
+        activeSessionId = sessions[sessions.length - 1].id;
+      } else if (p.tabs.length > 0) {
+        activeSessionId = null;
+        activeTabId = p.tabs[p.tabs.length - 1].id;
+      } else {
+        activeSessionId = null;
+      }
     }
-    return { ...p, sessions, activeSessionId };
+    return { ...p, sessions, activeSessionId, activeTabId };
   });
 }
 
@@ -147,18 +159,26 @@ export function setActiveSession(projectId: string, sessionId: string): void {
   updateProject(projectId, (p) => ({
     ...p,
     activeSessionId: sessionId,
+    activeTabId: null,
   }));
 }
 
 // --- Activity tracking internals ---
 
 const activityTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const ACTIVITY_IDLE_MS = 5_000;
+const sessionActivatedAt = new Map<string, number>();
+const sessionActivityStart = new Map<string, number>();
 
 const oscBusyPanes = new Set<string>();
 const oscCapablePanes = new Set<string>();
-const sessionActivatedAt = new Map<string, number>();
+
+// Idle timeout thresholds for activity indicator detection.
+// Short bursts (< 30s) use 5s; sustained activity uses 20s to accommodate
+// AI agents that pause 10-20s between steps while thinking.
 const ACTIVATION_SUPPRESS_MS = 2_000;
+const ACTIVITY_IDLE_SHORT_MS = 5_000;
+const ACTIVITY_IDLE_LONG_MS = 20_000;
+const LONG_ACTIVITY_THRESHOLD_MS = 30_000;
 
 function sessionKey(projectId: string, sessionId: string): string {
   return `${projectId}:${sessionId}`;
@@ -187,6 +207,7 @@ function cleanupSessionTracking(projectId: string, session: Session): void {
   const key = sessionKey(projectId, session.id);
   clearActivityTimer(key);
   sessionActivatedAt.delete(key);
+  sessionActivityStart.delete(key);
   for (const paneId of findLeafPaneIds(session.paneTree)) {
     cleanupOscPane(paneId);
   }
@@ -216,6 +237,12 @@ function resolveActivity(projectId: string, sessionId: string): void {
 
 // --- Activity tracking actions ---
 
+/** Pick the idle timeout based on how long the current activity burst has lasted. */
+function getIdleTimeout(burstStartMs: number, now: number): number {
+  const duration = now - burstStartMs;
+  return duration > LONG_ACTIVITY_THRESHOLD_MS ? ACTIVITY_IDLE_LONG_MS : ACTIVITY_IDLE_SHORT_MS;
+}
+
 export function markSessionActivity(projectId: string, sessionId: string, paneId?: string): void {
   const session = findSession(projectId, sessionId);
   if (!session) return;
@@ -229,19 +256,25 @@ export function markSessionActivity(projectId: string, sessionId: string, paneId
 
   // Suppress activity from the resize/repaint burst after a tab switch
   const key = sessionKey(projectId, sessionId);
+  const now = Date.now();
   const activatedAt = sessionActivatedAt.get(key);
-  if (activatedAt && Date.now() - activatedAt < ACTIVATION_SUPPRESS_MS) return;
+  if (activatedAt && now - activatedAt < ACTIVATION_SUPPRESS_MS) return;
 
   if (!session.hasActivity) {
     updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true, activityCompleted: false }));
+    sessionActivityStart.set(key, now);
   }
 
-  // Reset idle timer -- when output stops for ACTIVITY_IDLE_MS, clear the dot
+  // Reset idle timer -- when output stops, clear the activity dot
+  const burstStart = sessionActivityStart.get(key) ?? now;
+  const idleMs = getIdleTimeout(burstStart, now);
+
   clearActivityTimer(key);
   activityTimers.set(key, setTimeout(() => {
     activityTimers.delete(key);
+    sessionActivityStart.delete(key);
     clearSessionActivity(projectId, sessionId);
-  }, ACTIVITY_IDLE_MS));
+  }, idleMs));
 }
 
 export function markPaneOscBusy(projectId: string, sessionId: string, paneId: string): void {
@@ -291,7 +324,7 @@ export function updateProjectCwd(projectId: string, cwd: string): void {
   const project = store.getState().projects.find((p) => p.id === projectId);
   if (project?.path.toLowerCase() === cwd.toLowerCase()) return;
 
-  const name = cwd.split(/[/\\]/).filter(Boolean).pop() || 'Project';
+  const name = basename(cwd, 'Project');
   updateProject(projectId, (p) => ({ ...p, name, path: cwd }));
 }
 
@@ -465,6 +498,14 @@ function updateGitSidebar(updater: (sidebar: GitSidebarState) => Partial<GitSide
 }
 
 export function toggleGitSidebar(): void {
+  const opening = !store.getState().gitSidebar.visible;
+  if (opening) {
+    // Close file browser sidebar (mutual exclusion)
+    store.setState((s) => ({
+      ...s,
+      fileBrowserSidebar: { ...s.fileBrowserSidebar, visible: false },
+    }));
+  }
   updateGitSidebar((sb) => ({ visible: !sb.visible }));
 }
 
@@ -540,4 +581,159 @@ export function defaultGitSidebarState(): GitSidebarState {
     activeProjectId: null,
     graphExpanded: true,
   };
+}
+
+// --- File browser sidebar actions ---
+
+function updateFileBrowserSidebar(updater: (sidebar: FileBrowserSidebarState) => Partial<FileBrowserSidebarState>): void {
+  store.setState((s) => ({
+    ...s,
+    fileBrowserSidebar: { ...s.fileBrowserSidebar, ...updater(s.fileBrowserSidebar) },
+  }));
+}
+
+export function defaultFileBrowserSidebarState(): FileBrowserSidebarState {
+  return {
+    visible: false,
+    width: 280,
+    expandedPaths: [],
+  };
+}
+
+export function toggleFileBrowserSidebar(): void {
+  const opening = !store.getState().fileBrowserSidebar.visible;
+  if (opening) {
+    // Close git sidebar (mutual exclusion)
+    updateGitSidebar(() => ({ visible: false }));
+  }
+  updateFileBrowserSidebar((sb) => ({ visible: !sb.visible }));
+}
+
+export function setFileBrowserSidebarWidth(width: number): void {
+  updateFileBrowserSidebar(() => ({ width: Math.max(200, Math.min(500, width)) }));
+}
+
+export function toggleFileBrowserPath(path: string): void {
+  updateFileBrowserSidebar((sb) => {
+    const paths = sb.expandedPaths;
+    return {
+      expandedPaths: paths.includes(path)
+        ? paths.filter((p) => p !== path)
+        : [...paths, path],
+    };
+  });
+}
+
+// --- Content tab actions ---
+
+export function addFileTab(projectId: string, filePath: string, fileType: string): void {
+  const project = store.getState().projects.find((p) => p.id === projectId);
+  const existing = project?.tabs.find((t) => t.filePath === filePath);
+  if (existing) {
+    setActiveTab(projectId, existing.id);
+    return;
+  }
+
+  const tab: FileTab = {
+    id: genId(),
+    title: basename(filePath, 'File'),
+    filePath,
+    fileType,
+    editing: false,
+    dirty: false,
+    locked: false,
+  };
+  updateProject(projectId, (p) => ({
+    ...p,
+    tabs: [...p.tabs, tab],
+    activeTabId: tab.id,
+    activeSessionId: null,
+  }));
+}
+
+export function removeContentTab(projectId: string, tabId: string): void {
+  updateProject(projectId, (p) => {
+    const tabs = p.tabs.filter((t) => t.id !== tabId);
+    let activeTabId = p.activeTabId;
+    if (activeTabId === tabId) {
+      if (tabs.length > 0) {
+        activeTabId = tabs[tabs.length - 1].id;
+      } else {
+        activeTabId = null;
+        // Fall back to last terminal session
+        return {
+          ...p,
+          tabs,
+          activeTabId: null,
+          activeSessionId: p.sessions.length > 0 ? p.sessions[p.sessions.length - 1].id : null,
+        };
+      }
+    }
+    return { ...p, tabs, activeTabId };
+  });
+}
+
+export function setActiveTab(projectId: string, tabId: string): void {
+  updateProject(projectId, (p) => ({
+    ...p,
+    activeTabId: tabId,
+    activeSessionId: null,
+  }));
+}
+
+export function setFileTabEditing(projectId: string, tabId: string, editing: boolean): void {
+  updateProject(projectId, (p) => ({
+    ...p,
+    tabs: p.tabs.map((t) =>
+      t.id === tabId ? { ...t, editing } : t,
+    ),
+  }));
+}
+
+export function setFileTabDirty(projectId: string, tabId: string, dirty: boolean): void {
+  updateProject(projectId, (p) => ({
+    ...p,
+    tabs: p.tabs.map((t) =>
+      t.id === tabId ? { ...t, dirty } : t,
+    ),
+  }));
+}
+
+export function closeOtherTabs(projectId: string, keepTabId: string, keepType: 'session' | 'content'): void {
+  updateProject(projectId, (p) => {
+    if (keepType === 'session') {
+      const sessions = p.sessions.filter((s) => s.id === keepTabId || s.locked);
+      const tabs = p.tabs.filter((t) => t.locked);
+      return {
+        ...p,
+        sessions,
+        activeSessionId: keepTabId,
+        tabs,
+        activeTabId: null,
+      };
+    } else {
+      const sessions = p.sessions.filter((s) => s.locked);
+      const tabs = p.tabs.filter((t) => t.id === keepTabId || t.locked);
+      return {
+        ...p,
+        sessions,
+        activeSessionId: sessions.length > 0 ? sessions[0].id : null,
+        tabs,
+        activeTabId: keepTabId,
+      };
+    }
+  });
+}
+
+export function toggleSessionLocked(projectId: string, sessionId: string): void {
+  updateSession(projectId, sessionId, (s) => ({ ...s, locked: !s.locked }));
+}
+
+export function toggleFileTabLocked(projectId: string, tabId: string): void {
+  updateProject(projectId, (p) => ({
+    ...p,
+    tabs: p.tabs.map((t) =>
+      t.id === tabId ? { ...t, locked: !t.locked } : t,
+    ),
+  }));
 }

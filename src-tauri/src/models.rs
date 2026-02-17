@@ -58,3 +58,33 @@ pub struct GitPushResult {
     pub success: bool,
     pub message: String,
 }
+
+// --- Filesystem models ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: u64,
+    pub extension: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryListing {
+    pub path: String,
+    pub entries: Vec<DirEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileContent {
+    pub path: String,
+    pub content: String,
+    pub size: u64,
+    pub truncated: bool,
+    pub binary: bool,
+}

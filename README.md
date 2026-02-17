@@ -1,6 +1,6 @@
 # Cosmos Terminal
 
-**A terminal built for coding on Windows.** Project-level workspace organization, split panes, and a built-in Git sidebar — so you can write, navigate, and commit without ever leaving the terminal.
+**A terminal built for coding on Windows.** Project-level workspace organization, split panes, a file browser, and a built-in Git sidebar — so you can write, navigate, and commit without ever leaving the terminal.
 
 Built with [Tauri v2](https://v2.tauri.app/) + Rust. Developed and tested on Windows 11.
 
@@ -48,6 +48,17 @@ Stage files, review diffs, write commit messages, and push — right next to you
 
 Optionally generate conventional commit messages with AI (OpenAI) for large changesets.
 
+### File Browser Sidebar
+
+Browse your project's files without leaving the terminal. Toggle it with `Alt+F` — a tree view of the active project's directory appears on the right side, mirroring the Git sidebar's position.
+
+- **Tree navigation** — Expand and collapse folders inline. The tree auto-scopes to the active project's root directory.
+- **Open any file** — Double-click any file to open it in a built-in viewer tab. Text files open directly in an editable textarea. Markdown files (`.md`) render as formatted output with a right-click "Edit" option to switch to a raw editor, and "View" to switch back.
+- **File tabs in the session bar** — Opened files appear as tabs alongside your terminal sessions, separated by a divider. Dirty (unsaved) files show a `*` prefix. Save with the header button after editing.
+- **Tab locking** — Right-click any tab (terminal or file) and select "Lock" to protect it from "Close Others". Locked tabs show a lock icon in place of the close button — click the icon to unlock.
+- **Sidebar mutual exclusion** — Only one sidebar (file browser or Git) is open at a time. Opening one automatically closes the other.
+- **Resizable** — Drag the left edge of the sidebar to adjust width (200–500px). Width persists across restarts.
+
 ### Built and Tested on Windows 11
 
 This isn't a Linux terminal ported to Windows. Cosmos Terminal is developed and tested on Windows 11 from day one:
@@ -65,6 +76,9 @@ This isn't a Linux terminal ported to Windows. Cosmos Terminal is developed and 
 - **Sessions per project** — Tabbed sessions within each project, each with independent split panes
 - **Split panes** — Horizontal and vertical splits with keyboard navigation
 - **Activity indicators** — Pulsing blue dots on project and session tabs when background terminals have running commands or output, powered by OSC 133 shell integration with volume-based fallback
+- **File browser sidebar** — Tree view of the project directory; double-click any file to open it in a built-in viewer/editor tab
+- **File tabs** — Text and Markdown viewer/editor tabs alongside terminal sessions, with save support
+- **Tab locking** — Lock any tab (terminal or file) to protect it from "Close Others"
 - **Git sidebar** — Stage, diff, commit, push, and browse commit history from a collapsible panel
 - **AI commit messages** — Generate conventional commit messages from staged changes (OpenAI, optional)
 - **WebGL rendering** — GPU-accelerated terminal via xterm.js WebGL addon with ClearType optimizations
@@ -103,6 +117,7 @@ The installer will be in `src-tauri/target/release/bundle/`.
 | New session | `Ctrl+Shift+T` |
 | Close session | `Ctrl+Shift+W` |
 | Settings | `Ctrl+,` |
+| File browser | `Alt+F` |
 | Git sidebar | `Ctrl+Shift+G` / `Alt+D` |
 | Split panes | Configurable in settings |
 | Navigate panes | Configurable in settings |
@@ -112,13 +127,14 @@ The installer will be in `src-tauri/target/release/bundle/`.
 
 ```
 src/                  # Frontend (TypeScript + xterm.js)
-  components/         # UI components (tabs, settings, git sidebar)
-  services/           # PTY, settings, git, system monitor
+  components/         # UI components (tabs, settings, git sidebar, file browser)
+  services/           # PTY, settings, git, filesystem, system monitor
   state/              # Centralized state management
   layout/             # Pane tree and split layout logic
+  utils/              # Shared utilities (icons, path helpers, file types)
 
 src-tauri/            # Backend (Rust + Tauri v2)
-  src/commands/       # Tauri IPC handlers (git, PTY, system)
+  src/commands/       # Tauri IPC handlers (git, PTY, filesystem, system)
   src/pty/            # PTY session management (ConPTY)
 ```
 

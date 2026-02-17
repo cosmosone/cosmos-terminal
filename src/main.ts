@@ -1,6 +1,6 @@
 import '@xterm/xterm/css/xterm.css';
 import { initStore, store } from './state/store';
-import { addProject, addSession, getActiveProject, getActiveSession, removeProject, removeSession, splitPane, cycleSession, cycleProject, toggleSettingsView, toggleGitSidebar, updateSettings, defaultGitSidebarState } from './state/actions';
+import { addProject, addSession, getActiveProject, getActiveSession, removeProject, removeSession, splitPane, cycleSession, cycleProject, toggleSettingsView, toggleGitSidebar, toggleFileBrowserSidebar, defaultGitSidebarState, defaultFileBrowserSidebarState } from './state/actions';
 import { loadSettings, saveSettings, buildUiFont } from './services/settings-service';
 import { loadWorkspace, saveWorkspace } from './services/workspace-service';
 import { findLeafPaneIds } from './layout/pane-tree';
@@ -13,10 +13,14 @@ import { initSettingsPage } from './components/settings-page';
 import { initStatusBar } from './components/status-bar';
 import { initLogViewer } from './components/log-viewer';
 import { initGitSidebar } from './components/git-sidebar';
+import { initFileBrowserSidebar } from './components/file-browser-sidebar';
+import { initFileTabContent } from './components/file-tab-content';
 import { keybindings, parseKeybinding } from './utils/keybindings';
-import { showConfirmDialog, confirmCloseProject } from './components/confirm-dialog';
+import { confirmCloseTerminalTab, confirmCloseProject } from './components/confirm-dialog';
 import { $ } from './utils/dom';
 import { debounce } from './utils/debounce';
+import { basename } from './utils/path';
+import './highlight/languages/register-all';
 
 async function main(): Promise<void> {
   const [settings, saved] = await Promise.all([loadSettings(), loadWorkspace()]);
@@ -36,11 +40,17 @@ async function main(): Promise<void> {
   logger.info('app', 'App starting', { settingsLoaded: true });
 
   initStore({
-    projects: saved?.projects ?? [],
+    projects: (saved?.projects ?? []).map((p) => ({
+      ...p,
+      sessions: (p.sessions ?? []).map((s: any) => ({ ...s, locked: s.locked ?? false })),
+      tabs: (p.tabs ?? []).map((t: any) => ({ ...t, locked: t.locked ?? false })),
+      activeTabId: p.activeTabId ?? null,
+    })),
     activeProjectId: saved?.activeProjectId ?? null,
     settings,
     view: 'terminal',
     gitSidebar: saved?.gitSidebar ?? defaultGitSidebarState(),
+    fileBrowserSidebar: saved?.fileBrowserSidebar ?? defaultFileBrowserSidebarState(),
     gitStates: {},
   });
 
@@ -63,12 +73,33 @@ async function main(): Promise<void> {
   initStatusBar(() => splitContainer.clearAllScrollback());
   initLogViewer();
   initGitSidebar(() => splitContainer.reLayout());
+  initFileBrowserSidebar(() => splitContainer.reLayout());
+  initFileTabContent();
+
+  // Visibility management: hide terminal when content tab is active, show when terminal session is active
+  const fileTabContainer = $('#file-tab-container') as HTMLElement | null;
+
+  store.select(
+    (s) => {
+      const project = s.projects.find((p) => p.id === s.activeProjectId);
+      return { activeSessionId: project?.activeSessionId ?? null, activeTabId: project?.activeTabId ?? null };
+    },
+    ({ activeSessionId, activeTabId }) => {
+      const showTerminal = activeSessionId !== null && activeTabId === null;
+      terminalContainer.classList.toggle('hidden', !showTerminal);
+
+      if (showTerminal) {
+        fileTabContainer?.classList.add('hidden');
+        splitContainer.reLayout();
+      }
+    },
+  );
 
   logger.debug('app', 'All components initialized');
 
   if (!saved) {
     const defaultPath = await getDefaultProjectPath();
-    const defaultName = defaultPath.split(/[/\\]/).filter(Boolean).pop() || 'Project';
+    const defaultName = basename(defaultPath, 'Project');
     addProject(defaultName, defaultPath);
     logger.info('app', 'Default project created', { path: defaultPath });
   } else {
@@ -80,13 +111,14 @@ async function main(): Promise<void> {
   // Persist workspace state on changes (debounced)
   const debouncedSave = debounce(() => {
     const s = store.getState();
-    saveWorkspace(s.projects, s.activeProjectId, s.gitSidebar);
+    saveWorkspace(s.projects, s.activeProjectId, s.gitSidebar, s.fileBrowserSidebar);
   }, 1000);
 
   const workspaceSelectors: ((s: AppState) => unknown)[] = [
     (s) => s.projects,
     (s) => s.activeProjectId,
     (s) => s.gitSidebar,
+    (s) => s.fileBrowserSidebar,
   ];
   for (const selector of workspaceSelectors) {
     store.select(selector, () => debouncedSave());
@@ -103,51 +135,22 @@ async function main(): Promise<void> {
     }
   });
 
-  keybindings.register({
-    key: 't',
-    ctrl: true,
-    shift: true,
-    handler: () => {
-      const project = getActiveProject();
-      if (project) {
-        logger.info('session', 'New session via Ctrl+Shift+T', { projectId: project.id });
-        addSession(project.id);
-        refresh();
-      }
-    },
-  });
+  async function closeActiveTerminalTab(): Promise<void> {
+    const project = getActiveProject();
+    if (!project?.activeSessionId) return;
 
-  keybindings.register({
-    key: 'w',
-    ctrl: true,
-    shift: true,
-    handler: async () => {
-      const project = getActiveProject();
-      if (!project?.activeSessionId) return;
-      if (project.sessions.length <= 1) {
-        if (!await confirmCloseProject(project.name)) return;
-        removeProject(project.id);
-        refresh();
-        return;
-      }
-      logger.info('session', 'Close session via Ctrl+Shift+W', { sessionId: project.activeSessionId });
-      removeSession(project.id, project.activeSessionId);
+    if (project.sessions.length <= 1) {
+      if (!await confirmCloseProject(project.name)) return;
+      removeProject(project.id);
       refresh();
-    },
-  });
+      return;
+    }
 
-  keybindings.register({
-    key: ',',
-    ctrl: true,
-    handler: toggleSettingsView,
-  });
-
-  keybindings.register({
-    key: 'g',
-    ctrl: true,
-    shift: true,
-    handler: toggleGitSidebar,
-  });
+    const sessionTitle = getActiveSession()?.title ?? 'terminal';
+    if (!await confirmCloseTerminalTab(sessionTitle)) return;
+    removeSession(project.id, project.activeSessionId);
+    refresh();
+  }
 
   // --- Configurable keybindings ---
   let cleanupConfigBindings: (() => void)[] = [];
@@ -162,6 +165,14 @@ async function main(): Promise<void> {
       const unsub = keybindings.register({ ...parsed, handler });
       cleanupConfigBindings.push(unsub);
     };
+
+    bind(kb.newSession, () => {
+      const project = getActiveProject();
+      if (!project) return;
+      addSession(project.id);
+      refresh();
+    });
+    bind(kb.toggleSettings, toggleSettingsView);
 
     bind(kb.navigatePaneLeft, () => splitContainer.navigatePane('left'));
     bind(kb.navigatePaneRight, () => splitContainer.navigatePane('right'));
@@ -186,45 +197,26 @@ async function main(): Promise<void> {
 
     function doCycleSession(direction: 1 | -1): void {
       const project = getActiveProject();
-      if (project) { cycleSession(project.id, direction); refresh(); }
+      if (!project) return;
+      cycleSession(project.id, direction);
+      refresh();
+    }
+
+    function doCycleProject(direction: 1 | -1): void {
+      cycleProject(direction);
+      refresh();
     }
 
     bind(kb.cycleSessionNext, () => doCycleSession(1));
     bind(kb.cycleSessionPrev, () => doCycleSession(-1));
-    bind(kb.cycleProjectNext, () => { cycleProject(1); refresh(); });
-    bind(kb.cycleProjectPrev, () => { cycleProject(-1); refresh(); });
+    bind(kb.cycleProjectNext, () => doCycleProject(1));
+    bind(kb.cycleProjectPrev, () => doCycleProject(-1));
 
     bind(kb.toggleGitSidebar, toggleGitSidebar);
+    bind(kb.toggleFileBrowser, toggleFileBrowserSidebar);
     bind(kb.scrollToBottom, () => splitContainer.scrollToBottom());
 
-    bind(kb.closeTerminalTab, async () => {
-      const project = getActiveProject();
-      if (!project?.activeSessionId) return;
-      if (project.sessions.length <= 1) {
-        if (!await confirmCloseProject(project.name)) return;
-        removeProject(project.id);
-        refresh();
-        return;
-      }
-      const { confirmCloseTerminalTab } = store.getState().settings;
-      if (confirmCloseTerminalTab) {
-        const result = await showConfirmDialog({
-          title: 'Close Terminal Tab',
-          message: `Close "${project.sessions.find(s => s.id === project.activeSessionId)?.title ?? 'terminal'}"?`,
-          confirmText: 'Close',
-          showCheckbox: true,
-          checkboxLabel: "Don't ask again",
-          danger: true,
-        });
-        if (!result.confirmed) return;
-        if (result.checkboxChecked) {
-          updateSettings({ confirmCloseTerminalTab: false });
-          saveSettings(store.getState().settings);
-        }
-      }
-      removeSession(project.id, project.activeSessionId);
-      refresh();
-    });
+    bind(kb.closeTerminalTab, () => closeActiveTerminalTab());
 
     bind(kb.closeProjectTab, async () => {
       const project = getActiveProject();

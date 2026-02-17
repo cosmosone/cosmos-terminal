@@ -1,0 +1,101 @@
+/* ===== Token colors (Tokyo Night) ===== */
+.tok-keyword    { color: #bb9af7; }
+.tok-type       { color: #2ac3de; }
+.tok-string     { color: #9ece6a; }
+.tok-number     { color: #ff9e64; }
+.tok-comment    { color: #565f89; font-style: italic; }
+.tok-constant   { color: #ff9e64; }
+.tok-function   { color: #7aa2f7; }
+.tok-operator   { color: #89ddff; }
+.tok-punctuation{ color: #c0caf5; }
+.tok-decorator  { color: #bb9af7; }
+.tok-tag        { color: #f7768e; }
+.tok-attribute  { color: #7aa2f7; }
+.tok-property   { color: #73daca; }
+.tok-escape     { color: #89ddff; }
+.tok-heading    { color: #7aa2f7; font-weight: bold; }
+.tok-meta       { color: #f7768e; }
+
+/* ===== Overlay editor layout ===== */
+.highlighted-editor-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Shared properties that must stay in sync between layers */
+.highlighted-editor-backdrop,
+.highlighted-editor-textarea {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  margin: 0;
+  border: none;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace);
+  tab-size: 4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  box-sizing: border-box;
+}
+
+.highlighted-editor-backdrop {
+  pointer-events: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.highlighted-editor-backdrop code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  tab-size: inherit;
+  white-space: inherit;
+  word-wrap: inherit;
+}
+
+.highlighted-editor-textarea {
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text-primary);
+  z-index: 1;
+}
+
+.highlighted-editor-textarea:focus {
+  outline: none;
+}
+
+.highlighted-editor-textarea::selection {
+  background: rgba(122, 162, 247, 0.3);
+}
+
+/* Hide scrollbar on backdrop — textarea scrollbar is the visible one */
+.highlighted-editor-backdrop::-webkit-scrollbar {
+  display: none;
+}
+
+.highlighted-editor-textarea::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.highlighted-editor-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.highlighted-editor-textarea::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.highlighted-editor-textarea::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}

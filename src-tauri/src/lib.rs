@@ -4,6 +4,7 @@ mod pty;
 
 use tauri::Manager;
 
+use commands::fs_commands;
 use commands::git_commands;
 use commands::pty_commands;
 use commands::system_commands::{self, SystemMonitor};
@@ -113,7 +114,11 @@ pub fn run() {
         } else {
             format!("{extra} {flags}")
         };
-        env::set_var(key, combined);
+        // SAFETY: called before any threads are spawned (Tauri builder hasn't
+        // run yet), so mutating the environment is safe.  `set_var` is
+        // deprecated-as-safe since Rust 1.83; wrapping in `unsafe` silences
+        // the warning and documents the single-threaded precondition.
+        unsafe { env::set_var(key, combined) };
     }
 
     let session_manager = SessionManager::new();
@@ -138,6 +143,10 @@ pub fn run() {
             git_commands::git_stage_all,
             git_commands::git_commit,
             git_commands::git_push,
+            fs_commands::list_directory,
+            fs_commands::read_text_file,
+            fs_commands::write_text_file,
+            fs_commands::search_files,
         ])
         .setup(|app| {
             #[cfg(target_os = "windows")]
