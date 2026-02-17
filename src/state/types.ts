@@ -21,6 +21,7 @@ export interface Session {
   paneTree: PaneNode;
   activePaneId: string | null;
   hasActivity: boolean;
+  activityCompleted: boolean;
 }
 
 export type PaneNode = PaneLeaf | PaneBranch;
@@ -65,6 +66,7 @@ export interface AppSettings {
   uiFontSize: number;
   scrollbackLines: number;
   copyOnSelect: boolean;
+  rightClickPaste: boolean;
   debugLogging: boolean;
   debugLoggingExpiry: string | null;
   confirmCloseTerminalTab: boolean;

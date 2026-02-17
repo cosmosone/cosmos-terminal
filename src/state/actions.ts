@@ -24,6 +24,7 @@ export function addProject(name: string, path: string): Project {
       paneTree: { type: 'leaf', paneId },
       activePaneId: paneId,
       hasActivity: false,
+      activityCompleted: false,
     }],
     activeSessionId: sessionId,
   };
@@ -62,6 +63,8 @@ export function setActiveProject(projectId: string): void {
   const project = store.getState().projects.find((p) => p.id === projectId);
   if (project?.activeSessionId) {
     sessionActivatedAt.set(sessionKey(projectId, project.activeSessionId), Date.now());
+    // Clear activity indicators on the session the user is about to see
+    updateSession(projectId, project.activeSessionId, (s) => ({ ...s, hasActivity: false, activityCompleted: false }));
   }
   store.setState((s) => ({ ...s, activeProjectId: projectId }));
 }
@@ -103,6 +106,7 @@ export function addSession(projectId: string, opts?: { title?: string }): Sessio
     paneTree: { type: 'leaf', paneId },
     activePaneId: paneId,
     hasActivity: false,
+    activityCompleted: false,
   };
   updateProject(projectId, (p) => ({
     ...p,
@@ -136,9 +140,9 @@ export function setActiveSession(projectId: string, sessionId: string): void {
   // from the resize/repaint burst that follows a tab switch.
   sessionActivatedAt.set(sessionKey(projectId, sessionId), Date.now());
 
-  // Clear activity dot — user is now looking at this session
+  // Clear activity dot, completion tick, and idle timer — user is now looking at this session
   clearActivityTimer(sessionKey(projectId, sessionId));
-  clearSessionActivity(projectId, sessionId);
+  updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: false, activityCompleted: false }));
 
   updateProject(projectId, (p) => ({
     ...p,
@@ -196,6 +200,20 @@ function isVisibleSession(projectId: string, sessionId: string): boolean {
   return project?.activeSessionId === sessionId;
 }
 
+/**
+ * Transition a session out of the active-activity state.
+ * For background sessions, this promotes the dot into a completed checkmark.
+ * For the visible session, it simply clears the dot with no checkmark.
+ */
+function resolveActivity(projectId: string, sessionId: string): void {
+  const visible = isVisibleSession(projectId, sessionId);
+  updateSession(projectId, sessionId, (s) => ({
+    ...s,
+    hasActivity: false,
+    activityCompleted: visible ? s.activityCompleted : true,
+  }));
+}
+
 // --- Activity tracking actions ---
 
 export function markSessionActivity(projectId: string, sessionId: string, paneId?: string): void {
@@ -215,7 +233,7 @@ export function markSessionActivity(projectId: string, sessionId: string, paneId
   if (activatedAt && Date.now() - activatedAt < ACTIVATION_SUPPRESS_MS) return;
 
   if (!session.hasActivity) {
-    updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true }));
+    updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true, activityCompleted: false }));
   }
 
   // Reset idle timer -- when output stops for ACTIVITY_IDLE_MS, clear the dot
@@ -238,7 +256,7 @@ export function markPaneOscBusy(projectId: string, sessionId: string, paneId: st
 
   const session = findSession(projectId, sessionId);
   if (session && !session.hasActivity) {
-    updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true }));
+    updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true, activityCompleted: false }));
   }
 }
 
@@ -251,14 +269,14 @@ export function markPaneOscIdle(projectId: string, sessionId: string, paneId: st
 
   const anyStillBusy = findLeafPaneIds(session.paneTree).some((id) => oscBusyPanes.has(id));
   if (!anyStillBusy && session.hasActivity) {
-    updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: false }));
+    resolveActivity(projectId, sessionId);
   }
 }
 
 export function clearSessionActivity(projectId: string, sessionId: string): void {
   const session = findSession(projectId, sessionId);
   if (!session?.hasActivity) return;
-  updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: false }));
+  resolveActivity(projectId, sessionId);
 }
 
 export function renameProject(projectId: string, name: string): void {

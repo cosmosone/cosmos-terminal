@@ -256,14 +256,7 @@ export class TerminalPane {
       // which would otherwise cause xterm to paste the text a second time.
       if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'v') {
         e.preventDefault();
-        navigator.clipboard.readText().then((text) => {
-          if (text) {
-            logger.debug('pty', 'Clipboard paste', { paneId: this.paneId, length: text.length });
-            this.terminal.paste(text);
-          }
-        }).catch((err) => {
-          logger.warn('pty', 'Clipboard read failed', { paneId: this.paneId, error: String(err) });
-        });
+        this.pasteFromClipboard('Ctrl+V');
         return false;
       }
 
@@ -349,6 +342,13 @@ export class TerminalPane {
       setTimeout(() => {
         if (!this.disposed) this.element.classList.remove('bell');
       }, 200);
+    });
+
+    this.element.addEventListener('contextmenu', (e) => {
+      if (store.getState().settings.rightClickPaste) {
+        e.preventDefault();
+        this.pasteFromClipboard('Right-click');
+      }
     });
 
     this.terminal.onSelectionChange(() => {
@@ -476,6 +476,18 @@ export class TerminalPane {
       });
       this.webglAddon = null;
     }
+  }
+
+  /** Read clipboard text and paste it into the terminal. */
+  private pasteFromClipboard(source: string): void {
+    navigator.clipboard.readText().then((text) => {
+      if (text) {
+        logger.debug('pty', `${source} paste`, { paneId: this.paneId, length: text.length });
+        this.terminal.paste(text);
+      }
+    }).catch((err) => {
+      logger.warn('pty', `${source} clipboard read failed`, { paneId: this.paneId, error: String(err) });
+    });
   }
 
   /**

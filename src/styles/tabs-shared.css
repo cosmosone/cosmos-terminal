@@ -15,6 +15,15 @@
   50% { opacity: 1; }
 }
 
+/* Activity completed indicator — static checkmark */
+.tab-activity-done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
 /* Close button base — hidden until parent tab is hovered */
 .tab-close {
   display: flex;

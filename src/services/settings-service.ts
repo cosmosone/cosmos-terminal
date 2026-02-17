@@ -77,6 +77,7 @@ function defaultSettings(): AppSettings {
     uiFontSize: 13,
     scrollbackLines: 10000,
     copyOnSelect: false,
+    rightClickPaste: false,
     confirmCloseTerminalTab: true,
     confirmCloseProjectTab: true,
     debugLogging: false,

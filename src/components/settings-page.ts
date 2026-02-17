@@ -100,6 +100,9 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       createToggleRow('Copy on Select', settings.copyOnSelect, (v) => apply({ copyOnSelect: v })),
     );
     term.content.appendChild(
+      createToggleRow('Right-click to Paste', settings.rightClickPaste, (v) => apply({ rightClickPaste: v })),
+    );
+    term.content.appendChild(
       createToggleRow('Confirm Close Terminal Tab', settings.confirmCloseTerminalTab, (v) =>
         apply({ confirmCloseTerminalTab: v })),
     );

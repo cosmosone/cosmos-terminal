@@ -12,9 +12,23 @@
   display: flex;
   align-items: center;
   gap: 1px;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
   position: relative;
   -webkit-app-region: no-drag;
+}
+
+#project-tab-bar .scroll-arrow {
+  opacity: 0;
+  pointer-events: none;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+#project-tab-bar .scroll-arrow.visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .project-tab.dragging {
@@ -122,6 +136,7 @@
   -webkit-app-region: no-drag;
 }
 
+#project-tab-bar .scroll-arrow,
 .project-tab-action {
   display: flex;
   align-items: center;
@@ -131,9 +146,10 @@
   border-radius: var(--tab-border-radius);
   color: var(--text-muted);
   font-size: 18px;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
 
+#project-tab-bar .scroll-arrow:hover,
 .project-tab-action:hover {
   background: var(--bg-hover);
   color: var(--text-primary);

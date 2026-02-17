@@ -25,6 +25,7 @@ export function startInlineRename(
 
   input.addEventListener('blur', commit);
   input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
     if (e.key === 'Enter') {
       e.preventDefault();
       input.blur();
