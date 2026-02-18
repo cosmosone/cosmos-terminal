@@ -147,9 +147,8 @@
   width: 1px;
   height: 14px;
   background: var(--border);
-  margin: 0 4px;
+  margin: 0 4px 6px;
   align-self: end;
-  margin-bottom: 6px;
   flex-shrink: 0;
 }
 
@@ -158,7 +157,6 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
   align-self: end;
   margin-bottom: 2px;
   flex-shrink: 0;
