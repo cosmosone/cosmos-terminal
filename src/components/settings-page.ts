@@ -159,9 +159,11 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       ['cycleProjectPrev', 'Previous Project Tab'],
       ['toggleGitSidebar', 'Toggle Git Sidebar'],
       ['toggleFileBrowser', 'Toggle File Browser'],
+      ['searchFileBrowser', 'Search File Browser'],
       ['closeTerminalTab', 'Close Terminal Tab'],
       ['closeProjectTab', 'Close Project Tab'],
       ['scrollToBottom', 'Scroll to Bottom'],
+      ['findInDocument', 'Find in Document'],
     ];
 
     // Build conflict map: combo -> list of labels that use it

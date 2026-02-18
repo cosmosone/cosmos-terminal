@@ -15,10 +15,19 @@ import type { MenuItem } from './context-menu';
 import { showConfirmDialog } from './confirm-dialog';
 import { languageFromExtension } from '../highlight/languages/index';
 
-export function initFileBrowserSidebar(onLayoutChange: () => void): void {
+export interface FileBrowserSidebarApi {
+  triggerSearch(): void;
+}
+
+export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserSidebarApi {
   const container = $('#file-browser-sidebar-container')! as HTMLElement;
   const dirCache = new Map<string, DirEntry[]>();
   let renderRafId = 0;
+
+  // --- Multi-selection state ---
+  const selectedPaths = new Set<string>();
+  let anchorPath: string | null = null;
+  const entryByPath = new Map<string, DirEntry>();
 
   // --- Left-edge resize handle ---
   const resizeHandle = createElement('div', { className: 'fb-sidebar-resize' });
@@ -173,6 +182,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
 
   async function renderTree(): Promise<void> {
     clearChildren(body);
+    entryByPath.clear();
     const state = store.getState();
     const project = state.projects.find((p) => p.id === state.activeProjectId);
     if (!project) {
@@ -188,6 +198,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
     for (const entry of entries) {
       body.appendChild(renderNode(entry, 0, expandedPaths, project.id));
     }
+    applySelection();
   }
 
   function appendIconAndName(row: HTMLElement, iconHtml: string, name: string): void {
@@ -213,8 +224,65 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
       dirCache.clear();
       scheduleRender();
     } catch {
-      // silently fail
+      // ignore
     }
+  }
+
+  function getVisiblePaths(): string[] {
+    const rows = body.querySelectorAll<HTMLElement>('.fb-tree-node[data-path]');
+    return Array.from(rows, (r) => r.dataset.path!);
+  }
+
+  function clearSelection(): void {
+    selectedPaths.clear();
+    anchorPath = null;
+  }
+
+  function applySelection(): void {
+    for (const row of body.querySelectorAll<HTMLElement>('.fb-tree-node[data-path]')) {
+      row.classList.toggle('selected', selectedPaths.has(row.dataset.path!));
+    }
+  }
+
+  function handleSelectionClick(e: MouseEvent, path: string): void {
+    if (e.shiftKey && anchorPath) {
+      const paths = getVisiblePaths();
+      const anchorIdx = paths.indexOf(anchorPath);
+      const clickIdx = paths.indexOf(path);
+      if (anchorIdx !== -1 && clickIdx !== -1) {
+        const start = Math.min(anchorIdx, clickIdx);
+        const end = Math.max(anchorIdx, clickIdx);
+        selectedPaths.clear();
+        for (let i = start; i <= end; i++) {
+          selectedPaths.add(paths[i]);
+        }
+      }
+    } else {
+      selectedPaths.clear();
+      selectedPaths.add(path);
+      anchorPath = path;
+    }
+    applySelection();
+  }
+
+  async function handleBulkDelete(): Promise<void> {
+    const { confirmed } = await showConfirmDialog({
+      title: 'Delete',
+      message: `Are you sure you want to delete the selected ${selectedPaths.size} items? This action cannot be undone.`,
+      confirmText: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
+    for (const path of selectedPaths) {
+      try {
+        await deletePath(path);
+      } catch {
+        // ignore
+      }
+    }
+    clearSelection();
+    dirCache.clear();
+    scheduleRender();
   }
 
   function addContextMenu(
@@ -226,6 +294,18 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
     row.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
+
+      if (selectedPaths.size > 1 && selectedPaths.has(entry.path)) {
+        showContextMenu(e.clientX, e.clientY, [
+          { label: `Delete ${selectedPaths.size} items`, action: handleBulkDelete },
+        ]);
+        return;
+      }
+
+      selectedPaths.clear();
+      selectedPaths.add(entry.path);
+      anchorPath = entry.path;
+      applySelection();
 
       const items: MenuItem[] = [];
       if (fileType !== undefined) {
@@ -241,7 +321,9 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
   function renderNode(entry: DirEntry, depth: number, expandedPaths: string[], projectId: string): HTMLElement {
     const wrap = createElement('div', { className: 'fb-tree-node-wrap' });
     const row = createElement('div', { className: 'fb-tree-node' });
+    row.dataset.path = entry.path;
     row.style.paddingLeft = `${8 + depth * 16}px`;
+    entryByPath.set(entry.path, entry);
 
     if (entry.isDir) {
       const expanded = expandedPaths.includes(entry.path);
@@ -252,9 +334,12 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
 
       row.addEventListener('click', (e) => {
         e.stopPropagation();
-        toggleFileBrowserPath(entry.path);
-        if (!expandedPaths.includes(entry.path)) {
-          dirCache.delete(entry.path);
+        handleSelectionClick(e, entry.path);
+        if (!e.shiftKey) {
+          toggleFileBrowserPath(entry.path);
+          if (!expandedPaths.includes(entry.path)) {
+            dirCache.delete(entry.path);
+          }
         }
       });
 
@@ -276,6 +361,10 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
       appendIconAndName(row, fileIcon(), entry.name);
 
       const fileType = languageFromExtension(entry.extension);
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleSelectionClick(e, entry.path);
+      });
       row.addEventListener('dblclick', (e) => {
         e.stopPropagation();
         addFileTab(projectId, entry.path, fileType);
@@ -332,4 +421,38 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
     dirCache.clear();
     scheduleRender();
   });
+
+  body.addEventListener('click', (e) => {
+    if (e.target === body) {
+      clearSelection();
+      applySelection();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Delete') return;
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (!store.getState().fileBrowserSidebar.visible) return;
+    if (selectedPaths.size === 0) return;
+
+    e.preventDefault();
+    if (selectedPaths.size === 1) {
+      const path = selectedPaths.values().next().value!;
+      const entry = entryByPath.get(path);
+      if (entry) handleDelete(entry.path, entry.name);
+    } else {
+      handleBulkDelete();
+    }
+  });
+
+  return {
+    triggerSearch(): void {
+      if (!store.getState().fileBrowserSidebar.visible) {
+        toggleFileBrowserSidebar();
+      }
+      // Defer so the sidebar becomes visible before entering search mode
+      requestAnimationFrame(() => enterSearchMode());
+    },
+  };
 }

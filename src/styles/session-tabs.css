@@ -145,7 +145,7 @@
 .session-tab-divider {
   width: 1px;
   height: 14px;
-  background: var(--border);
+  background: var(--text-muted);
   margin: 0 4px 6px;
   align-self: end;
   flex-shrink: 0;

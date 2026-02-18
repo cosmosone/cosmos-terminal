@@ -23,6 +23,19 @@ export default defineConfig(async () => ({
     target: "esnext",
     minify: "esbuild",
     cssMinify: true,
-    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          xterm: [
+            "@xterm/xterm",
+            "@xterm/addon-fit",
+            "@xterm/addon-image",
+            "@xterm/addon-unicode11",
+            "@xterm/addon-web-links",
+            "@xterm/addon-webgl",
+          ],
+        },
+      },
+    },
   },
 }));

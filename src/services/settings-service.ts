@@ -75,9 +75,11 @@ export const DEFAULT_KEYBINDINGS: KeybindingConfig = {
   cycleProjectPrev: 'Alt+u',
   toggleGitSidebar: 'Alt+d',
   toggleFileBrowser: 'Alt+f',
+  searchFileBrowser: 'Ctrl+Shift+f',
   closeTerminalTab: 'Alt+l',
   closeProjectTab: 'Alt+o',
   scrollToBottom: 'Alt+m',
+  findInDocument: 'Ctrl+f',
 };
 
 function defaultSettings(): AppSettings {

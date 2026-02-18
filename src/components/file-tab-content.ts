@@ -7,6 +7,11 @@ import { escapeHtml, tokenize, tokensToHtml } from '../highlight/tokenizer';
 import { debounce } from '../utils/debounce';
 import type { FileTab } from '../state/types';
 import { createElement, clearChildren, $ } from '../utils/dom';
+import { createFindController, type RenderMode } from './find-in-document';
+
+export interface FileTabContentApi {
+  openSearch(): void;
+}
 
 function renderMarkdown(source: string): string {
   const escaped = escapeHtml(source);
@@ -58,15 +63,24 @@ function renderMarkdown(source: string): string {
   return html;
 }
 
-export function initFileTabContent(): void {
+export function initFileTabContent(): FileTabContentApi {
   const container = $('#file-tab-container')! as HTMLElement;
+  container.style.position = 'relative';
   let currentContent = '';
   let editBuffer = '';
   let isBinary = false;
   let lastTabId: string | null = null;
   let lastFilePath: string | null = null;
+  let activeTabId: string | null = null;
+  let currentMode: RenderMode = 'plain-editor';
+
+  const findController = createFindController(
+    () => currentContent,
+    () => currentMode,
+  );
 
   function render(projectId: string, tab: FileTab): void {
+    findController.detach();
     clearChildren(container);
 
     const header = createElement('div', { className: 'file-tab-header' });
@@ -117,6 +131,7 @@ export function initFileTabContent(): void {
     }
 
     if (tab.fileType === 'markdown' && !tab.editing) {
+      currentMode = 'markdown';
       const mdView = createElement('div', { className: 'file-tab-markdown' });
       mdView.innerHTML = renderMarkdown(currentContent);
       content.appendChild(mdView);
@@ -134,11 +149,10 @@ export function initFileTabContent(): void {
         ]);
       });
     } else {
-      // Check if a grammar exists for this file type
       const grammar = getGrammar(tab.fileType);
 
       if (grammar) {
-        // Highlighted overlay editor
+        currentMode = 'highlighted-editor';
         const wrap = createElement('div', { className: 'highlighted-editor-wrap' });
 
         const backdrop = createElement('pre', { className: 'highlighted-editor-backdrop' });
@@ -151,14 +165,13 @@ export function initFileTabContent(): void {
         const text = tab.dirty ? editBuffer : currentContent;
         textarea.value = text;
 
-        // Initial highlight
         const tokens = tokenize(text, grammar);
         code.innerHTML = tokensToHtml(tokens);
 
-        // Debounced re-highlight
         const rehighlight = debounce(() => {
           const t = tokenize(textarea.value, grammar);
           code.innerHTML = tokensToHtml(t);
+          findController.refreshHighlights();
         }, 150);
 
         textarea.addEventListener('input', () => {
@@ -169,7 +182,6 @@ export function initFileTabContent(): void {
           rehighlight();
         });
 
-        // Scroll sync
         textarea.addEventListener('scroll', () => {
           backdrop.scrollTop = textarea.scrollTop;
           backdrop.scrollLeft = textarea.scrollLeft;
@@ -179,7 +191,7 @@ export function initFileTabContent(): void {
         wrap.appendChild(textarea);
         content.appendChild(wrap);
       } else {
-        // Plain textarea fallback
+        currentMode = 'plain-editor';
         const textarea = createElement('textarea', { className: 'file-tab-editor' }) as HTMLTextAreaElement;
         textarea.value = tab.dirty ? editBuffer : currentContent;
         textarea.addEventListener('input', () => {
@@ -207,6 +219,7 @@ export function initFileTabContent(): void {
     }
 
     container.appendChild(content);
+    findController.attach(content);
   }
 
   store.select(
@@ -220,6 +233,7 @@ export function initFileTabContent(): void {
     async (data) => {
       if (!data) {
         container.classList.add('hidden');
+        activeTabId = null;
         return;
       }
       container.classList.remove('hidden');
@@ -240,7 +254,15 @@ export function initFileTabContent(): void {
 
       lastTabId = data.tab.id;
       lastFilePath = data.tab.filePath;
+      activeTabId = data.tab.id;
       render(data.projectId, data.tab);
     },
   );
+
+  return {
+    openSearch() {
+      if (activeTabId === null) return;
+      findController.open();
+    },
+  };
 }

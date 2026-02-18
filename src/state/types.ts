@@ -59,9 +59,11 @@ export interface KeybindingConfig {
   cycleProjectPrev: string;
   toggleGitSidebar: string;
   toggleFileBrowser: string;
+  searchFileBrowser: string;
   closeTerminalTab: string;
   closeProjectTab: string;
   scrollToBottom: string;
+  findInDocument: string;
 }
 
 export interface AppSettings {

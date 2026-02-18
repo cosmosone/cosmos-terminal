@@ -112,7 +112,8 @@
   white-space: nowrap;
 }
 
-.fb-tree-node:hover {
+.fb-tree-node:hover,
+.fb-tree-node.selected {
   background: var(--bg-hover);
 }
 

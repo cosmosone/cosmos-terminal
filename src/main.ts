@@ -75,8 +75,8 @@ async function main(): Promise<void> {
   initStatusBar(() => splitContainer.clearAllScrollback());
   initLogViewer();
   initGitSidebar(() => splitContainer.reLayout());
-  initFileBrowserSidebar(() => splitContainer.reLayout());
-  initFileTabContent();
+  const fileBrowser = initFileBrowserSidebar(() => splitContainer.reLayout());
+  const fileTabContent = initFileTabContent();
 
   // Visibility management: hide terminal when content tab is active, show when terminal session is active
   const fileTabContainer = $('#file-tab-container') as HTMLElement | null;
@@ -216,7 +216,9 @@ async function main(): Promise<void> {
 
     bind(kb.toggleGitSidebar, toggleGitSidebar);
     bind(kb.toggleFileBrowser, toggleFileBrowserSidebar);
+    bind(kb.searchFileBrowser, () => fileBrowser.triggerSearch());
     bind(kb.scrollToBottom, () => splitContainer.scrollToBottom());
+    bind(kb.findInDocument, () => fileTabContent.openSearch());
 
     bind(kb.closeTerminalTab, () => closeActiveTerminalTab());
 

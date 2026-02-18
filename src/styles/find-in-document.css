@@ -1,0 +1,72 @@
+/* ===== Find-in-Document Overlay ===== */
+.find-overlay {
+  position: absolute;
+  top: 52px;
+  right: 20px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.find-overlay-input {
+  width: 200px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace);
+  outline: none;
+}
+
+.find-overlay-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.find-overlay-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 56px;
+  text-align: center;
+}
+
+.find-overlay-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.find-overlay-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ===== Match highlights ===== */
+.find-match {
+  background: rgba(224, 175, 104, 0.35);
+  border-radius: 2px;
+}
+
+.find-match-current {
+  background: rgba(122, 162, 247, 0.5);
+  outline: 1px solid var(--accent);
+  border-radius: 2px;
+}
