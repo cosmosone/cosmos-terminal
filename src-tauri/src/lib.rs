@@ -147,6 +147,7 @@ pub fn run() {
             fs_commands::read_text_file,
             fs_commands::write_text_file,
             fs_commands::search_files,
+            fs_commands::show_in_explorer,
         ])
         .setup(|app| {
             #[cfg(target_os = "windows")]

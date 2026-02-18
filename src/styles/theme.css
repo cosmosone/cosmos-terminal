@@ -36,8 +36,8 @@
   --pane-gap: 2px;
 
   /* File viewer font sizes */
-  --viewer-font-size: 11px;
-  --editor-font-size: 11px;
+  --viewer-font-size: 12.5px;
+  --editor-font-size: 12.5px;
 
   /* Transitions */
   --transition-fast: 100ms ease;

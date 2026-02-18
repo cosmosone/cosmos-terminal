@@ -5,11 +5,12 @@ import {
   toggleFileBrowserPath,
   addFileTab,
 } from '../state/actions';
-import { listDirectory, searchFiles } from '../services/fs-service';
+import { listDirectory, searchFiles, showInExplorer } from '../services/fs-service';
 import type { DirEntry } from '../services/fs-service';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { setupSidebarResize } from '../utils/sidebar-resize';
 import { folderIcon, fileIcon, chevronRightIcon, searchIcon } from '../utils/icons';
+import { showContextMenu } from './context-menu';
 import { languageFromExtension } from '../highlight/languages/index';
 
 export function initFileBrowserSidebar(onLayoutChange: () => void): void {
@@ -197,6 +198,16 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
     row.appendChild(nameEl);
   }
 
+  function addExplorerContextMenu(row: HTMLElement, path: string): void {
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showContextMenu(e.clientX, e.clientY, [
+        { label: 'Open in File Explorer', action: () => showInExplorer(path) },
+      ]);
+    });
+  }
+
   function renderNode(entry: DirEntry, depth: number, expandedPaths: string[], projectId: string): HTMLElement {
     const wrap = createElement('div', { className: 'fb-tree-node-wrap' });
     const row = createElement('div', { className: 'fb-tree-node' });
@@ -217,6 +228,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
         }
       });
 
+      addExplorerContextMenu(row, entry.path);
       wrap.appendChild(row);
 
       if (expanded) {
@@ -239,6 +251,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
         addFileTab(projectId, entry.path, fileType);
       });
 
+      addExplorerContextMenu(row, entry.path);
       wrap.appendChild(row);
     }
 

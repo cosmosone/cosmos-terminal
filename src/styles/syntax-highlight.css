@@ -36,7 +36,7 @@
   margin: 0;
   border: none;
   overflow: auto;
-  font-size: var(--editor-font-size, 11px);
+  font-size: var(--editor-font-size, 12.5px);
   line-height: 1.5;
   font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace);
   tab-size: 4;

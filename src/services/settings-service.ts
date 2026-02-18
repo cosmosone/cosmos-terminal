@@ -48,6 +48,16 @@ function migrateFontValue(value: string, presets: string[]): string {
   return match ?? first;
 }
 
+export const DEFAULT_FONT_SETTINGS = {
+  fontSize: 12.5,
+  fontFamily: 'Cascadia Code',
+  lineHeight: 1.2,
+  uiFontFamily: 'System Default',
+  uiFontSize: 12.5,
+  viewerFontSize: 12.5,
+  editorFontSize: 12.5,
+} as const;
+
 export const DEFAULT_KEYBINDINGS: KeybindingConfig = {
   newSession: 'Ctrl+Shift+t',
   toggleSettings: 'Ctrl+,',
@@ -73,13 +83,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingConfig = {
 function defaultSettings(): AppSettings {
   return {
     shellPath: defaultShell(),
-    fontSize: 14,
-    fontFamily: 'JetBrains Mono',
-    lineHeight: 1.2,
-    uiFontFamily: 'System Default',
-    uiFontSize: 13,
-    viewerFontSize: 11,
-    editorFontSize: 11,
+    ...DEFAULT_FONT_SETTINGS,
     scrollbackLines: 10000,
     copyOnSelect: false,
     rightClickPaste: false,

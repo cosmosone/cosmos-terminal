@@ -10,12 +10,41 @@
   display: flex;
   align-items: end;
   gap: 0;
-  overflow-x: auto;
+  flex: 1;
   min-width: 0;
+  overflow-x: auto;
 }
 
 #session-tab-bar .tab-list::-webkit-scrollbar {
   display: none;
+}
+
+/* ===== Scroll arrows ===== */
+#session-tab-bar .scroll-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 0;
+  height: 26px;
+  overflow: hidden;
+  border-radius: var(--tab-border-radius);
+  color: var(--text-muted);
+  font-size: 18px;
+  opacity: 0;
+  pointer-events: none;
+  transition: width var(--transition-fast), opacity var(--transition-fast);
+}
+
+#session-tab-bar .scroll-arrow.visible {
+  opacity: 1;
+  pointer-events: auto;
+  width: 26px;
+}
+
+#session-tab-bar .scroll-arrow:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .session-tab {
@@ -71,10 +100,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  align-self: center;
-  margin-left: 4px;
+  width: 22px;
+  height: 22px;
+  align-self: end;
+  margin-left: 2px;
+  margin-bottom: 2px;
   border-radius: var(--tab-border-radius);
   color: var(--text-muted);
   font-size: 14px;
@@ -91,15 +121,13 @@
   color: var(--text-secondary);
 }
 
-.session-tab-agent:hover {
-  color: var(--text-primary);
-}
-
-/* ===== Session tab type icon ===== */
-.session-tab-icon {
+/* ===== Tab type icons ===== */
+.session-tab-icon,
+.content-tab-icon {
   display: inline-flex;
   align-items: center;
   color: var(--text-muted);
+  opacity: 0.5;
   flex-shrink: 0;
 }
 
@@ -114,10 +142,14 @@
   flex-shrink: 0;
 }
 
-.content-tab-icon {
-  display: inline-flex;
-  align-items: center;
-  color: var(--text-muted);
+/* ===== Divider between new-tab buttons and sidebar actions ===== */
+.session-tab-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 4px;
+  align-self: end;
+  margin-bottom: 6px;
   flex-shrink: 0;
 }
 
@@ -127,6 +159,8 @@
   align-items: center;
   gap: 2px;
   margin-left: auto;
+  align-self: end;
+  margin-bottom: 2px;
   flex-shrink: 0;
 }
 
@@ -134,8 +168,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border-radius: var(--tab-border-radius);
   color: var(--text-muted);
   transition: background var(--transition-fast), color var(--transition-fast);

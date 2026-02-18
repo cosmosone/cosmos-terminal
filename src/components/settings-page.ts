@@ -1,6 +1,6 @@
 import { store } from '../state/store';
 import { toggleDebugLogging, updateSettings, toggleSettingsView } from '../state/actions';
-import { saveSettings, TERMINAL_FONT_PRESETS, UI_FONT_PRESETS, DEFAULT_KEYBINDINGS } from '../services/settings-service';
+import { saveSettings, TERMINAL_FONT_PRESETS, UI_FONT_PRESETS, DEFAULT_KEYBINDINGS, DEFAULT_FONT_SETTINGS } from '../services/settings-service';
 import { logger } from '../services/logger';
 import type { AppSettings, KeybindingConfig } from '../state/types';
 import { keybindings } from '../utils/keybindings';
@@ -93,6 +93,14 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     font.content.appendChild(
       createNumberRow('Editor Font Size', settings.editorFontSize, 8, 32, (v) => apply({ editorFontSize: v }), 0.5),
     );
+    const fontResetRow = createElement('div', { className: 'settings-row keybinding-reset-row' });
+    const fontResetBtn = createElement('button', { className: 'settings-btn' });
+    fontResetBtn.textContent = 'Reset Font Settings';
+    fontResetBtn.addEventListener('click', () => {
+      apply(DEFAULT_FONT_SETTINGS);
+    });
+    fontResetRow.appendChild(fontResetBtn);
+    font.content.appendChild(fontResetRow);
     inner.appendChild(font.wrapper);
 
     // ── 2. Terminal (core behaviour) ──

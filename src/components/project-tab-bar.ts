@@ -8,11 +8,7 @@ import { createElement, clearChildren, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { Project } from '../state/types';
 import { basename } from '../utils/path';
-import { folderIcon } from '../utils/icons';
-
-const CHEVRON_LEFT_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
-const CHEVRON_RIGHT_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
-const SETTINGS_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+import { chevronLeftIcon, chevronRightIcon, folderIcon, settingsIcon } from '../utils/icons';
 
 const SCROLL_STEP = 200;
 
@@ -112,7 +108,7 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     clearChildren(bar);
 
     const leftArrow = createElement('button', { className: 'scroll-arrow left' });
-    leftArrow.innerHTML = CHEVRON_LEFT_SVG;
+    leftArrow.innerHTML = chevronLeftIcon(16);
 
     const tabList = createElement('div', { className: 'tab-list' });
 
@@ -222,12 +218,12 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     const actions = createElement('div', { className: 'project-tab-actions' });
 
     const settingsBtn = createElement('button', { className: 'project-tab-action', title: 'Settings' });
-    settingsBtn.innerHTML = SETTINGS_SVG;
+    settingsBtn.innerHTML = settingsIcon(16);
     settingsBtn.addEventListener('click', toggleSettingsView);
     actions.appendChild(settingsBtn);
 
     const rightArrow = createElement('button', { className: 'scroll-arrow right' });
-    rightArrow.innerHTML = CHEVRON_RIGHT_SVG;
+    rightArrow.innerHTML = chevronRightIcon(16);
 
     updateScrollArrows = () => {
       const scrollLeft = tabList.scrollLeft;

@@ -28,19 +28,37 @@
   font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace);
 }
 
-.file-tab-save-btn {
-  padding: 4px 12px;
-  border-radius: 4px;
-  font-size: 11px;
+.file-tab-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.file-tab-save-btn,
+.file-tab-cancel-btn {
+  padding: 0px 6px;
+  border-radius: 3px;
+  font-size: 10px;
   font-weight: 500;
-  background: var(--accent);
-  color: var(--bg-primary);
+  line-height: 14px;
   cursor: pointer;
   transition: opacity var(--transition-fast);
   flex-shrink: 0;
 }
 
-.file-tab-save-btn:hover {
+.file-tab-save-btn {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+.file-tab-cancel-btn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.file-tab-save-btn:hover,
+.file-tab-cancel-btn:hover {
   opacity: 0.85;
 }
 
@@ -80,7 +98,7 @@
   resize: none;
   background: var(--bg-terminal);
   color: var(--text-primary);
-  font-size: var(--editor-font-size, 11px);
+  font-size: var(--editor-font-size, 12.5px);
   line-height: 1.5;
   font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace);
   tab-size: 4;
@@ -93,7 +111,7 @@
 /* ===== Markdown viewer ===== */
 .file-tab-markdown {
   padding: 20px 24px;
-  font-size: var(--viewer-font-size, 11px);
+  font-size: var(--viewer-font-size, 12.5px);
   line-height: 1.6;
   color: var(--text-primary);
 }

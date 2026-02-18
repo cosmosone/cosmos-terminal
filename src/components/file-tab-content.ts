@@ -76,6 +76,17 @@ export function initFileTabContent(): void {
     header.appendChild(pathDisplay);
 
     if (tab.dirty) {
+      const actions = createElement('div', { className: 'file-tab-actions' });
+
+      const cancelBtn = createElement('button', { className: 'file-tab-cancel-btn' });
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.addEventListener('click', () => {
+        editBuffer = currentContent;
+        setFileTabDirty(projectId, tab.id, false);
+        setFileTabEditing(projectId, tab.id, false);
+      });
+      actions.appendChild(cancelBtn);
+
       const saveBtn = createElement('button', { className: 'file-tab-save-btn' });
       saveBtn.textContent = 'Save';
       saveBtn.addEventListener('click', async () => {
@@ -88,7 +99,9 @@ export function initFileTabContent(): void {
           console.error('Failed to save file:', err);
         }
       });
-      header.appendChild(saveBtn);
+      actions.appendChild(saveBtn);
+
+      header.appendChild(actions);
     }
 
     container.appendChild(header);

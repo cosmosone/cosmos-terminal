@@ -42,3 +42,8 @@ export async function searchFiles(rootPath: string, query: string): Promise<DirE
   logger.debug('fs', 'IPC: search_files', { rootPath, query });
   return invoke<DirEntry[]>('search_files', { rootPath, query });
 }
+
+export async function showInExplorer(path: string): Promise<void> {
+  logger.debug('fs', 'IPC: show_in_explorer', { path });
+  await invoke('show_in_explorer', { path });
+}

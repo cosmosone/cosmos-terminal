@@ -188,6 +188,38 @@ fn search_files_sync(root_path: &str, query: &str) -> Result<Vec<DirEntry>, Stri
 }
 
 #[tauri::command]
+pub async fn show_in_explorer(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            std::process::Command::new("explorer.exe")
+                .arg(format!("/select,{path}"))
+                .spawn()
+                .map_err(|e| format!("Failed to open explorer: {e}"))?;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            std::process::Command::new("open")
+                .args(["-R", &path])
+                .spawn()
+                .map_err(|e| format!("Failed to open Finder: {e}"))?;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let p = std::path::Path::new(&path);
+            let dir = p.parent().unwrap_or(p);
+            std::process::Command::new("xdg-open")
+                .arg(dir.as_os_str())
+                .spawn()
+                .map_err(|e| format!("Failed to open file manager: {e}"))?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))
