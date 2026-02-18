@@ -174,7 +174,14 @@
 .file-tab-markdown li {
   margin: 0.2em 0;
   padding-left: 4px;
+}
+
+.file-tab-markdown ul > li {
   list-style: disc inside;
+}
+
+.file-tab-markdown ol > li {
+  list-style: decimal inside;
 }
 
 .file-tab-markdown hr {

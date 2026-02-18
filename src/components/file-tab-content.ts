@@ -13,6 +13,18 @@ export interface FileTabContentApi {
   openSearch(): void;
 }
 
+/** Matches consecutive list lines and wraps them in `<ol>` or `<ul>`. */
+function wrapListItems(html: string, marker: RegExp, tag: 'ol' | 'ul'): string {
+  const blockPattern = new RegExp(`((?:^${marker.source}\\s+.+\\n?)+)`, 'gm');
+  const linePattern = new RegExp(`^${marker.source}\\s+(.+)$`);
+  return html.replace(blockPattern, (block) => {
+    const items = block.trim().split('\n')
+      .map(line => line.replace(linePattern, '<li>$1</li>'))
+      .join('');
+    return `<${tag}>${items}</${tag}>`;
+  });
+}
+
 function renderMarkdown(source: string): string {
   const escaped = escapeHtml(source);
   let html = escaped;
@@ -41,8 +53,11 @@ function renderMarkdown(source: string): string {
   // Blockquotes
   html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
 
-  // Unordered lists
-  html = html.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
+  // Ordered lists (grouped in <ol>)
+  html = wrapListItems(html, /\d+\./, 'ol');
+
+  // Unordered lists (grouped in <ul>)
+  html = wrapListItems(html, /[-*]/, 'ul');
 
   // Links: [text](url) — only allow http(s) and mailto protocols
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
@@ -61,8 +76,8 @@ function renderMarkdown(source: string): string {
   html = `<p>${html}</p>`;
 
   // Clean up empty paragraphs around block elements
-  html = html.replace(/<p>\s*<(h[1-6]|pre|blockquote|hr|li)/g, '<$1');
-  html = html.replace(/<\/(h[1-6]|pre|blockquote|li)>\s*<\/p>/g, '</$1>');
+  html = html.replace(/<p>\s*<(h[1-6]|pre|blockquote|hr|li|ol|ul)/g, '<$1');
+  html = html.replace(/<\/(h[1-6]|pre|blockquote|li|ol|ul)>\s*<\/p>/g, '</$1>');
   html = html.replace(/<p>\s*<hr>\s*<\/p>/g, '<hr>');
   html = html.replace(/<p><\/p>/g, '');
 
@@ -220,6 +235,10 @@ export function initFileTabContent(): FileTabContentApi {
               },
             },
           ]);
+        });
+      } else {
+        content.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
         });
       }
     }
