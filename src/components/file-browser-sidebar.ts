@@ -324,7 +324,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
       if (fileType !== undefined) {
         items.push({ label: 'Open', action: () => addFileTab(projectId, entry.path, fileType) });
       }
-      items.push({ label: 'Open in File Explorer', action: () => showInExplorer(entry.path) });
+      items.push({ label: 'Open File Location', action: () => showInExplorer(entry.path) });
       items.push({ label: 'Delete', separator: true, action: () => handleDelete(entry.path, entry.name) });
 
       showContextMenu(e.clientX, e.clientY, items);

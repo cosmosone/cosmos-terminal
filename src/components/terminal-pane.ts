@@ -72,6 +72,10 @@ function csiModifier(e: KeyboardEvent): number {
     + (e.metaKey ? 8 : 0);
 }
 
+/** Default PTY dimensions when proposeDimensions() is unavailable. */
+const DEFAULT_COLS = 80;
+const DEFAULT_ROWS = 24;
+
 /** Decode a Uint8Array as latin-1 (one char per byte) for regex matching. */
 const latin1Decoder = new TextDecoder('latin1');
 function toLatin1(data: Uint8Array): string {
@@ -404,12 +408,14 @@ export class TerminalPane {
 
     const settings = store.getState().settings;
     const dims = this.fitAddon.proposeDimensions();
+    const cols = dims?.cols ?? DEFAULT_COLS;
+    const rows = dims?.rows ?? DEFAULT_ROWS;
     logger.info('pty', 'Creating PTY session', {
       paneId: this.paneId,
       projectPath: this.projectPath,
       shell: settings.shellPath ?? '(default)',
-      rows: dims?.rows ?? 24,
-      cols: dims?.cols ?? 80,
+      rows,
+      cols,
     });
 
     let info;
@@ -418,8 +424,8 @@ export class TerminalPane {
         {
           projectPath: this.projectPath,
           shellPath: settings.shellPath,
-          rows: dims?.rows ?? 24,
-          cols: dims?.cols ?? 80,
+          rows,
+          cols,
         },
         (data) => {
           if (!this.disposed) {
@@ -460,6 +466,8 @@ export class TerminalPane {
     }
 
     this.backendId = info.id;
+    this.lastSentCols = cols;
+    this.lastSentRows = rows;
     logger.info('pty', 'PTY session created', {
       paneId: this.paneId,
       backendId: info.id,

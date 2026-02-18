@@ -14,12 +14,31 @@ export class SplitContainer {
   private handles: HTMLElement[] = [];
   private focusedPaneId: string | null = null;
   private lastPaneRects = new Map<string, Rect>();
+  private renderInFlight = false;
+  private renderPending = false;
 
   constructor(container: HTMLElement) {
     this.container = container;
   }
 
   async render(): Promise<void> {
+    if (this.renderInFlight) {
+      this.renderPending = true;
+      return;
+    }
+    this.renderInFlight = true;
+    try {
+      await this.renderImpl();
+      while (this.renderPending) {
+        this.renderPending = false;
+        await this.renderImpl();
+      }
+    } finally {
+      this.renderInFlight = false;
+    }
+  }
+
+  private async renderImpl(): Promise<void> {
     const project = getActiveProject();
     if (!project) {
       await this.disposeAll();
@@ -63,6 +82,9 @@ export class SplitContainer {
       tp.element.style.display = activePaneIds.has(paneId) ? '' : 'none';
     }
 
+    // Compute layout before mounting so new panes have correct dimensions
+    const { paneRects: preMountRects } = computeLayout(tree, this.containerRect);
+
     // Create new terminals for active session panes that don't exist yet
     const capturedSessionId = session.id;
     for (const paneId of activePaneIds) {
@@ -84,6 +106,11 @@ export class SplitContainer {
         });
         this.terminals.set(paneId, tp);
         this.container.appendChild(tp.element);
+
+        // Pre-size element so proposeDimensions() in mount() sees real size
+        const r = preMountRects.get(paneId);
+        if (r) SplitContainer.positionElement(tp.element, r);
+
         await tp.mount();
       }
     }
@@ -93,6 +120,24 @@ export class SplitContainer {
     if (session.activePaneId && this.terminals.has(session.activePaneId)) {
       this.setFocus(session.activePaneId);
     }
+  }
+
+  /** Current container dimensions as a layout rect anchored at the origin. */
+  private get containerRect(): Rect {
+    return {
+      x: 0,
+      y: 0,
+      width: this.container.offsetWidth,
+      height: this.container.offsetHeight,
+    };
+  }
+
+  /** Apply absolute position and size from a layout rect to an element. */
+  private static positionElement(el: HTMLElement, r: Rect): void {
+    el.style.left = `${r.x}px`;
+    el.style.top = `${r.y}px`;
+    el.style.width = `${r.width}px`;
+    el.style.height = `${r.height}px`;
   }
 
   private static readonly HANDLE_EXPAND = 4;
@@ -113,10 +158,7 @@ export class SplitContainer {
       const tp = this.terminals.get(paneId);
       if (!tp) continue;
       if (activeOnly && tp.element.style.display === 'none') continue;
-      tp.element.style.left = `${r.x}px`;
-      tp.element.style.top = `${r.y}px`;
-      tp.element.style.width = `${r.width}px`;
-      tp.element.style.height = `${r.height}px`;
+      SplitContainer.positionElement(tp.element, r);
       panesToFit.push(tp);
     }
     if (panesToFit.length > 0) {
@@ -128,14 +170,7 @@ export class SplitContainer {
 
   /** Lightweight position-only update (no handle recreation). */
   private updatePositions(tree: PaneNode): void {
-    const rect: Rect = {
-      x: 0,
-      y: 0,
-      width: this.container.offsetWidth,
-      height: this.container.offsetHeight,
-    };
-
-    const { paneRects, dividers } = computeLayout(tree, rect);
+    const { paneRects, dividers } = computeLayout(tree, this.containerRect);
     this.lastPaneRects = paneRects;
     this.applyPaneRects(paneRects, true);
 
@@ -145,13 +180,7 @@ export class SplitContainer {
   }
 
   private layout(tree: PaneNode, projectId: string, sessionId: string): void {
-    const rect: Rect = {
-      x: 0,
-      y: 0,
-      width: this.container.offsetWidth,
-      height: this.container.offsetHeight,
-    };
-
+    const rect = this.containerRect;
     const { paneRects, dividers } = computeLayout(tree, rect);
     this.lastPaneRects = paneRects;
     logger.debug('layout', 'Layout computed', {

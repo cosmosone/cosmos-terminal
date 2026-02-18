@@ -58,8 +58,11 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     }
     dragState.dropIndex = dropIndex;
 
-    // Position the indicator line relative to the parent
-    const parentLeft = dragState.indicator.parentElement!.getBoundingClientRect().left;
+    // Position the indicator line relative to the parent.
+    // The indicator is absolutely positioned inside the scrollable tabList,
+    // so we must add scrollLeft to convert viewport coords to content coords.
+    const parent = dragState.indicator.parentElement!;
+    const parentLeft = parent.getBoundingClientRect().left;
     let indicatorLeft: number;
     if (dropIndex <= 0) {
       indicatorLeft = rects[0].left;
@@ -68,7 +71,7 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     } else {
       indicatorLeft = rects[dropIndex - 1].right;
     }
-    dragState.indicator.style.left = `${indicatorLeft - parentLeft}px`;
+    dragState.indicator.style.left = `${indicatorLeft - parentLeft + parent.scrollLeft}px`;
   }
 
   function onMouseUp(): void {

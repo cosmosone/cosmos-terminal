@@ -13,16 +13,114 @@ export interface FileTabContentApi {
   openSearch(): void;
 }
 
-/** Matches consecutive list lines and wraps them in `<ol>` or `<ul>`. */
-function wrapListItems(html: string, marker: RegExp, tag: 'ol' | 'ul'): string {
-  const blockPattern = new RegExp(`((?:^${marker.source}\\s+.+\\n?)+)`, 'gm');
-  const linePattern = new RegExp(`^${marker.source}\\s+(.+)$`);
-  return html.replace(blockPattern, (block) => {
-    const items = block.trim().split('\n')
-      .map(line => line.replace(linePattern, '<li>$1</li>'))
-      .join('');
-    return `<${tag}>${items}</${tag}>`;
-  });
+interface ListItem {
+  indent: number;
+  ordered: boolean;
+  content: string;
+  spaceBefore?: boolean;
+}
+
+const LIST_LINE_RE = /^(\s*)([-*]|\d+\.)\s+(.+)$/;
+
+/** Create a ListItem from a LIST_LINE_RE match. */
+function parseListMatch(m: RegExpMatchArray, spaceBefore?: boolean): ListItem {
+  const item: ListItem = {
+    indent: m[1].length,
+    ordered: /^\d+\.$/.test(m[2]),
+    content: m[3],
+  };
+  if (spaceBefore) item.spaceBefore = true;
+  return item;
+}
+
+/** Build nested HTML lists from parsed list items. */
+function buildNestedList(items: ListItem[]): string {
+  let html = '';
+  const stack: { indent: number; tag: 'ol' | 'ul' }[] = [];
+
+  for (const item of items) {
+    const tag = item.ordered ? 'ol' : 'ul';
+
+    // Close deeper nesting levels when returning to a shallower indent
+    while (stack.length > 0 && stack[stack.length - 1].indent > item.indent) {
+      const closed = stack.pop()!;
+      html += `</li></${closed.tag}>`;
+    }
+
+    if (stack.length === 0 || stack[stack.length - 1].indent < item.indent) {
+      html += `<${tag}>`;
+      stack.push({ indent: item.indent, tag });
+    } else {
+      html += '</li>';
+      // If list type changed at the same indent, close and reopen
+      const cur = stack[stack.length - 1];
+      if (cur.tag !== tag) {
+        html += `</${cur.tag}><${tag}>`;
+        cur.tag = tag;
+      }
+    }
+
+    const cls = item.spaceBefore ? ' class="md-list-spaced"' : '';
+    html += `<li${cls}>${item.content}`;
+  }
+
+  while (stack.length > 0) {
+    const closed = stack.pop()!;
+    html += `</li></${closed.tag}>`;
+  }
+
+  return html;
+}
+
+/** Skip blank lines starting at index `from`, returning the next non-blank index. */
+function skipBlankLines(lines: string[], from: number): number {
+  let j = from;
+  while (j < lines.length && lines[j].trim() === '') j++;
+  return j;
+}
+
+/** Convert markdown list lines (including nested) into HTML lists. */
+function renderLists(html: string): string {
+  const lines = html.split('\n');
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const firstMatch = lines[i].match(LIST_LINE_RE);
+    if (!firstMatch) {
+      result.push(lines[i]);
+      i++;
+      continue;
+    }
+
+    const items: ListItem[] = [parseListMatch(firstMatch)];
+    i++;
+
+    while (i < lines.length) {
+      const line = lines[i];
+      const m = line.match(LIST_LINE_RE);
+      if (m) {
+        items.push(parseListMatch(m));
+        i++;
+      } else if (line.trim() === '') {
+        // Blank line -- peek past consecutive blanks for more list items
+        const j = skipBlankLines(lines, i + 1);
+        const next = j < lines.length ? lines[j].match(LIST_LINE_RE) : null;
+        if (next) {
+          items.push(parseListMatch(next, true));
+          i = j + 1;
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+
+    result.push(buildNestedList(items));
+  }
+
+  return result.join('\n');
 }
 
 function renderMarkdown(source: string): string {
@@ -53,11 +151,8 @@ function renderMarkdown(source: string): string {
   // Blockquotes
   html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
 
-  // Ordered lists (grouped in <ol>)
-  html = wrapListItems(html, /\d+\./, 'ol');
-
-  // Unordered lists (grouped in <ul>)
-  html = wrapListItems(html, /[-*]/, 'ul');
+  // Lists (ordered and unordered, with nesting support)
+  html = renderLists(html);
 
   // Links: [text](url) — only allow http(s) and mailto protocols
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {

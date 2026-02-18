@@ -171,17 +171,34 @@
   color: var(--text-secondary);
 }
 
+.file-tab-markdown ul,
+.file-tab-markdown ol {
+  margin: 0.3em 0;
+  padding-left: 1.5em;
+}
+
 .file-tab-markdown li {
   margin: 0.2em 0;
-  padding-left: 4px;
 }
 
 .file-tab-markdown ul > li {
-  list-style: disc inside;
+  list-style: disc;
+}
+
+.file-tab-markdown ul ul > li {
+  list-style: circle;
+}
+
+.file-tab-markdown ul ul ul > li {
+  list-style: square;
 }
 
 .file-tab-markdown ol > li {
-  list-style: decimal inside;
+  list-style: decimal;
+}
+
+.file-tab-markdown li.md-list-spaced {
+  margin-top: 0.8em;
 }
 
 .file-tab-markdown hr {
