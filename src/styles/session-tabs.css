@@ -126,8 +126,7 @@
 .content-tab-icon {
   display: inline-flex;
   align-items: center;
-  color: var(--text-muted);
-  opacity: 0.5;
+  color: var(--text-primary);
   flex-shrink: 0;
 }
 

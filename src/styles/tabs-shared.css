@@ -45,14 +45,12 @@
   align-items: center;
   justify-content: center;
   border-radius: 3px;
-  color: var(--text-muted);
-  opacity: 0.4;
+  color: var(--text-primary);
   cursor: pointer;
-  transition: opacity var(--transition-fast), color var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
 .tab-lock:hover {
-  opacity: 1;
   color: var(--text-primary);
   background: var(--bg-hover);
 }
