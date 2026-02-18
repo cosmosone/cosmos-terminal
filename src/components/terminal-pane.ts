@@ -266,30 +266,18 @@ export class TerminalPane {
         return false;
       }
 
-      // Modified Enter handling (Ctrl+Enter / Shift+Enter).
-      //
-      // When the Kitty keyboard protocol is active, encode all functional
-      // keys (Enter, Tab, Backspace, Escape) as CSI u so the child app
-      // receives full key identity and modifiers.
-      //
-      // When inactive (legacy mode), send a plain line-feed (\n, 0x0A)
-      // for Ctrl+Enter and Shift+Enter.  Most TUI apps (e.g. Claude Code)
-      // treat \n as "insert newline" vs \r as "submit".  CSI u sequences
-      // are NOT understood by apps that haven't negotiated Kitty protocol.
-      if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
-        const usingKitty = !!(this.kittyFlags & 1);
-        logger.info('pty', 'Modified Enter intercepted', {
-          paneId: this.paneId,
-          ctrl: e.ctrlKey,
-          shift: e.shiftKey,
-          kittyFlags: this.kittyFlags,
-          path: usingKitty ? 'kitty-csiu' : 'legacy-lf',
-        });
-      }
+      // Kitty keyboard protocol: encode functional keys (Enter, Tab,
+      // Backspace, Escape) as CSI u so the child app receives full key
+      // identity and modifiers.
       if (this.kittyFlags & 1) {
         const code = FUNCTIONAL_KEY_CODES[e.key];
         if (code !== undefined) {
-          const mod = csiModifier(e);
+          let mod = csiModifier(e);
+          // Treat Shift+Enter the same as Ctrl+Enter so that apps like
+          // Claude Code recognise both as "insert newline".
+          if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey) {
+            mod = 5; // 1 + Ctrl(4)
+          }
           const seq = mod > 1 ? `\x1b[${code};${mod}u` : `\x1b[${code}u`;
           if (this.backendId) {
             writeToPtySession(this.backendId, seq);
@@ -302,9 +290,13 @@ export class TerminalPane {
           }
           return false;
         }
-      } else if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
-        // Legacy mode: send \n (line feed) which TUI apps recognise as
-        // "insert newline" without needing any keyboard protocol extension.
+      }
+
+      // Legacy mode (no Kitty protocol): send \n (line feed) for
+      // Ctrl+Enter and Shift+Enter.  Most TUI apps treat \n as "insert
+      // newline" vs \r as "submit".  CSI u sequences are NOT understood
+      // by apps that haven't negotiated Kitty protocol.
+      if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
         if (this.backendId) {
           writeToPtySession(this.backendId, '\n');
         } else {
