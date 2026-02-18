@@ -1,6 +1,6 @@
 [package]
 name = "cosmos-terminal"
-version = "0.1.32"
+version = "0.1.33"
 description = "A high-performance terminal emulator"
 authors = ["Cosmos"]
 license = "MIT"
@@ -27,6 +27,8 @@ parking_lot = "0.12"
 git2 = "0.19"
 base64 = "0.22"
 tokio = { version = "1", features = ["rt"] }
+notify = "7"
+notify-debouncer-mini = "0.5"
 
 [profile.release]
 lto = true
