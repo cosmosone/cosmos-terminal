@@ -1,14 +1,30 @@
 mod commands;
 mod models;
 mod pty;
-
-use tauri::Manager;
+mod watcher;
 
 use commands::fs_commands;
 use commands::git_commands;
 use commands::pty_commands;
 use commands::system_commands::{self, SystemMonitor};
+use commands::watcher_commands;
 use pty::manager::SessionManager;
+use tauri::Manager;
+use watcher::FsWatcher;
+
+/// Directory names excluded from file search and filesystem watching.
+pub const IGNORED_DIRS: &[&str] = &[
+    "node_modules",
+    ".git",
+    "dist",
+    "target",
+    ".vite",
+    ".vite-temp",
+    ".next",
+    "build",
+    "__pycache__",
+    ".serena",
+];
 
 #[cfg(target_os = "windows")]
 fn setup_window(window: &tauri::WebviewWindow) {
@@ -149,8 +165,13 @@ pub fn run() {
             fs_commands::search_files,
             fs_commands::show_in_explorer,
             fs_commands::delete_path,
+            watcher_commands::watch_directory,
+            watcher_commands::unwatch_directory,
         ])
         .setup(|app| {
+            let fs_watcher = FsWatcher::new(app.handle().clone());
+            app.manage(fs_watcher);
+
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
                 setup_window(&window);
@@ -161,6 +182,8 @@ pub fn run() {
             if let tauri::WindowEvent::Destroyed = event {
                 let sm = window.state::<SessionManager>();
                 sm.kill_all();
+                let watcher = window.state::<FsWatcher>();
+                watcher.unwatch();
             }
         })
         .run(tauri::generate_context!())

@@ -5,11 +5,11 @@ import {
   toggleFileBrowserPath,
   addFileTab,
 } from '../state/actions';
-import { listDirectory, searchFiles, showInExplorer, deletePath } from '../services/fs-service';
+import { listDirectory, searchFiles, showInExplorer, deletePath, watchDirectory, unwatchDirectory, onFsChange } from '../services/fs-service';
 import type { DirEntry } from '../services/fs-service';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { setupSidebarResize } from '../utils/sidebar-resize';
-import { folderIcon, fileIcon, chevronRightIcon, searchIcon } from '../utils/icons';
+import { folderIcon, fileIcon, chevronRightIcon, searchIcon, refreshIcon } from '../utils/icons';
 import { showContextMenu } from './context-menu';
 import type { MenuItem } from './context-menu';
 import { showConfirmDialog } from './confirm-dialog';
@@ -29,6 +29,11 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
   let anchorPath: string | null = null;
   const entryByPath = new Map<string, DirEntry>();
 
+  // --- File-system watcher state ---
+  let currentWatchedPath: string | null = null;
+  let fsChangeUnlisten: (() => void) | null = null;
+  let fsChangeBatchTimer = 0;
+
   // --- Left-edge resize handle ---
   const resizeHandle = createElement('div', { className: 'fb-sidebar-resize' });
   container.appendChild(resizeHandle);
@@ -43,6 +48,14 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
   const searchBtn = createElement('button', { className: 'fb-sidebar-header-btn', title: 'Search Files' });
   searchBtn.innerHTML = searchIcon();
   headerActions.appendChild(searchBtn);
+
+  const refreshBtn = createElement('button', { className: 'fb-sidebar-header-btn', title: 'Refresh' });
+  refreshBtn.innerHTML = refreshIcon();
+  refreshBtn.addEventListener('click', () => {
+    dirCache.clear();
+    scheduleRender();
+  });
+  headerActions.appendChild(refreshBtn);
 
   const collapseBtn = createElement('button', { className: 'fb-sidebar-header-btn', title: 'Collapse Sidebar' });
   collapseBtn.innerHTML = chevronRightIcon();
@@ -377,6 +390,40 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     return wrap;
   }
 
+  async function startWatching(projectPath: string): Promise<void> {
+    if (currentWatchedPath === projectPath) return;
+    await stopWatching();
+    currentWatchedPath = projectPath;
+    try {
+      await watchDirectory(projectPath);
+      fsChangeUnlisten = await onFsChange((affectedDir) => {
+        // Only invalidate if this directory is in cache (i.e. currently expanded)
+        if (!dirCache.delete(affectedDir)) return;
+        // Batch re-renders with a short frontend debounce
+        clearTimeout(fsChangeBatchTimer);
+        fsChangeBatchTimer = window.setTimeout(() => scheduleRender(), 100);
+      });
+    } catch {
+      // Watcher setup failed — sidebar still works, just without auto-refresh
+    }
+  }
+
+  async function stopWatching(): Promise<void> {
+    if (fsChangeUnlisten) {
+      fsChangeUnlisten();
+      fsChangeUnlisten = null;
+    }
+    if (currentWatchedPath) {
+      currentWatchedPath = null;
+      try {
+        await unwatchDirectory();
+      } catch {
+        // ignore
+      }
+    }
+    clearTimeout(fsChangeBatchTimer);
+  }
+
   function applyVisibility(visible: boolean): void {
     container.classList.toggle('hidden', !visible);
     if (visible) {
@@ -384,6 +431,10 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
       container.style.width = store.getState().fileBrowserSidebar.width + 'px';
       dirCache.clear();
       renderTree();
+      const project = getActiveProject();
+      if (project) startWatching(project.path);
+    } else {
+      stopWatching();
     }
     onLayoutChange();
   }
@@ -420,6 +471,15 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     if (searchMode) exitSearchMode();
     dirCache.clear();
     scheduleRender();
+    // Restart watcher for the new project (if sidebar is visible)
+    if (store.getState().fileBrowserSidebar.visible) {
+      const project = getActiveProject();
+      if (project) {
+        startWatching(project.path);
+      } else {
+        stopWatching();
+      }
+    }
   });
 
   body.addEventListener('click', (e) => {

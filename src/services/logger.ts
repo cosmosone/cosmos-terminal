@@ -75,7 +75,7 @@ class Logger {
 
     this.entries.push(entry);
     if (this.entries.length > MAX_ENTRIES * 1.2) {
-      this.entries = this.entries.slice(-MAX_ENTRIES);
+      this.entries.splice(0, this.entries.length - MAX_ENTRIES);
     }
 
     for (const listener of this.listeners) {

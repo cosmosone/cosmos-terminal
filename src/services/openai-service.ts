@@ -1,6 +1,13 @@
 import { logger } from './logger';
 import { store } from '../state/store';
 
+/**
+ * Hard cap on raw diff input. Diffs larger than this are truncated before any
+ * processing to prevent excessive memory use and runaway API costs.
+ * 500 KB covers even very large changesets while staying well within reason.
+ */
+const MAX_RAW_DIFF_CHARS = 500_000;
+
 /** Max characters for the single-call path (small diffs). */
 const MAX_DIFF_CHARS = 14000;
 const MAX_HUNK_CHARS = 12000;
@@ -184,6 +191,15 @@ export async function generateCommitMessage(diff: string, onProgress?: ProgressC
   const apiKey = store.getState().settings.openaiApiKey;
   if (!apiKey) {
     throw new Error('OpenAI API key not set. Configure it in Settings > AI Integration.');
+  }
+
+  // Hard-cap the raw diff to prevent excessive memory use and API costs
+  if (diff.length > MAX_RAW_DIFF_CHARS) {
+    logger.warn('git', 'Diff truncated for commit message generation', {
+      originalLength: diff.length,
+      maxLength: MAX_RAW_DIFF_CHARS,
+    });
+    diff = diff.slice(0, MAX_RAW_DIFF_CHARS);
   }
 
   const files = splitDiffIntoFiles(diff);

@@ -132,6 +132,8 @@ export class TerminalPane {
   private disposed = false;
   private resizeObserver: ResizeObserver;
   private resizeRafId = 0;
+  /** True while fitAddon.fit() is executing — suppresses onScroll tracking. */
+  private fitting = false;
   private onProcessExit?: () => void;
   private onCwdChange?: (cwd: string) => void;
   private onActivity?: () => void;
@@ -145,6 +147,11 @@ export class TerminalPane {
   private scrollBtn: HTMLElement;
   /** Persistent auto-scroll intent — true when the user is following output at the bottom. */
   private autoScroll = true;
+
+  /** Whether the terminal element is hidden (zero width). */
+  private get isHidden(): boolean {
+    return this.element.offsetWidth === 0;
+  }
 
   // Activity detection — fire onActivity at most once per rolling window
   // when cumulative output exceeds a byte threshold (filters idle TUI noise).
@@ -365,6 +372,14 @@ export class TerminalPane {
     });
 
     this.terminal.onScroll(() => {
+      // Ignore scroll events when terminal is hidden — viewport state is
+      // unreliable and scrollToBottom() is a no-op, so acting on these
+      // events would corrupt autoScroll for when the pane becomes visible.
+      if (this.isHidden) return;
+      // Ignore during fit() — terminal.resize() temporarily disrupts
+      // viewport position; the fit() method restores scroll state itself.
+      if (this.fitting) return;
+
       const buf = this.terminal.buffer.active;
       const isAtBottom = buf.viewportY >= buf.baseY;
       if (this.autoScroll !== isAtBottom) {
@@ -711,23 +726,18 @@ export class TerminalPane {
       // caught up, causing the second flush to think the user scrolled up.
       const shouldScroll = this.autoScroll;
       this.terminal.write(data, () => {
-        if (!this.disposed && shouldScroll) {
-          this.terminal.scrollToBottom();
+        if (this.disposed) return;
+        if (shouldScroll) {
+          this.syncScrollToBottom();
         }
-        if (!this.disposed) {
-          const buf = this.terminal.buffer.active;
-          const atBottom = buf.viewportY >= buf.baseY;
-          if (shouldScroll && !atBottom) {
-            logger.debug('pty', 'scrollToBottom did not reach bottom after write', {
-              paneId: this.paneId,
-              viewportY: buf.viewportY,
-              baseY: buf.baseY,
-              rows: this.terminal.rows,
-              shouldScroll,
-              autoScroll: this.autoScroll,
-              hidden: this.element.offsetWidth === 0,
-            });
-          }
+        const buf = this.terminal.buffer.active;
+        if (shouldScroll && buf.viewportY < buf.baseY && !this.isHidden) {
+          logger.debug('pty', 'scrollToBottom did not reach bottom after write', {
+            paneId: this.paneId,
+            viewportY: buf.viewportY,
+            baseY: buf.baseY,
+            rows: this.terminal.rows,
+          });
         }
       });
     }
@@ -736,7 +746,7 @@ export class TerminalPane {
   private static readonly RESIZE_THROTTLE_MS = 100;
 
   fit(): void {
-    if (this.disposed || this.element.offsetWidth === 0) return;
+    if (this.disposed || this.isHidden) return;
     // Snapshot scroll intent before resize.  fitAddon.fit() calls
     // terminal.resize() which fires onScroll synchronously — during resize
     // the viewport position is temporarily inconsistent (viewportY < baseY),
@@ -744,6 +754,7 @@ export class TerminalPane {
     const wasAutoScroll = this.autoScroll;
     const prevRows = this.terminal.rows;
     const prevCols = this.terminal.cols;
+    this.fitting = true;
     try {
       this.fitAddon.fit();
       const dims = this.fitAddon.proposeDimensions();
@@ -773,6 +784,8 @@ export class TerminalPane {
         error: String(err),
       });
       return;
+    } finally {
+      this.fitting = false;
     }
 
     const newRows = this.terminal.rows;
@@ -795,9 +808,7 @@ export class TerminalPane {
     // in write callbacks are no-ops while the terminal has display:none,
     // so the viewport can be stuck when the pane becomes visible again.
     if (wasAutoScroll) {
-      this.autoScroll = true;
-      this.terminal.scrollToBottom();
-      this.scrollBtn.classList.remove('visible');
+      this.syncScrollToBottom();
 
       const buf = this.terminal.buffer.active;
       if (buf.viewportY < buf.baseY) {
@@ -866,6 +877,13 @@ export class TerminalPane {
     this.terminal.clear();
   }
 
+  /** Restore auto-scroll intent, scroll to bottom, and hide the scroll button. */
+  private syncScrollToBottom(): void {
+    this.autoScroll = true;
+    this.terminal.scrollToBottom();
+    this.scrollBtn.classList.remove('visible');
+  }
+
   scrollToBottom(): void {
     const buf = this.terminal.buffer.active;
     logger.debug('pty', 'scrollToBottom (manual)', {
@@ -874,9 +892,7 @@ export class TerminalPane {
       baseY: buf.baseY,
       rows: this.terminal.rows,
     });
-    this.autoScroll = true;
-    this.terminal.scrollToBottom();
-    this.scrollBtn.classList.remove('visible');
+    this.syncScrollToBottom();
   }
 
   async dispose(): Promise<void> {

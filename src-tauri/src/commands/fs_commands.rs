@@ -1,6 +1,41 @@
 use std::io::Read;
 
 use crate::models::{DirEntry, DirectoryListing, FileContent};
+use crate::IGNORED_DIRS;
+
+/// Reject paths that attempt to escape via symlink traversal or that target
+/// well-known system-critical locations.  This is a defense-in-depth measure;
+/// the primary trust boundary is the Tauri capability system.
+fn validate_write_path(path: &str) -> Result<(), String> {
+    let p = std::path::Path::new(path);
+
+    // Reject paths with ".." components (before canonicalization) to prevent
+    // TOCTOU races where the target is swapped between check and use.
+    for component in p.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err("Path must not contain '..' components".to_string());
+        }
+    }
+
+    // Block a small set of system-critical roots
+    #[cfg(target_os = "windows")]
+    {
+        let lower = path.to_lowercase().replace('/', "\\");
+        if lower.starts_with("c:\\windows") || lower.starts_with("c:\\program files") {
+            return Err("Cannot modify system directories".to_string());
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        for prefix in ["/bin", "/sbin", "/usr", "/etc", "/boot", "/lib", "/proc", "/sys"] {
+            if path.starts_with(prefix) {
+                return Err("Cannot modify system directories".to_string());
+            }
+        }
+    }
+
+    Ok(())
+}
 
 /// Build a `DirEntry` from a `std::fs::DirEntry` and its pre-fetched metadata.
 fn dir_entry_from(entry: &std::fs::DirEntry, metadata: &std::fs::Metadata) -> DirEntry {
@@ -123,19 +158,6 @@ fn read_text_file_sync(path: &str, max_bytes: Option<u64>) -> Result<FileContent
 const MAX_SEARCH_RESULTS: usize = 100;
 const MAX_SEARCH_DEPTH: usize = 20;
 
-const IGNORED_DIRS: &[&str] = &[
-    "node_modules",
-    ".git",
-    "dist",
-    "target",
-    ".vite",
-    ".vite-temp",
-    ".next",
-    "build",
-    "__pycache__",
-    ".serena",
-];
-
 #[tauri::command]
 pub async fn search_files(root_path: String, query: String) -> Result<Vec<DirEntry>, String> {
     tokio::task::spawn_blocking(move || search_files_sync(&root_path, &query))
@@ -221,6 +243,7 @@ pub async fn show_in_explorer(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
+    validate_write_path(&path)?;
     tokio::task::spawn_blocking(move || {
         std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))
     })
@@ -230,6 +253,7 @@ pub async fn write_text_file(path: String, content: String) -> Result<(), String
 
 #[tauri::command]
 pub async fn delete_path(path: String) -> Result<(), String> {
+    validate_write_path(&path)?;
     tokio::task::spawn_blocking(move || {
         let p = std::path::Path::new(&path);
         if p.is_dir() {
@@ -240,4 +264,161 @@ pub async fn delete_path(path: String) -> Result<(), String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── validate_write_path ──
+
+    #[test]
+    fn validate_write_path_allows_normal_paths() {
+        assert!(validate_write_path("/home/user/projects/foo.txt").is_ok());
+        assert!(validate_write_path("/tmp/test").is_ok());
+    }
+
+    #[test]
+    fn validate_write_path_rejects_parent_traversal() {
+        assert!(validate_write_path("/home/user/../etc/passwd").is_err());
+        assert!(validate_write_path("../outside").is_err());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn validate_write_path_rejects_windows_system_dirs() {
+        assert!(validate_write_path("C:\\Windows\\System32\\cmd.exe").is_err());
+        assert!(validate_write_path("c:/windows/system32").is_err());
+        assert!(validate_write_path("C:\\Program Files\\app").is_err());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn validate_write_path_rejects_unix_system_dirs() {
+        assert!(validate_write_path("/bin/sh").is_err());
+        assert!(validate_write_path("/usr/local/bin/app").is_err());
+        assert!(validate_write_path("/etc/passwd").is_err());
+        assert!(validate_write_path("/proc/1/status").is_err());
+    }
+
+    // ── list_directory_sync ──
+
+    #[test]
+    fn list_directory_sync_returns_entries() {
+        let dir = std::env::temp_dir();
+        let result = list_directory_sync(dir.to_str().unwrap());
+        assert!(result.is_ok());
+        let listing = result.unwrap();
+        assert_eq!(listing.path, dir.to_str().unwrap());
+    }
+
+    #[test]
+    fn list_directory_sync_fails_on_nonexistent() {
+        let result = list_directory_sync("/nonexistent/path/that/does/not/exist");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_directory_sync_sorts_dirs_before_files() {
+        // Create a temp dir with known structure
+        let base = std::env::temp_dir().join("cosmos_test_list_sort");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("z_subdir")).unwrap();
+        std::fs::write(base.join("a_file.txt"), "test").unwrap();
+
+        let result = list_directory_sync(base.to_str().unwrap()).unwrap();
+        assert!(result.entries.len() >= 2);
+        // Directory should come before the file
+        assert!(result.entries[0].is_dir);
+        assert!(!result.entries.last().unwrap().is_dir);
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ── search_files_sync ──
+
+    #[test]
+    fn search_files_sync_finds_matching_files() {
+        let base = std::env::temp_dir().join("cosmos_test_search");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("nested")).unwrap();
+        std::fs::write(base.join("hello_world.txt"), "content").unwrap();
+        std::fs::write(base.join("nested/hello_again.txt"), "content").unwrap();
+        std::fs::write(base.join("other.rs"), "content").unwrap();
+
+        let result = search_files_sync(base.to_str().unwrap(), "hello").unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|e| e.name.contains("hello")));
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn search_files_sync_case_insensitive() {
+        let base = std::env::temp_dir().join("cosmos_test_search_ci");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("README.md"), "content").unwrap();
+
+        let result = search_files_sync(base.to_str().unwrap(), "readme").unwrap();
+        assert_eq!(result.len(), 1);
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn search_files_sync_respects_max_results() {
+        let base = std::env::temp_dir().join("cosmos_test_search_max");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        // Create more than MAX_SEARCH_RESULTS files
+        for i in 0..105 {
+            std::fs::write(base.join(format!("match_{i:03}.txt")), "content").unwrap();
+        }
+
+        let result = search_files_sync(base.to_str().unwrap(), "match").unwrap();
+        assert!(result.len() <= MAX_SEARCH_RESULTS);
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ── read_text_file_sync ──
+
+    #[test]
+    fn read_text_file_sync_reads_content() {
+        let path = std::env::temp_dir().join("cosmos_test_read.txt");
+        std::fs::write(&path, "hello world").unwrap();
+
+        let result = read_text_file_sync(path.to_str().unwrap(), None).unwrap();
+        assert_eq!(result.content, "hello world");
+        assert!(!result.binary);
+        assert!(!result.truncated);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn read_text_file_sync_detects_binary() {
+        let path = std::env::temp_dir().join("cosmos_test_binary.bin");
+        std::fs::write(&path, b"hello\x00world").unwrap();
+
+        let result = read_text_file_sync(path.to_str().unwrap(), None).unwrap();
+        assert!(result.binary);
+        assert!(result.content.is_empty());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn read_text_file_sync_truncates_large_files() {
+        let path = std::env::temp_dir().join("cosmos_test_large.txt");
+        let content = "x".repeat(200);
+        std::fs::write(&path, &content).unwrap();
+
+        let result = read_text_file_sync(path.to_str().unwrap(), Some(100)).unwrap();
+        assert!(result.truncated);
+        assert_eq!(result.content.len(), 100);
+
+        let _ = std::fs::remove_file(&path);
+    }
 }

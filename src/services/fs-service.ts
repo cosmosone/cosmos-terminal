@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { logger } from './logger';
 
 export interface DirEntry {
@@ -51,4 +52,20 @@ export async function showInExplorer(path: string): Promise<void> {
 export async function deletePath(path: string): Promise<void> {
   logger.debug('fs', 'IPC: delete_path', { path });
   await invoke('delete_path', { path });
+}
+
+export async function watchDirectory(path: string): Promise<void> {
+  logger.debug('fs', 'IPC: watch_directory', { path });
+  await invoke('watch_directory', { path });
+}
+
+export async function unwatchDirectory(): Promise<void> {
+  logger.debug('fs', 'IPC: unwatch_directory');
+  await invoke('unwatch_directory');
+}
+
+export function onFsChange(callback: (affectedDir: string) => void): Promise<UnlistenFn> {
+  return listen<string>('fs-change', (event) => {
+    callback(event.payload);
+  });
 }

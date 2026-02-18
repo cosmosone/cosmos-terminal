@@ -44,8 +44,14 @@ function renderMarkdown(source: string): string {
   // Unordered lists
   html = html.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
 
-  // Links: [text](url)
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Links: [text](url) — only allow http(s) and mailto protocols
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
+    const decoded = href.replace(/&amp;/g, '&');
+    if (/^https?:|^mailto:/i.test(decoded)) {
+      return `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
+    }
+    return `${text} (${href})`;
+  });
 
   // Horizontal rules
   html = html.replace(/^---+$/gm, '<hr>');
