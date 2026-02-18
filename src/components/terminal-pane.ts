@@ -279,6 +279,7 @@ export class TerminalPane {
             mod = 5; // 1 + Ctrl(4)
           }
           const seq = mod > 1 ? `\x1b[${code};${mod}u` : `\x1b[${code}u`;
+          e.preventDefault();
           if (this.backendId) {
             writeToPtySession(this.backendId, seq);
           } else {
@@ -297,6 +298,7 @@ export class TerminalPane {
       // newline" vs \r as "submit".  CSI u sequences are NOT understood
       // by apps that haven't negotiated Kitty protocol.
       if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
+        e.preventDefault();
         if (this.backendId) {
           writeToPtySession(this.backendId, '\n');
         } else {
