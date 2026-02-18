@@ -148,6 +148,7 @@ pub fn run() {
             fs_commands::write_text_file,
             fs_commands::search_files,
             fs_commands::show_in_explorer,
+            fs_commands::delete_path,
         ])
         .setup(|app| {
             #[cfg(target_os = "windows")]

@@ -253,9 +253,12 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     bar.appendChild(actions);
 
     requestAnimationFrame(() => {
-      updateScrollArrows();
       const activeTab = tabList.querySelector('.project-tab.active') as HTMLElement | null;
-      activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'smooth' });
+      activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
+      updateScrollArrows();
+      // Second pass: arrow visibility may shift layout, so re-scroll and re-check
+      activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
+      updateScrollArrows();
     });
   }
 

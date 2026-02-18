@@ -5,12 +5,14 @@ import {
   toggleFileBrowserPath,
   addFileTab,
 } from '../state/actions';
-import { listDirectory, searchFiles, showInExplorer } from '../services/fs-service';
+import { listDirectory, searchFiles, showInExplorer, deletePath } from '../services/fs-service';
 import type { DirEntry } from '../services/fs-service';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { setupSidebarResize } from '../utils/sidebar-resize';
 import { folderIcon, fileIcon, chevronRightIcon, searchIcon } from '../utils/icons';
 import { showContextMenu } from './context-menu';
+import type { MenuItem } from './context-menu';
+import { showConfirmDialog } from './confirm-dialog';
 import { languageFromExtension } from '../highlight/languages/index';
 
 export function initFileBrowserSidebar(onLayoutChange: () => void): void {
@@ -198,13 +200,41 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
     row.appendChild(nameEl);
   }
 
-  function addExplorerContextMenu(row: HTMLElement, path: string): void {
+  async function handleDelete(path: string, name: string): Promise<void> {
+    const { confirmed } = await showConfirmDialog({
+      title: 'Delete',
+      message: `Are you sure you want to delete "${name}"?`,
+      confirmText: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
+    try {
+      await deletePath(path);
+      dirCache.clear();
+      scheduleRender();
+    } catch {
+      // silently fail
+    }
+  }
+
+  function addContextMenu(
+    row: HTMLElement,
+    entry: DirEntry,
+    projectId: string,
+    fileType?: string,
+  ): void {
     row.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      showContextMenu(e.clientX, e.clientY, [
-        { label: 'Open in File Explorer', action: () => showInExplorer(path) },
-      ]);
+
+      const items: MenuItem[] = [];
+      if (fileType !== undefined) {
+        items.push({ label: 'Open', action: () => addFileTab(projectId, entry.path, fileType) });
+      }
+      items.push({ label: 'Open in File Explorer', action: () => showInExplorer(entry.path) });
+      items.push({ label: 'Delete', separator: true, action: () => handleDelete(entry.path, entry.name) });
+
+      showContextMenu(e.clientX, e.clientY, items);
     });
   }
 
@@ -228,7 +258,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
         }
       });
 
-      addExplorerContextMenu(row, entry.path);
+      addContextMenu(row, entry, projectId);
       wrap.appendChild(row);
 
       if (expanded) {
@@ -251,7 +281,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): void {
         addFileTab(projectId, entry.path, fileType);
       });
 
-      addExplorerContextMenu(row, entry.path);
+      addContextMenu(row, entry, projectId, fileType);
       wrap.appendChild(row);
     }
 

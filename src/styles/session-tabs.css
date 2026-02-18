@@ -33,7 +33,7 @@
   font-size: 18px;
   opacity: 0;
   pointer-events: none;
-  transition: width var(--transition-fast), opacity var(--transition-fast);
+  transition: opacity var(--transition-fast);
 }
 
 #session-tab-bar .scroll-arrow.visible {

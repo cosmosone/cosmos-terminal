@@ -26,7 +26,7 @@
   width: 0;
   overflow: hidden;
   -webkit-app-region: no-drag;
-  transition: width var(--transition-fast), opacity var(--transition-fast);
+  transition: opacity var(--transition-fast);
 }
 
 #project-tab-bar .scroll-arrow.visible {

@@ -47,3 +47,8 @@ export async function showInExplorer(path: string): Promise<void> {
   logger.debug('fs', 'IPC: show_in_explorer', { path });
   await invoke('show_in_explorer', { path });
 }
+
+export async function deletePath(path: string): Promise<void> {
+  logger.debug('fs', 'IPC: delete_path', { path });
+  await invoke('delete_path', { path });
+}
