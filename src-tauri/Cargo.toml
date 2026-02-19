@@ -1,6 +1,6 @@
 [package]
 name = "cosmos-terminal"
-version = "0.1.48"
+version = "0.1.49"
 description = "A high-performance terminal emulator"
 authors = ["Cosmos"]
 license = "MIT"
@@ -31,6 +31,7 @@ notify = "7"
 notify-debouncer-mini = "0.5"
 
 [profile.release]
+panic = "abort"
 lto = true
 codegen-units = 1
 strip = true
