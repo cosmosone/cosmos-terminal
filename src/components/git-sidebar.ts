@@ -67,6 +67,9 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     notificationTimers.set(projectId, timer);
   }
 
+  // Disable browser default context menu inside the sidebar
+  container.addEventListener('contextmenu', (e) => e.preventDefault());
+
   // --- Left-edge resize handle (sidebar width) ---
   const resizeHandle = createElement('div', { className: 'git-sidebar-resize' });
   container.appendChild(resizeHandle);

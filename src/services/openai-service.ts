@@ -25,20 +25,19 @@ Rules:
 2. First line format: <prefix>: <lowercase description>
 3. Use Australian English spelling (e.g. colour, initialise, behaviour, organisation, analyse, centre).
 4. Keep the first line (subject) max 72 characters.
-5. After the subject line, add a blank line then up to 3 bullet points detailing the key changes.
-6. Each bullet point starts with "- " and describes a specific change concisely.
-7. Group related changes together. Focus on what changed and why, not trivial details.
-8. For very small/simple changes (1-2 files, single concern), omit the bullet points entirely.
+5. Focus ONLY on the top 3 most important changes. Skip trivial changes entirely — never mention version bumps, Cargo.lock updates, lock file changes, package.json version changes, or minor formatting.
+6. If the important changes share a single concern, write a single-line commit message (subject only, no body). The subject should read as one natural sentence, not a list joined by semicolons.
+7. If the important changes span multiple unrelated concerns that cannot be described naturally in one sentence, use bullet points (max 3, each starting with "- ") after a blank line.
+8. Never join unrelated changes with semicolons or commas into one line — use bullet points instead.
 9. Output ONLY the commit message — no quotes, no explanation, no markdown fences.
 
-Example for a multi-file change:
-feat: add colour picker to the settings page
+Example — multi-concern changes (version bump in diff is ignored):
+chore: add CLAUDE.md and disable git sidebar context menu
 
-- Add ColourPicker component with hue/saturation/lightness controls
-- Integrate picker into SettingsForm with live preview and user preferences storage
-- Update theme engine to apply custom accent colour on load
+- Add CLAUDE.md with project architecture guidance for Claude Code
+- Disable browser default context menu in the git sidebar
 
-Example for a simple change:
+Example — single-concern change:
 fix: correct initialisation order for the auth service`;
 
 const SUMMARISE_PROMPT = `You are a code-change summariser. You will receive a batch of git diff hunks.
