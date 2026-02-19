@@ -9,14 +9,27 @@ import type { MenuItem } from './context-menu';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { PaneLeaf, Project } from '../state/types';
-import { chevronLeftIcon, chevronRightIcon, fileIcon, folderIcon, gitBranchIcon, lockIcon, terminalIcon, claudeIcon, codexIcon } from '../utils/icons';
+import { chevronLeftIcon, chevronRightIcon, fileIcon, folderIcon, gitBranchIcon, lockIcon, terminalIcon, claudeIcon, codexIcon, geminiIcon, clineIcon } from '../utils/icons';
 
 const SCROLL_STEP = 200;
 
-const SESSION_ICON_MAP: Record<string, (size?: number) => string> = {
-  claude: claudeIcon,
-  codex: codexIcon,
-};
+interface AgentDef {
+  command: string;
+  label: string;
+  icon: (size?: number) => string;
+  initialCmd?: string;
+}
+
+const AGENT_DEFINITIONS: readonly AgentDef[] = [
+  { command: 'claude', label: 'Claude', icon: claudeIcon },
+  { command: 'codex', label: 'Codex', icon: codexIcon },
+  { command: 'gemini', label: 'Gemini', icon: geminiIcon, initialCmd: 'gemini -y' },
+  { command: 'cline', label: 'Cline', icon: clineIcon },
+];
+
+const SESSION_ICON_MAP: Record<string, (size?: number) => string> = Object.fromEntries(
+  AGENT_DEFINITIONS.map((a) => [a.command, a.icon]),
+);
 
 function sessionIcon(title: string, size?: number): string {
   const iconFn = SESSION_ICON_MAP[title.toLowerCase()] ?? terminalIcon;
@@ -29,14 +42,14 @@ export function initSessionTabBar(onTabChange: () => void): void {
   // Reassigned each render so the ResizeObserver always calls the latest version
   let updateScrollArrows: () => void = () => {};
 
-  function createAgentButton(project: Project, label: string, command: string, iconSvg: string): HTMLButtonElement {
+  function createAgentButton(project: Project, agent: AgentDef): HTMLButtonElement {
     const btn = createElement('button', { className: 'session-tab-add session-tab-agent' });
-    btn.innerHTML = iconSvg;
-    btn.title = `New ${label} session`;
+    btn.innerHTML = agent.icon(12);
+    btn.title = `New ${agent.label} session`;
     btn.addEventListener('click', () => {
-      logger.info('session', `Add ${label} session via tab bar`, { projectId: project.id });
-      const session = addSession(project.id, { title: command });
-      setInitialCommand((session.paneTree as PaneLeaf).paneId, command);
+      logger.info('session', `Add ${agent.label} session via tab bar`, { projectId: project.id });
+      const session = addSession(project.id, { title: agent.command });
+      setInitialCommand((session.paneTree as PaneLeaf).paneId, agent.initialCmd ?? agent.command);
       onTabChange();
     });
     return btn;
@@ -301,8 +314,9 @@ export function initSessionTabBar(onTabChange: () => void): void {
     bar.appendChild(tabList);
     bar.appendChild(rightArrow);
     bar.appendChild(addBtn);
-    bar.appendChild(createAgentButton(project, 'Claude', 'claude', claudeIcon(12)));
-    bar.appendChild(createAgentButton(project, 'Codex', 'codex', codexIcon(12)));
+    for (const agent of AGENT_DEFINITIONS) {
+      bar.appendChild(createAgentButton(project, agent));
+    }
 
     const divider = createElement('span', { className: 'session-tab-divider' });
     bar.appendChild(divider);
