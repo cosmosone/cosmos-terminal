@@ -10,7 +10,6 @@ const MAX_RAW_DIFF_CHARS = 500_000;
 
 /** Max characters for the single-call path (small diffs). */
 const MAX_DIFF_CHARS = 14000;
-const MAX_HUNK_CHARS = 12000;
 
 /** Target size per batch in the two-tier path. */
 const BATCH_TARGET_CHARS = 12000;
@@ -23,23 +22,20 @@ const SYSTEM_PROMPT = `You are a commit message generator that analyses git diff
 
 Rules:
 1. Use exactly one conventional commit prefix: feat, fix, chore, refactor, docs, style, test, perf.
-2. First line format: <prefix>: <description starting with a lowercase letter>
-3. The description after the colon MUST start with a lowercase letter.
-4. Use Australian English spelling (e.g. colour, initialise, behaviour, organisation, analyse, centre).
-5. Keep the first line (subject) max 72 characters.
-6. After the subject line, add a blank line then bullet points detailing the key changes.
-7. Each bullet point should start with "- " and describe a specific change concisely.
-8. Group related changes together. Focus on what changed and why, not trivial details.
-9. Omit bullet points for trivial or obvious changes (e.g. import reordering).
-10. For very small/simple changes (1-2 files, single concern), you may omit the bullet points and return only the subject line.
-11. Output ONLY the commit message — no quotes, no explanation, no markdown fences.
+2. First line format: <prefix>: <lowercase description>
+3. Use Australian English spelling (e.g. colour, initialise, behaviour, organisation, analyse, centre).
+4. Keep the first line (subject) max 72 characters.
+5. After the subject line, add a blank line then up to 3 bullet points detailing the key changes.
+6. Each bullet point starts with "- " and describes a specific change concisely.
+7. Group related changes together. Focus on what changed and why, not trivial details.
+8. For very small/simple changes (1-2 files, single concern), omit the bullet points entirely.
+9. Output ONLY the commit message — no quotes, no explanation, no markdown fences.
 
 Example for a multi-file change:
 feat: add colour picker to the settings page
 
 - Add ColourPicker component with hue/saturation/lightness controls
-- Integrate picker into SettingsForm with live preview
-- Store selected colour in user preferences via the settings service
+- Integrate picker into SettingsForm with live preview and user preferences storage
 - Update theme engine to apply custom accent colour on load
 
 Example for a simple change:
@@ -76,35 +72,9 @@ function buildFileListHeader(files: FileDiff[]): string {
   return `Changed files (${files.length}):\n${files.map((f) => `  ${f.path}`).join('\n')}\n\n`;
 }
 
-/**
- * Build a condensed diff representation that fits within token limits.
- * Always includes the list of changed files, then packs as many diff
- * hunks as will fit -- prioritising smaller files so more context is
- * captured across the changeset.
- */
+/** Build a diff payload with a file-list header for the single-call path. */
 function buildDiffPayload(diff: string, files: FileDiff[]): string {
-  const header = buildFileListHeader(files);
-
-  if (diff.length <= MAX_DIFF_CHARS) {
-    return header + diff;
-  }
-
-  // Pack hunks smallest-first to maximise file coverage
-  const sorted = [...files].sort((a, b) => a.content.length - b.content.length);
-  let budget = MAX_HUNK_CHARS;
-  const included: string[] = [];
-
-  for (const file of sorted) {
-    if (file.content.length <= budget) {
-      included.push(file.content);
-      budget -= file.content.length;
-    }
-  }
-
-  const omitted = files.length - included.length;
-  const footer = omitted > 0 ? `\n... (${omitted} file diff(s) omitted for brevity)` : '';
-
-  return header + included.join('\n') + footer;
+  return buildFileListHeader(files) + diff;
 }
 
 /** Group file diffs into batches of roughly `BATCH_TARGET_CHARS`, capped at `MAX_BATCHES`. */
@@ -263,7 +233,7 @@ export async function generateCommitMessage(diff: string, onProgress?: ProgressC
   onProgress?.('Finalising...');
 
   const synthesisInput = buildFileListHeader(files) + `Summaries of all changes:\n${summaries.join('\n\n')}`;
-  const raw = await callApi(apiKey, SYSTEM_PROMPT, `Generate a commit message based on these change summaries:\n\n${synthesisInput}`);
+  const raw = await callApi(apiKey, SYSTEM_PROMPT, `Generate a commit message based on these change summaries. Remember: maximum 3 bullet points — consolidate related changes.\n\n${synthesisInput}`);
   const message = cleanCommitMessage(raw);
 
   logger.info('git', 'Generated commit message (two-tier)', { message, batchCount: totalBatches });
