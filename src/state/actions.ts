@@ -99,6 +99,13 @@ function updateSession(projectId: string, sessionId: string, updater: (s: Sessio
   }));
 }
 
+function updateFileTab(projectId: string, tabId: string, updater: (t: FileTab) => FileTab): void {
+  updateProject(projectId, (p) => ({
+    ...p,
+    tabs: p.tabs.map((t) => (t.id === tabId ? updater(t) : t)),
+  }));
+}
+
 export function addSession(projectId: string, opts?: { title?: string }): Session {
   logger.info('session', 'addSession', { projectId });
   const paneId = genId();
@@ -434,14 +441,34 @@ export function cycleSession(projectId: string, direction: 1 | -1): void {
   setActiveSession(projectId, project.sessions[newIdx].id);
 }
 
+function moveItem<T>(items: T[], oldIndex: number, newIndex: number): T[] {
+  const result = [...items];
+  const [moved] = result.splice(oldIndex, 1);
+  result.splice(newIndex, 0, moved);
+  return result;
+}
+
 export function reorderProject(projectId: string, newIndex: number): void {
   store.setState((s) => {
     const oldIndex = s.projects.findIndex((p) => p.id === projectId);
     if (oldIndex === -1 || oldIndex === newIndex) return s;
-    const projects = [...s.projects];
-    const [moved] = projects.splice(oldIndex, 1);
-    projects.splice(newIndex, 0, moved);
-    return { ...s, projects };
+    return { ...s, projects: moveItem(s.projects, oldIndex, newIndex) };
+  });
+}
+
+export function reorderSession(projectId: string, sessionId: string, newIndex: number): void {
+  updateProject(projectId, (p) => {
+    const oldIndex = p.sessions.findIndex((s) => s.id === sessionId);
+    if (oldIndex === -1 || oldIndex === newIndex) return p;
+    return { ...p, sessions: moveItem(p.sessions, oldIndex, newIndex) };
+  });
+}
+
+export function reorderFileTab(projectId: string, tabId: string, newIndex: number): void {
+  updateProject(projectId, (p) => {
+    const oldIndex = p.tabs.findIndex((t) => t.id === tabId);
+    if (oldIndex === -1 || oldIndex === newIndex) return p;
+    return { ...p, tabs: moveItem(p.tabs, oldIndex, newIndex) };
   });
 }
 
@@ -643,7 +670,7 @@ export function toggleFileBrowserPath(path: string): void {
   });
 }
 
-// --- Content tab actions ---
+// --- File tab actions ---
 
 export function addFileTab(projectId: string, filePath: string, fileType: string): void {
   const project = store.getState().projects.find((p) => p.id === projectId);
@@ -670,7 +697,7 @@ export function addFileTab(projectId: string, filePath: string, fileType: string
   }));
 }
 
-export function removeContentTab(projectId: string, tabId: string): void {
+export function removeFileTab(projectId: string, tabId: string): void {
   updateProject(projectId, (p) => {
     const tabs = p.tabs.filter((t) => t.id !== tabId);
     let activeTabId = p.activeTabId;
@@ -701,24 +728,14 @@ export function setActiveTab(projectId: string, tabId: string): void {
 }
 
 export function setFileTabEditing(projectId: string, tabId: string, editing: boolean): void {
-  updateProject(projectId, (p) => ({
-    ...p,
-    tabs: p.tabs.map((t) =>
-      t.id === tabId ? { ...t, editing } : t,
-    ),
-  }));
+  updateFileTab(projectId, tabId, (t) => ({ ...t, editing }));
 }
 
 export function setFileTabDirty(projectId: string, tabId: string, dirty: boolean): void {
-  updateProject(projectId, (p) => ({
-    ...p,
-    tabs: p.tabs.map((t) =>
-      t.id === tabId ? { ...t, dirty } : t,
-    ),
-  }));
+  updateFileTab(projectId, tabId, (t) => ({ ...t, dirty }));
 }
 
-export function closeOtherTabs(projectId: string, keepTabId: string, keepType: 'session' | 'content'): void {
+export function closeOtherTabs(projectId: string, keepTabId: string, keepType: 'session' | 'file'): void {
   updateProject(projectId, (p) => {
     if (keepType === 'session') {
       const sessions = p.sessions.filter((s) => s.id === keepTabId || s.locked);
@@ -749,10 +766,5 @@ export function toggleSessionLocked(projectId: string, sessionId: string): void 
 }
 
 export function toggleFileTabLocked(projectId: string, tabId: string): void {
-  updateProject(projectId, (p) => ({
-    ...p,
-    tabs: p.tabs.map((t) =>
-      t.id === tabId ? { ...t, locked: !t.locked } : t,
-    ),
-  }));
+  updateFileTab(projectId, tabId, (t) => ({ ...t, locked: !t.locked }));
 }

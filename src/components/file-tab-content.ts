@@ -189,6 +189,7 @@ export function initFileTabContent(): FileTabContentApi {
   let lastFilePath: string | null = null;
   let activeTabId: string | null = null;
   let currentMode: RenderMode = 'plain-editor';
+  let loadVersion = 0;
 
   const findController = createFindController(
     () => currentContent,
@@ -348,23 +349,34 @@ export function initFileTabContent(): FileTabContentApi {
       if (!project || !project.activeTabId) return null;
       const tab = project.tabs.find((t) => t.id === project.activeTabId);
       if (!tab) return null;
-      return { projectId: project.id, tab };
+      // Return a stable string so the listener only fires when relevant state changes
+      return `${project.id}|${tab.id}|${tab.filePath}|${tab.fileType}|${tab.editing}|${tab.dirty}`;
     },
-    async (data) => {
-      if (!data) {
+    async (key) => {
+      if (!key) {
         container.classList.add('hidden');
         activeTabId = null;
         return;
       }
       container.classList.remove('hidden');
 
-      if (data.tab.filePath !== lastFilePath || data.tab.id !== lastTabId) {
+      const [projectId, tabId] = key.split('|');
+      const state = store.getState();
+      const project = state.projects.find((p) => p.id === projectId);
+      const tab = project?.tabs.find((t) => t.id === tabId);
+      if (!project || !tab) return;
+
+      const version = ++loadVersion;
+
+      if (tab.filePath !== lastFilePath || tab.id !== lastTabId) {
         try {
-          const result = await readTextFile(data.tab.filePath);
+          const result = await readTextFile(tab.filePath);
+          if (version !== loadVersion) return;
           isBinary = result.binary;
           currentContent = result.content;
           editBuffer = result.content;
         } catch (err: unknown) {
+          if (version !== loadVersion) return;
           isBinary = false;
           const message = err instanceof Error ? err.message : 'Unknown error';
           currentContent = `Error loading file: ${message}`;
@@ -372,10 +384,11 @@ export function initFileTabContent(): FileTabContentApi {
         }
       }
 
-      lastTabId = data.tab.id;
-      lastFilePath = data.tab.filePath;
-      activeTabId = data.tab.id;
-      render(data.projectId, data.tab);
+      if (version !== loadVersion) return;
+      lastTabId = tab.id;
+      lastFilePath = tab.filePath;
+      activeTabId = tab.id;
+      render(projectId, tab);
     },
   );
 

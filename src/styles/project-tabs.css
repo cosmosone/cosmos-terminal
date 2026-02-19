@@ -35,24 +35,6 @@
   width: 26px;
 }
 
-.project-tab.dragging {
-  opacity: 0.7;
-  z-index: 100;
-  pointer-events: none;
-  transition: none !important;
-}
-
-.tab-drop-indicator {
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  background: var(--accent);
-  border-radius: 1px;
-  pointer-events: none;
-  z-index: 99;
-  display: none;
-}
 
 #project-tab-bar .tab-list::-webkit-scrollbar {
   display: none;

@@ -32,9 +32,7 @@ export async function saveWorkspace(
   const cleaned = projects.map((p) => ({
     ...p,
     sessions: p.sessions.map((s) => ({ ...s, hasActivity: false, activityCompleted: false })),
-    // Content tabs are ephemeral — don't persist
-    tabs: [],
-    activeTabId: null,
+    tabs: p.tabs.map((t) => ({ ...t, dirty: false, editing: false })),
   }));
   const s = await getStore();
   await s.set('workspace', { projects: cleaned, activeProjectId, gitSidebar, fileBrowserSidebar } satisfies SavedWorkspace);

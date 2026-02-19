@@ -23,6 +23,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
   const container = $('#file-browser-sidebar-container')! as HTMLElement;
   const dirCache = new Map<string, DirEntry[]>();
   let renderRafId = 0;
+  let renderGeneration = 0;
 
   // --- Multi-selection state ---
   const selectedPaths = new Set<string>();
@@ -194,6 +195,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
   }
 
   async function renderTree(): Promise<void> {
+    const gen = ++renderGeneration;
     clearChildren(body);
     entryByPath.clear();
     const state = store.getState();
@@ -206,6 +208,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     }
 
     const entries = await fetchDir(project.path);
+    if (gen !== renderGeneration) return; // stale render — a newer one has started
     const expandedPaths = state.fileBrowserSidebar.expandedPaths;
 
     for (const entry of entries) {
@@ -443,8 +446,6 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     (s) => s.fileBrowserSidebar.visible,
     applyVisibility,
   );
-
-  applyVisibility(store.getState().fileBrowserSidebar.visible);
 
   store.select(
     (s) => s.fileBrowserSidebar.width,

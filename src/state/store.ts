@@ -24,12 +24,14 @@ export class Store {
   }
 
   select<T>(selector: StateSelector<T>, listener: StateListener<T>): () => void {
+    const initialValue = selector(this.state);
     const sub: Subscription<T> = {
       selector,
       listener,
-      lastValue: selector(this.state),
+      lastValue: initialValue,
     };
     this.subscriptions.push(sub);
+    listener(initialValue);
     return () => {
       const idx = this.subscriptions.indexOf(sub);
       if (idx >= 0) this.subscriptions.splice(idx, 1);

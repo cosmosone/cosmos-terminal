@@ -54,3 +54,25 @@
   color: var(--text-primary);
   background: var(--bg-hover);
 }
+
+/* Drop indicator — shared between project and session tab bars */
+.tab-drop-indicator {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 99;
+  display: none;
+}
+
+/* Dragging tab ghost state — shared */
+.project-tab.dragging,
+.session-tab.dragging {
+  opacity: 0.7;
+  z-index: 100;
+  pointer-events: none;
+  transition: none !important;
+}

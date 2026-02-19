@@ -78,16 +78,15 @@ async function main(): Promise<void> {
   const fileBrowser = initFileBrowserSidebar(() => splitContainer.reLayout());
   const fileTabContent = initFileTabContent();
 
-  // Visibility management: hide terminal when content tab is active, show when terminal session is active
+  // Visibility management: hide terminal when file tab is active, show when terminal session is active
   const fileTabContainer = $('#file-tab-container') as HTMLElement | null;
 
   store.select(
     (s) => {
       const project = s.projects.find((p) => p.id === s.activeProjectId);
-      return { activeSessionId: project?.activeSessionId ?? null, activeTabId: project?.activeTabId ?? null };
+      return project?.activeSessionId != null && project?.activeTabId == null;
     },
-    ({ activeSessionId, activeTabId }) => {
-      const showTerminal = activeSessionId !== null && activeTabId === null;
+    (showTerminal) => {
       terminalContainer.classList.toggle('hidden', !showTerminal);
 
       if (showTerminal) {
@@ -230,8 +229,6 @@ async function main(): Promise<void> {
       refresh();
     });
   }
-
-  registerConfigurableBindings(settings.keybindings);
 
   store.select(
     (s) => s.settings.keybindings,
