@@ -14,6 +14,14 @@ export function fileIcon(size = 14): string {
   return `<svg ${svgAttrs(size)}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`;
 }
 
+export function chevronDownIcon(size = 14): string {
+  return `<svg ${svgAttrs(size)}><polyline points="6 9 12 15 18 9"/></svg>`;
+}
+
+export function chevronLeftIcon(size = 14): string {
+  return `<svg ${svgAttrs(size)}><polyline points="15 18 9 12 15 6"/></svg>`;
+}
+
 export function chevronRightIcon(size = 14): string {
   return `<svg ${svgAttrs(size)}><polyline points="9 18 15 12 9 6"/></svg>`;
 }
@@ -32,10 +40,6 @@ export function searchIcon(size = 14): string {
 
 export function refreshIcon(size = 14): string {
   return `<svg ${svgAttrs(size)}><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`;
-}
-
-export function chevronLeftIcon(size = 14): string {
-  return `<svg ${svgAttrs(size)}><polyline points="15 18 9 12 15 6"/></svg>`;
 }
 
 export function settingsIcon(size = 14): string {

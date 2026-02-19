@@ -21,6 +21,7 @@ export default defineConfig(async () => ({
   },
   build: {
     target: "esnext",
+    sourcemap: "hidden",
     minify: "esbuild",
     cssMinify: true,
     rollupOptions: {

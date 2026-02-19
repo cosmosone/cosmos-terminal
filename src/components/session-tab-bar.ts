@@ -12,8 +12,8 @@ import { createElement, clearChildren, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { PaneLeaf, Project } from '../state/types';
 import { chevronLeftIcon, chevronRightIcon, fileIcon, folderIcon, gitBranchIcon, lockIcon, terminalIcon } from '../utils/icons';
-
-const SCROLL_STEP = 200;
+import { setupScrollArrows } from '../utils/scroll-arrows';
+import { createTabDragManager } from '../utils/tab-drag';
 
 const SESSION_ICON_MAP: Record<string, (size?: number) => string> = Object.fromEntries(
   AGENT_DEFINITIONS.map((a) => [a.command, a.icon]),
@@ -27,100 +27,16 @@ function sessionIcon(title: string, size?: number): string {
 export function initSessionTabBar(onTabChange: () => void): void {
   const bar = $('#session-tab-bar')!;
 
-  // --- Drag-and-drop state (persists across re-renders) ---
-  let dragState: {
-    type: 'session' | 'file';
-    projectId: string;
-    itemId: string;
-    tab: HTMLElement;
-    startX: number;
-    tabRects: { id: string; left: number; right: number; center: number }[];
-    indicator: HTMLElement;
-    originIndex: number;
-    dropIndex: number;
-    dragging: boolean;
-  } | null = null;
-  let suppressClick = false;
-
-  function onMouseMove(e: MouseEvent): void {
-    if (!dragState) return;
-    const dx = e.clientX - dragState.startX;
-
-    if (!dragState.dragging) {
-      if (Math.abs(dx) < 4) return;
-      dragState.dragging = true;
-      dragState.tab.classList.add('dragging');
-      dragState.indicator.style.display = 'block';
-    }
-
-    // Safety: if DOM detached during drag, abort
-    if (!dragState.tab.isConnected) {
-      cleanupDrag();
-      return;
-    }
-
-    dragState.tab.style.transform = `translateX(${dx}px)`;
-
-    // Compute drop index from cursor position vs tab centers
-    const rects = dragState.tabRects;
-    let dropIndex = rects.length - 1;
-    for (let i = 0; i < rects.length; i++) {
-      if (e.clientX < rects[i].center) {
-        dropIndex = i;
-        break;
-      }
-    }
-    dragState.dropIndex = dropIndex;
-
-    // Position the indicator line relative to the parent.
-    // The indicator is absolutely positioned inside the scrollable tabList,
-    // so we must add scrollLeft to convert viewport coords to content coords.
-    const parent = dragState.indicator.parentElement!;
-    const parentLeft = parent.getBoundingClientRect().left;
-    let indicatorLeft: number;
-    if (dropIndex <= 0) {
-      indicatorLeft = rects[0].left;
-    } else if (dropIndex < rects.length) {
-      indicatorLeft = (rects[dropIndex - 1].right + rects[dropIndex].left) / 2;
-    } else {
-      indicatorLeft = rects[dropIndex - 1].right;
-    }
-    dragState.indicator.style.left = `${indicatorLeft - parentLeft + parent.scrollLeft}px`;
-  }
-
-  function onMouseUp(): void {
-    if (!dragState) return;
-    const { type, projectId, itemId, dragging, originIndex, dropIndex } = dragState;
-    cleanupDrag();
-    if (dragging) {
-      suppressClick = true;
-      requestAnimationFrame(() => { suppressClick = false; });
-      // Adjust dropIndex: if dropping after original position, account for removal
-      const adjustedIndex = dropIndex > originIndex ? dropIndex - 1 : dropIndex;
-      if (adjustedIndex !== originIndex) {
-        if (type === 'session') {
-          reorderSession(projectId, itemId, adjustedIndex);
-        } else {
-          reorderFileTab(projectId, itemId, adjustedIndex);
-        }
-        onTabChange();
-      }
-    }
-  }
-
-  function cleanupDrag(): void {
-    if (dragState) {
-      dragState.tab.classList.remove('dragging');
-      dragState.tab.style.transform = '';
-      dragState.indicator.style.display = 'none';
-      dragState = null;
-    }
-    window.removeEventListener('mousemove', onMouseMove);
-    window.removeEventListener('mouseup', onMouseUp);
-  }
+  const dragManager = createTabDragManager();
 
   // Reassigned each render so the ResizeObserver always calls the latest version
   let updateScrollArrows: () => void = () => {};
+
+  // While an inline rename is in progress we must defer re-renders so the
+  // input field is not destroyed.  `pendingRender` stores the latest project
+  // snapshot that arrived while the rename was active.
+  let renameActive = false;
+  let pendingRender: { project: Project | undefined } | null = null;
 
   function createAgentButton(project: Project, agent: AgentDef): HTMLButtonElement {
     const btn = createElement('button', { className: 'session-tab-add session-tab-agent' });
@@ -128,7 +44,7 @@ export function initSessionTabBar(onTabChange: () => void): void {
     btn.title = `New ${agent.label} session`;
     btn.addEventListener('click', () => {
       logger.info('session', `Add ${agent.label} session via tab bar`, { projectId: project.id });
-      const session = addSession(project.id, { title: agent.command });
+      const session = addSession(project.id, { title: agent.label });
       setInitialCommand((session.paneTree as PaneLeaf).paneId, agent.initialCmd ?? agent.command);
       onTabChange();
     });
@@ -164,8 +80,13 @@ export function initSessionTabBar(onTabChange: () => void): void {
   }
 
   function render(project: Project | undefined): void {
+    // Defer re-render while an inline rename is active
+    if (renameActive) {
+      pendingRender = { project };
+      return;
+    }
     // If a drag is in progress when re-render fires, abort it cleanly
-    if (dragState) cleanupDrag();
+    dragManager.cleanupDrag();
     clearChildren(bar);
     if (!project) return;
 
@@ -196,40 +117,6 @@ export function initSessionTabBar(onTabChange: () => void): void {
       }
     }
 
-    const startDrag = (
-      e: MouseEvent,
-      tab: HTMLElement,
-      type: 'session' | 'file',
-      itemId: string,
-      originIndex: number,
-      selector: string,
-      items: { id: string }[],
-    ): void => {
-      if (e.button !== 0) return;
-      if ((e.target as HTMLElement).closest('.tab-close, .tab-lock')) return;
-
-      const tabEls = tabList.querySelectorAll(selector);
-      const tabRects = Array.from(tabEls).map((el, i) => {
-        const r = el.getBoundingClientRect();
-        return { id: items[i].id, left: r.left, right: r.right, center: r.left + r.width / 2 };
-      });
-
-      dragState = {
-        type,
-        projectId: project.id,
-        itemId,
-        tab,
-        startX: e.clientX,
-        tabRects,
-        indicator,
-        originIndex,
-        dropIndex: originIndex,
-        dragging: false,
-      };
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
-    };
-
     for (let si = 0; si < project.sessions.length; si++) {
       const session = project.sessions[si];
       const isActive = session.id === project.activeSessionId && project.activeTabId === null;
@@ -256,11 +143,14 @@ export function initSessionTabBar(onTabChange: () => void): void {
       );
 
       tab.addEventListener('mousedown', (e: MouseEvent) => {
-        startDrag(e, tab, 'session', session.id, si, '.session-tab:not(.file-tab)', project.sessions);
+        dragManager.startDrag(e, tab, tabList, indicator, session.id, si, '.session-tab:not(.file-tab)', project.sessions, (itemId, _origin, adjustedIndex) => {
+          reorderSession(project.id, itemId, adjustedIndex);
+          onTabChange();
+        });
       });
 
       tab.addEventListener('click', () => {
-        if (suppressClick) return;
+        if (dragManager.suppressClick) return;
         logger.debug('session', 'Switch session', { sessionId: session.id, title: session.title });
         setActiveSession(project.id, session.id);
         onTabChange();
@@ -280,9 +170,21 @@ export function initSessionTabBar(onTabChange: () => void): void {
           {
             label: 'Rename',
             action: () => {
+              renameActive = true;
+              pendingRender = null;
+              const onRenameDone = () => {
+                renameActive = false;
+                if (pendingRender) {
+                  const deferred = pendingRender;
+                  pendingRender = null;
+                  render(deferred.project);
+                } else {
+                  onTabChange();
+                }
+              };
               startInlineRename(tab, session.title, (newName) => {
                 renameSession(project.id, session.id, newName);
-              });
+              }, onRenameDone);
             },
           },
           {
@@ -342,11 +244,14 @@ export function initSessionTabBar(onTabChange: () => void): void {
         );
 
         tab.addEventListener('mousedown', (e: MouseEvent) => {
-          startDrag(e, tab, 'file', fileTab.id, ci, '.file-tab', project.tabs);
+          dragManager.startDrag(e, tab, tabList, indicator, fileTab.id, ci, '.file-tab', project.tabs, (itemId, _origin, adjustedIndex) => {
+            reorderFileTab(project.id, itemId, adjustedIndex);
+            onTabChange();
+          });
         });
 
         tab.addEventListener('click', () => {
-          if (suppressClick) return;
+          if (dragManager.suppressClick) return;
           setActiveTab(project.id, fileTab.id);
           onTabChange();
         });
@@ -413,26 +318,7 @@ export function initSessionTabBar(onTabChange: () => void): void {
     const rightArrow = createElement('button', { className: 'scroll-arrow right' });
     rightArrow.innerHTML = chevronRightIcon(16);
 
-    updateScrollArrows = () => {
-      const scrollLeft = tabList.scrollLeft;
-      const maxScroll = tabList.scrollWidth - tabList.clientWidth;
-      leftArrow.classList.toggle('visible', scrollLeft > 1);
-      rightArrow.classList.toggle('visible', maxScroll > 1 && scrollLeft < maxScroll - 1);
-    };
-
-    tabList.addEventListener('scroll', updateScrollArrows);
-    tabList.addEventListener('wheel', (e: WheelEvent) => {
-      if (tabList.scrollWidth <= tabList.clientWidth) return;
-      e.preventDefault();
-      tabList.scrollLeft += e.deltaY;
-    }, { passive: false });
-
-    leftArrow.addEventListener('click', () => {
-      tabList.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' });
-    });
-    rightArrow.addEventListener('click', () => {
-      tabList.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' });
-    });
+    updateScrollArrows = setupScrollArrows({ tabList, leftArrow, rightArrow });
 
     // Add-session buttons
     const addBtn = createElement('button', { className: 'session-tab-add session-tab-agent' });
@@ -479,10 +365,27 @@ export function initSessionTabBar(onTabChange: () => void): void {
     });
   }
 
+  // Two targeted selectors instead of a single combined selector to avoid
+  // creating a new object reference on every state change (which would defeat
+  // deduplication and cause unnecessary re-renders).
+  let lastProject = store.getState().projects.find((p) => p.id === store.getState().activeProjectId);
+
   store.select(
-    (s) => s.projects.find((p) => p.id === s.activeProjectId),
-    (project) => render(project),
+    (s) => s.projects,
+    (projects) => {
+      lastProject = projects.find((p) => p.id === store.getState().activeProjectId);
+      render(lastProject);
+    },
   );
+  store.select(
+    (s) => s.activeProjectId,
+    (activeProjectId) => {
+      lastProject = store.getState().projects.find((p) => p.id === activeProjectId);
+      render(lastProject);
+    },
+  );
+
+  render(lastProject);
 
   new ResizeObserver(() => updateScrollArrows()).observe(bar);
 }

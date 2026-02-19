@@ -14,7 +14,7 @@ export const AGENT_DEFINITIONS: readonly AgentDef[] = [
   { command: 'cline', label: 'Cline', icon: clineIcon },
 ];
 
-/** Look up the initial command for an agent session title (e.g. "gemini" -> "gemini -y"). */
+/** Look up the initial command for an agent session title (e.g. "Gemini" -> "gemini -y"). */
 export function getAgentCommand(sessionTitle: string): string | null {
   const agent = AGENT_DEFINITIONS.find((a) => a.command === sessionTitle.toLowerCase());
   if (!agent) return null;

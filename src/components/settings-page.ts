@@ -563,7 +563,19 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     return combo.toLowerCase().split('+').sort().join('+');
   }
 
-  store.select((s) => s.settings, render);
+  // RAF-debounced render: coalesces multiple rapid settings changes into a single DOM rebuild.
+  // Always reads the latest settings from the store at render time so that rapid
+  // consecutive changes don't render stale data (same pattern as git-sidebar).
+  let settingsRafId = 0;
+  function scheduleRender(): void {
+    if (!settingsRafId) {
+      settingsRafId = requestAnimationFrame(() => {
+        settingsRafId = 0;
+        render(store.getState().settings);
+      });
+    }
+  }
+  store.select((s) => s.settings, scheduleRender);
 
   store.select(
     (s) => s.view,

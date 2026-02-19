@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 use tauri::ipc::Channel;
@@ -9,7 +10,7 @@ use crate::models::PtySessionInfo;
 
 #[derive(Default)]
 pub struct SessionManager {
-    sessions: Mutex<HashMap<String, SessionHandle>>,
+    sessions: Mutex<HashMap<String, Arc<SessionHandle>>>,
 }
 
 impl SessionManager {
@@ -30,7 +31,7 @@ impl SessionManager {
         let handle =
             SessionHandle::spawn(shell_path, cwd, rows, cols, output_channel, exit_channel)?;
         let pid = handle.pid;
-        self.sessions.lock().insert(id.clone(), handle);
+        self.sessions.lock().insert(id.clone(), Arc::new(handle));
         Ok(PtySessionInfo { id, pid })
     }
 
@@ -43,8 +44,9 @@ impl SessionManager {
     }
 
     pub fn kill_session(&self, session_id: &str) -> Result<(), String> {
-        let mut sessions = self.sessions.lock();
-        let handle = sessions
+        let handle = self
+            .sessions
+            .lock()
             .remove(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
         handle.kill();
@@ -55,20 +57,26 @@ impl SessionManager {
         // Drain into a Vec and release the lock before joining threads.
         // kill() blocks on thread::join; holding the Mutex during that
         // would prevent any in-flight Tauri command from completing.
-        let handles: Vec<SessionHandle> = self.sessions.lock().drain().map(|(_, h)| h).collect();
+        let handles: Vec<Arc<SessionHandle>> =
+            self.sessions.lock().drain().map(|(_, h)| h).collect();
         for handle in handles {
             handle.kill();
         }
     }
 
+    /// Look up a session by ID and invoke `f` on it.  The map lock is released
+    /// before `f` runs so that concurrent writes/resizes on different sessions
+    /// never contend on the global lock.
     fn with_session<F, R>(&self, session_id: &str, f: F) -> Result<R, String>
     where
         F: FnOnce(&SessionHandle) -> Result<R, String>,
     {
-        let sessions = self.sessions.lock();
-        let handle = sessions
+        let handle = self
+            .sessions
+            .lock()
             .get(session_id)
+            .cloned()
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        f(handle)
+        f(&handle)
     }
 }

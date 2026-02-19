@@ -4,6 +4,7 @@ export function startInlineRename(
   tabElement: HTMLElement,
   currentName: string,
   onRename: (newName: string) => void,
+  onDone?: () => void,
 ): void {
   const label = tabElement.querySelector('.tab-label') as HTMLElement | null;
   if (!label) return;
@@ -15,12 +16,20 @@ export function startInlineRename(
   input.focus();
   input.select();
 
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    onDone?.();
+  };
+
   const commit = () => {
     const newName = input.value.trim();
     if (newName && newName !== currentName) {
       onRename(newName);
     }
     label.textContent = newName || currentName;
+    finish();
   };
 
   input.addEventListener('blur', commit);
@@ -30,12 +39,17 @@ export function startInlineRename(
       e.preventDefault();
       input.blur();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
       input.removeEventListener('blur', commit);
       label.textContent = currentName;
+      finish();
     }
   });
-  // Prevent Space keyup from triggering a click on the parent <button>
-  input.addEventListener('keyup', (e) => e.stopPropagation());
+  // Prevent Space / Enter keyup from triggering a click on the parent <button>
+  input.addEventListener('keyup', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+  });
 }
 
 export interface MenuItem {

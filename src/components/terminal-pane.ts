@@ -732,15 +732,6 @@ export class TerminalPane {
         if (shouldScroll) {
           this.syncScrollToBottom();
         }
-        const buf = this.terminal.buffer.active;
-        if (shouldScroll && buf.viewportY < buf.baseY && !this.isHidden) {
-          logger.debug('pty', 'scrollToBottom did not reach bottom after write', {
-            paneId: this.paneId,
-            viewportY: buf.viewportY,
-            baseY: buf.baseY,
-            rows: this.terminal.rows,
-          });
-        }
       });
     }
   }
@@ -811,16 +802,6 @@ export class TerminalPane {
     // so the viewport can be stuck when the pane becomes visible again.
     if (wasAutoScroll) {
       this.syncScrollToBottom();
-
-      const buf = this.terminal.buffer.active;
-      if (buf.viewportY < buf.baseY) {
-        logger.warn('pty', 'scrollToBottom did not reach bottom after fit()', {
-          paneId: this.paneId,
-          viewportY: buf.viewportY,
-          baseY: buf.baseY,
-          rows: newRows,
-        });
-      }
     }
   }
 
@@ -879,11 +860,24 @@ export class TerminalPane {
     this.terminal.clear();
   }
 
-  /** Restore auto-scroll intent, scroll to bottom, and hide the scroll button. */
+  /** Restore auto-scroll intent, scroll to bottom, and hide the scroll button.
+   *  After a display:none → visible transition the viewport may not have
+   *  reflowed yet, so scrollToBottom() can silently fail.  When that happens,
+   *  schedule a single RAF retry to catch the deferred layout update.
+   */
   private syncScrollToBottom(): void {
     this.autoScroll = true;
     this.terminal.scrollToBottom();
     this.scrollBtn.classList.remove('visible');
+
+    const buf = this.terminal.buffer.active;
+    if (buf.viewportY < buf.baseY && !this.isHidden) {
+      requestAnimationFrame(() => {
+        if (!this.disposed && this.autoScroll) {
+          this.terminal.scrollToBottom();
+        }
+      });
+    }
   }
 
   scrollToBottom(): void {

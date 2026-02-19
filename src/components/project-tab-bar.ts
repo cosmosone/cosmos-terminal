@@ -8,105 +8,32 @@ import { createElement, clearChildren, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { Project } from '../state/types';
 import { basename } from '../utils/path';
-import { chevronLeftIcon, chevronRightIcon, folderIcon, settingsIcon } from '../utils/icons';
-
-const SCROLL_STEP = 200;
+import { chevronDownIcon, chevronLeftIcon, chevronRightIcon, folderIcon, settingsIcon } from '../utils/icons';
+import { setupScrollArrows } from '../utils/scroll-arrows';
+import { createTabDragManager } from '../utils/tab-drag';
 
 export function initProjectTabBar(onProjectChange: () => void): void {
   const bar = $('#project-tab-bar')!;
 
-  // --- Drag-and-drop state (persists across re-renders) ---
-  let dragState: {
-    projectId: string;
-    tab: HTMLElement;
-    startX: number;
-    tabRects: { id: string; left: number; right: number; center: number }[];
-    indicator: HTMLElement;
-    originIndex: number;
-    dropIndex: number;
-    dragging: boolean;
-  } | null = null;
-  let suppressClick = false;
-
-  function onMouseMove(e: MouseEvent): void {
-    if (!dragState) return;
-    const dx = e.clientX - dragState.startX;
-
-    if (!dragState.dragging) {
-      if (Math.abs(dx) < 4) return;
-      dragState.dragging = true;
-      dragState.tab.classList.add('dragging');
-      dragState.indicator.style.display = 'block';
-    }
-
-    // Safety: if DOM detached during drag, abort
-    if (!dragState.tab.isConnected) {
-      cleanupDrag();
-      return;
-    }
-
-    dragState.tab.style.transform = `translateX(${dx}px)`;
-
-    // Compute drop index from cursor position vs tab centers
-    const rects = dragState.tabRects;
-    let dropIndex = rects.length - 1;
-    for (let i = 0; i < rects.length; i++) {
-      if (e.clientX < rects[i].center) {
-        dropIndex = i;
-        break;
-      }
-    }
-    dragState.dropIndex = dropIndex;
-
-    // Position the indicator line relative to the parent.
-    // The indicator is absolutely positioned inside the scrollable tabList,
-    // so we must add scrollLeft to convert viewport coords to content coords.
-    const parent = dragState.indicator.parentElement!;
-    const parentLeft = parent.getBoundingClientRect().left;
-    let indicatorLeft: number;
-    if (dropIndex <= 0) {
-      indicatorLeft = rects[0].left;
-    } else if (dropIndex < rects.length) {
-      indicatorLeft = (rects[dropIndex - 1].right + rects[dropIndex].left) / 2;
-    } else {
-      indicatorLeft = rects[dropIndex - 1].right;
-    }
-    dragState.indicator.style.left = `${indicatorLeft - parentLeft + parent.scrollLeft}px`;
-  }
-
-  function onMouseUp(): void {
-    if (!dragState) return;
-    const { projectId, dragging, originIndex, dropIndex } = dragState;
-    cleanupDrag();
-    if (dragging) {
-      suppressClick = true;
-      requestAnimationFrame(() => { suppressClick = false; });
-      // Adjust dropIndex: if dropping after original position, account for removal
-      const adjustedIndex = dropIndex > originIndex ? dropIndex - 1 : dropIndex;
-      if (adjustedIndex !== originIndex) {
-        reorderProject(projectId, adjustedIndex);
-        onProjectChange();
-      }
-    }
-  }
-
-  function cleanupDrag(): void {
-    if (dragState) {
-      dragState.tab.classList.remove('dragging');
-      dragState.tab.style.transform = '';
-      dragState.indicator.style.display = 'none';
-      dragState = null;
-    }
-    window.removeEventListener('mousemove', onMouseMove);
-    window.removeEventListener('mouseup', onMouseUp);
-  }
+  const dragManager = createTabDragManager();
 
   // Reassigned each render so the ResizeObserver always calls the latest version
   let updateScrollArrows: () => void = () => {};
 
+  // While an inline rename is in progress we must defer re-renders so the
+  // input field is not destroyed.  `pendingRender` stores the latest args
+  // that arrived while the rename was active.
+  let renameActive = false;
+  let pendingRender: { projects: Project[]; activeId: string | null } | null = null;
+
   function render(projects: Project[], activeId: string | null): void {
+    // Defer re-render while an inline rename is active
+    if (renameActive) {
+      pendingRender = { projects, activeId };
+      return;
+    }
     // If a drag is in progress when re-render fires, abort it cleanly
-    if (dragState) cleanupDrag();
+    dragManager.cleanupDrag();
 
     clearChildren(bar);
 
@@ -155,33 +82,14 @@ export function initProjectTabBar(onProjectChange: () => void): void {
       tab.appendChild(close);
 
       tab.addEventListener('mousedown', (e: MouseEvent) => {
-        // Only left click; ignore close button
-        if (e.button !== 0) return;
-        if ((e.target as HTMLElement).closest('.tab-close')) return;
-
-        const tabEls = tabList.querySelectorAll('.project-tab');
-        const tabRects = Array.from(tabEls).map((el, i) => {
-          const r = el.getBoundingClientRect();
-          return { id: projects[i].id, left: r.left, right: r.right, center: r.left + r.width / 2 };
+        dragManager.startDrag(e, tab, tabList, indicator, project.id, pi, '.project-tab', projects, (itemId, _origin, adjustedIndex) => {
+          reorderProject(itemId, adjustedIndex);
+          onProjectChange();
         });
-
-        dragState = {
-          projectId: project.id,
-          tab,
-          startX: e.clientX,
-          tabRects,
-          indicator,
-          originIndex: pi,
-          dropIndex: pi,
-          dragging: false,
-        };
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
       });
 
       tab.addEventListener('click', () => {
-        if (suppressClick) return;
+        if (dragManager.suppressClick) return;
         logger.debug('project', 'Switch project', { projectId: project.id, name: project.name });
         setActiveProject(project.id);
         onProjectChange();
@@ -193,9 +101,21 @@ export function initProjectTabBar(onProjectChange: () => void): void {
           {
             label: 'Rename',
             action: () => {
+              renameActive = true;
+              pendingRender = null;
+              const onRenameDone = () => {
+                renameActive = false;
+                if (pendingRender) {
+                  const deferred = pendingRender;
+                  pendingRender = null;
+                  render(deferred.projects, deferred.activeId);
+                } else {
+                  onProjectChange();
+                }
+              };
               startInlineRename(tab, project.name, (newName) => {
                 renameProject(project.id, newName);
-              });
+              }, onRenameDone);
             },
           },
         ]);
@@ -228,27 +148,98 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     const rightArrow = createElement('button', { className: 'scroll-arrow right' });
     rightArrow.innerHTML = chevronRightIcon(16);
 
-    updateScrollArrows = () => {
-      const scrollLeft = tabList.scrollLeft;
-      const maxScroll = tabList.scrollWidth - tabList.clientWidth;
-      leftArrow.classList.toggle('visible', scrollLeft > 1);
-      rightArrow.classList.toggle('visible', maxScroll > 1 && scrollLeft < maxScroll - 1);
-    };
+    updateScrollArrows = setupScrollArrows({ tabList, leftArrow, rightArrow });
 
-    tabList.addEventListener('scroll', updateScrollArrows);
-    tabList.addEventListener('wheel', (e: WheelEvent) => {
-      if (tabList.scrollWidth <= tabList.clientWidth) return;
-      e.preventDefault();
-      tabList.scrollLeft += e.deltaY;
-    }, { passive: false });
-
-    leftArrow.addEventListener('click', () => {
-      tabList.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' });
+    // --- Tab list dropdown button (Edge-style) ---
+    const dropdownBtn = createElement('button', {
+      className: 'project-tab-dropdown',
+      title: 'Show open projects',
     });
-    rightArrow.addEventListener('click', () => {
-      tabList.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' });
+    dropdownBtn.innerHTML = chevronDownIcon(14);
+
+    let dropdownPanel: HTMLElement | null = null;
+
+    function onDropdownOutsideClick(e: MouseEvent): void {
+      const target = e.target as Node;
+      if (dropdownPanel?.contains(target) || dropdownBtn.contains(target)) return;
+      closeDropdown();
+    }
+
+    function closeDropdown(): void {
+      if (dropdownPanel) {
+        dropdownPanel.remove();
+        dropdownPanel = null;
+      }
+      window.removeEventListener('mousedown', onDropdownOutsideClick);
+    }
+
+    function createDropdownItem(project: Project, isActive: boolean): HTMLElement {
+      const row = createElement('div', {
+        className: `project-tab-dropdown-item${isActive ? ' active' : ''}`,
+      });
+
+      const icon = createElement('span', { className: 'project-tab-dropdown-icon' });
+      icon.innerHTML = folderIcon(14);
+      row.appendChild(icon);
+
+      const info = createElement('div', { className: 'project-tab-dropdown-info' });
+      const nameEl = createElement('div', { className: 'project-tab-dropdown-name' });
+      nameEl.textContent = project.name;
+      info.appendChild(nameEl);
+      const pathEl = createElement('div', { className: 'project-tab-dropdown-path' });
+      pathEl.textContent = project.path;
+      info.appendChild(pathEl);
+      row.appendChild(info);
+
+      row.addEventListener('click', () => {
+        closeDropdown();
+        setActiveProject(project.id);
+        onProjectChange();
+      });
+
+      return row;
+    }
+
+    function positionDropdownPanel(panel: HTMLElement, anchorRect: DOMRect): void {
+      panel.style.top = `${anchorRect.bottom + 2}px`;
+      panel.style.left = `${anchorRect.left}px`;
+
+      const panelRect = panel.getBoundingClientRect();
+      if (panelRect.right > window.innerWidth) {
+        panel.style.left = `${window.innerWidth - panelRect.width - 4}px`;
+      }
+      if (panelRect.bottom > window.innerHeight) {
+        panel.style.maxHeight = `${window.innerHeight - anchorRect.bottom - 8}px`;
+      }
+    }
+
+    dropdownBtn.addEventListener('click', () => {
+      if (dropdownPanel) {
+        closeDropdown();
+        return;
+      }
+
+      dropdownPanel = createElement('div', { className: 'project-tab-dropdown-panel' });
+
+      const header = createElement('div', { className: 'project-tab-dropdown-header' });
+      header.textContent = 'Open Projects';
+      dropdownPanel.appendChild(header);
+
+      const list = createElement('div', { className: 'project-tab-dropdown-list' });
+      for (const project of projects) {
+        list.appendChild(createDropdownItem(project, project.id === activeId));
+      }
+      dropdownPanel.appendChild(list);
+
+      document.body.appendChild(dropdownPanel);
+      positionDropdownPanel(dropdownPanel, dropdownBtn.getBoundingClientRect());
+
+      requestAnimationFrame(() => {
+        window.addEventListener('mousedown', onDropdownOutsideClick);
+      });
     });
 
+    bar.appendChild(dropdownBtn);
     bar.appendChild(leftArrow);
     bar.appendChild(tabList);
     bar.appendChild(rightArrow);

@@ -123,6 +123,87 @@ function renderLists(html: string): string {
   return result.join('\n');
 }
 
+type TableAlign = 'left' | 'center' | 'right' | null;
+
+/** Check if a line looks like a markdown table row (starts and ends with |). */
+function isTableRow(line: string): boolean {
+  const t = line.trim();
+  return t.length > 1 && t[0] === '|' && t[t.length - 1] === '|';
+}
+
+/** Split a table row into its raw cell strings (outer pipes removed). */
+function splitRowCells(line: string): string[] {
+  return line.trim().slice(1, -1).split('|');
+}
+
+/** Check if a line is a table separator (| --- | --- |). */
+function isTableSeparator(line: string): boolean {
+  if (!isTableRow(line)) return false;
+  const cells = splitRowCells(line);
+  return cells.length > 0 && cells.every((c) => /^\s*:?-+:?\s*$/.test(c));
+}
+
+/** Extract trimmed cell contents from a table row. */
+function parseTableCells(line: string): string[] {
+  return splitRowCells(line).map((c) => c.trim());
+}
+
+/** Parse alignment hints from a separator row. */
+function parseAlignments(line: string): TableAlign[] {
+  return splitRowCells(line).map((c) => {
+    const s = c.trim();
+    const left = s.startsWith(':');
+    const right = s.endsWith(':');
+    if (left && right) return 'center';
+    if (right) return 'right';
+    return left ? 'left' : null;
+  });
+}
+
+/** Build an inline style attribute for a table cell alignment (empty string if none). */
+function alignAttr(align: TableAlign): string {
+  return align ? ` style="text-align:${align}"` : '';
+}
+
+/** Convert markdown table blocks into HTML tables. */
+function renderTables(html: string): string {
+  const lines = html.split('\n');
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    if (i + 1 < lines.length && isTableRow(lines[i]) && isTableSeparator(lines[i + 1])) {
+      const headers = parseTableCells(lines[i]);
+      const aligns = parseAlignments(lines[i + 1]);
+      i += 2;
+
+      let table = '<table class="md-table"><thead><tr>';
+      for (let c = 0; c < headers.length; c++) {
+        table += `<th${alignAttr(aligns[c])}>${headers[c]}</th>`;
+      }
+      table += '</tr></thead><tbody>';
+
+      while (i < lines.length && isTableRow(lines[i])) {
+        const cells = parseTableCells(lines[i]);
+        table += '<tr>';
+        for (let c = 0; c < headers.length; c++) {
+          table += `<td${alignAttr(aligns[c])}>${c < cells.length ? cells[c] : ''}</td>`;
+        }
+        table += '</tr>';
+        i++;
+      }
+
+      table += '</tbody></table>';
+      result.push(table);
+    } else {
+      result.push(lines[i]);
+      i++;
+    }
+  }
+
+  return result.join('\n');
+}
+
 function renderMarkdown(source: string): string {
   const escaped = escapeHtml(source);
   let html = escaped;
@@ -154,6 +235,9 @@ function renderMarkdown(source: string): string {
   // Lists (ordered and unordered, with nesting support)
   html = renderLists(html);
 
+  // Tables (GFM-style: header | separator | rows)
+  html = renderTables(html);
+
   // Links: [text](url) — only allow http(s) and mailto protocols
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
     const decoded = href.replace(/&amp;/g, '&');
@@ -171,8 +255,8 @@ function renderMarkdown(source: string): string {
   html = `<p>${html}</p>`;
 
   // Clean up empty paragraphs around block elements
-  html = html.replace(/<p>\s*<(h[1-6]|pre|blockquote|hr|li|ol|ul)/g, '<$1');
-  html = html.replace(/<\/(h[1-6]|pre|blockquote|li|ol|ul)>\s*<\/p>/g, '</$1>');
+  html = html.replace(/<p>\s*<(h[1-6]|pre|blockquote|hr|li|ol|ul|table)/g, '<$1');
+  html = html.replace(/<\/(h[1-6]|pre|blockquote|li|ol|ul|table)>\s*<\/p>/g, '</$1>');
   html = html.replace(/<p>\s*<hr>\s*<\/p>/g, '<hr>');
   html = html.replace(/<p><\/p>/g, '');
 
@@ -195,6 +279,29 @@ export function initFileTabContent(): FileTabContentApi {
     () => currentContent,
     () => currentMode,
   );
+
+  async function saveTab(projectId: string, tabId: string, filePath: string): Promise<void> {
+    try {
+      await writeTextFile(filePath, editBuffer);
+      currentContent = editBuffer;
+      setFileTabDirty(projectId, tabId, false);
+      setFileTabEditing(projectId, tabId, false);
+    } catch (err: unknown) {
+      console.error('Failed to save file:', err);
+    }
+  }
+
+  container.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      const state = store.getState();
+      const project = state.projects.find((p) => p.id === state.activeProjectId);
+      if (!project || !project.activeTabId) return;
+      const tab = project.tabs.find((t) => t.id === project.activeTabId);
+      if (!tab || !tab.dirty) return;
+      saveTab(project.id, tab.id, tab.filePath);
+    }
+  });
 
   function render(projectId: string, tab: FileTab): void {
     findController.detach();
@@ -220,15 +327,8 @@ export function initFileTabContent(): FileTabContentApi {
 
       const saveBtn = createElement('button', { className: 'file-tab-save-btn' });
       saveBtn.textContent = 'Save';
-      saveBtn.addEventListener('click', async () => {
-        try {
-          await writeTextFile(tab.filePath, editBuffer);
-          currentContent = editBuffer;
-          setFileTabDirty(projectId, tab.id, false);
-          setFileTabEditing(projectId, tab.id, false);
-        } catch (err: unknown) {
-          console.error('Failed to save file:', err);
-        }
+      saveBtn.addEventListener('click', () => {
+        saveTab(projectId, tab.id, tab.filePath);
       });
       actions.appendChild(saveBtn);
 

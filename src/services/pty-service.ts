@@ -17,12 +17,7 @@ export async function createPtySession(
   logger.debug('pty', 'IPC: create_session', { path: opts.projectPath, shell: opts.shellPath, rows: opts.rows, cols: opts.cols });
   const channel = new Channel<string>();
   channel.onmessage = (base64) => {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    onOutput(bytes);
+    onOutput(Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)));
   };
 
   const exitChannel = new Channel<boolean>();

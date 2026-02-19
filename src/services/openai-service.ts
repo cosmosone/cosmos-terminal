@@ -23,17 +23,27 @@ const SYSTEM_PROMPT = `You are a commit message generator that analyses git diff
 
 Rules:
 1. Use exactly one conventional commit prefix: feat, fix, chore, refactor, docs, style, test, perf.
-2. Format: <prefix>: <description starting with a lowercase letter>
+2. First line format: <prefix>: <description starting with a lowercase letter>
 3. The description after the colon MUST start with a lowercase letter.
 4. Use Australian English spelling (e.g. colour, initialise, behaviour, organisation, analyse, centre).
-5. Keep the entire message on a single line, max 72 characters.
-6. Summarise the overall intent of the change, not individual file edits.
-7. Output ONLY the commit message — no quotes, no explanation, no body.
+5. Keep the first line (subject) max 72 characters.
+6. After the subject line, add a blank line then bullet points detailing the key changes.
+7. Each bullet point should start with "- " and describe a specific change concisely.
+8. Group related changes together. Focus on what changed and why, not trivial details.
+9. Omit bullet points for trivial or obvious changes (e.g. import reordering).
+10. For very small/simple changes (1-2 files, single concern), you may omit the bullet points and return only the subject line.
+11. Output ONLY the commit message — no quotes, no explanation, no markdown fences.
 
-Examples:
-- feat: add colour picker to the settings page
-- fix: correct initialisation order for the auth service
-- refactor: reorganise middleware into separate modules`;
+Example for a multi-file change:
+feat: add colour picker to the settings page
+
+- Add ColourPicker component with hue/saturation/lightness controls
+- Integrate picker into SettingsForm with live preview
+- Store selected colour in user preferences via the settings service
+- Update theme engine to apply custom accent colour on load
+
+Example for a simple change:
+fix: correct initialisation order for the auth service`;
 
 const SUMMARISE_PROMPT = `You are a code-change summariser. You will receive a batch of git diff hunks.
 For each file in the batch, output exactly ONE bullet point describing the factual change.
@@ -140,7 +150,7 @@ async function callApi(apiKey: string, systemPrompt: string, userContent: string
       },
       body: JSON.stringify({
         model: 'gpt-5-nano',
-        max_completion_tokens: 1000,
+        max_completion_tokens: 2000,
         reasoning_effort: 'low',
         messages: [
           { role: 'system', content: systemPrompt },
@@ -176,11 +186,20 @@ async function callApi(apiKey: string, systemPrompt: string, userContent: string
   throw new Error('API returned an empty response after retry. Check logs for details.');
 }
 
-/** Strip wrapping quotes and ensure the description starts with a lowercase letter. */
+/** Strip wrapping quotes/fences and ensure the subject starts with a lowercase letter. */
 function cleanCommitMessage(raw: string): string {
-  return raw
-    .replace(/^(['"])(.+)\1$/, '$2')
-    .replace(/^(\w+):\s*([A-Z])/, (_, prefix, ch) => `${prefix}: ${ch.toLowerCase()}`);
+  let msg = raw.trim();
+
+  // Strip markdown code fences if the model wrapped its output
+  msg = msg.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
+
+  // Strip wrapping quotes around the entire message
+  msg = msg.replace(/^(['"])([\s\S]+)\1$/, '$2').trim();
+
+  // Ensure subject line description starts with a lowercase letter
+  msg = msg.replace(/^(\w+):\s*([A-Z])/, (_, prefix, ch) => `${prefix}: ${ch.toLowerCase()}`);
+
+  return msg;
 }
 
 // ---------------------------------------------------------------------------

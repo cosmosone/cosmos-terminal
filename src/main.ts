@@ -4,7 +4,7 @@ import { addProject, addSession, getActiveProject, getActiveSession, removeProje
 import { loadSettings, saveSettings, buildUiFont } from './services/settings-service';
 import { loadWorkspace, saveWorkspace } from './services/workspace-service';
 import { findLeafPaneIds } from './layout/pane-tree';
-import type { AppState, KeybindingConfig } from './state/types';
+import type { AppState, KeybindingConfig, Session, FileTab } from './state/types';
 import { logger } from './services/logger';
 import { initProjectTabBar } from './components/project-tab-bar';
 import { initSessionTabBar } from './components/session-tab-bar';
@@ -39,11 +39,15 @@ async function main(): Promise<void> {
 
   logger.info('app', 'App starting', { settingsLoaded: true });
 
+  // Workspace migration: older saved data may lack the `locked` field
+  type SavedSession = Omit<Session, 'locked'> & { locked?: boolean };
+  type SavedFileTab = Omit<FileTab, 'locked'> & { locked?: boolean };
+
   initStore({
     projects: (saved?.projects ?? []).map((p) => ({
       ...p,
-      sessions: (p.sessions ?? []).map((s: any) => ({ ...s, locked: s.locked ?? false })),
-      tabs: (p.tabs ?? []).map((t: any) => ({ ...t, locked: t.locked ?? false })),
+      sessions: (p.sessions ?? []).map((s: SavedSession) => ({ ...s, locked: s.locked ?? false })),
+      tabs: (p.tabs ?? []).map((t: SavedFileTab) => ({ ...t, locked: t.locked ?? false })),
       activeTabId: p.activeTabId ?? null,
     })),
     activeProjectId: saved?.activeProjectId ?? null,

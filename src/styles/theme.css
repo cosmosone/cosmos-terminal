@@ -33,7 +33,9 @@
   --session-tab-height: 32px;
   --statusbar-height: 24px;
   --tab-border-radius: 4px;
-  --pane-gap: 2px;
+
+  /* Font stacks */
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
 
   /* File viewer font sizes */
   --viewer-font-size: 12.5px;

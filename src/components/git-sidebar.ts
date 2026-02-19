@@ -45,6 +45,9 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   // Local commit message buffer – avoids store updates (and full re-renders) on every keystroke
   const localCommitMessages = new Map<string, string>();
 
+  /** Must match .git-commit-textarea max-height in git-sidebar.css */
+  const TEXTAREA_MAX_HEIGHT = 200;
+
   // Notification auto-clear timers
   const notificationTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -109,46 +112,37 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   container.appendChild(body);
 
   // --- Graph panel resize ---
-  let graphResizing = false;
-  let graphStartY = 0;
-  let graphStartHeight = 0;
-
   graphDivider.addEventListener('mousedown', (e: MouseEvent) => {
     e.preventDefault();
-    graphResizing = true;
-    graphStartY = e.clientY;
-    graphStartHeight = graphHeight;
+    const graphStartY = e.clientY;
+    const graphStartHeight = graphHeight;
     graphDivider.classList.add('active');
     document.body.style.cursor = 'row-resize';
     document.body.style.userSelect = 'none';
-  });
 
-  window.addEventListener('mousemove', (e: MouseEvent) => {
-    if (!graphResizing) return;
-    const delta = graphStartY - e.clientY;
-    graphHeight = Math.max(80, Math.min(600, graphStartHeight + delta));
-    applyGraphHeight();
-  });
+    const onMove = (me: MouseEvent) => {
+      const delta = graphStartY - me.clientY;
+      graphHeight = Math.max(80, Math.min(600, graphStartHeight + delta));
+      applyGraphHeight();
+    };
 
-  window.addEventListener('mouseup', () => {
-    if (!graphResizing) return;
-    graphResizing = false;
-    graphDivider.classList.remove('active');
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
+    const onUp = () => {
+      graphDivider.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   });
 
   function applyGraphHeight(): void {
-    const state = store.getState();
-    if (state.gitSidebar.graphExpanded) {
-      graphPanel.style.height = graphHeight + 'px';
-      graphDivider.classList.remove('hidden');
-      graphContent.style.display = '';
-    } else {
-      graphPanel.style.height = 'auto';
-      graphDivider.classList.add('hidden');
-      graphContent.style.display = 'none';
-    }
+    const expanded = store.getState().gitSidebar.graphExpanded;
+    graphPanel.style.height = expanded ? graphHeight + 'px' : 'auto';
+    graphDivider.classList.toggle('collapsed', !expanded);
+    graphContent.style.display = expanded ? '' : 'none';
   }
 
   // --- Render ---
@@ -283,13 +277,25 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   function renderCommitArea(project: Project, gs: ProjectGitState): HTMLElement {
     const area = createElement('div', { className: 'git-commit-area' });
 
-    const textarea = createElement('textarea', { className: 'git-commit-textarea' }) as HTMLTextAreaElement;
+    const textarea = createElement('textarea', { className: 'git-commit-textarea' });
     textarea.placeholder = 'Commit message...';
     textarea.value = localCommitMessages.get(project.id) ?? gs.commitMessage;
+
+    const autoResize = () => {
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(textarea.scrollHeight, TEXTAREA_MAX_HEIGHT) + 'px';
+    };
+
     textarea.addEventListener('input', () => {
       localCommitMessages.set(project.id, textarea.value);
+      autoResize();
     });
     area.appendChild(textarea);
+
+    // Auto-expand if a message is already populated (e.g. generated commit message)
+    if (textarea.value) {
+      requestAnimationFrame(autoResize);
+    }
 
     const buttons = createElement('div', { className: 'git-commit-buttons' });
 
@@ -311,8 +317,8 @@ export function initGitSidebar(onLayoutChange: () => void): void {
         });
         localCommitMessages.set(project.id, msg);
         setCommitMessage(project.id, msg);
-      } catch (err: any) {
-        const errorMsg = err?.message || 'Failed to generate commit message';
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to generate commit message';
         logger.error('git', 'Generate commit message failed', errorMsg);
         updateGitState(project.id, { error: errorMsg });
         setTimeout(() => {
@@ -439,8 +445,8 @@ export function initGitSidebar(onLayoutChange: () => void): void {
         return;
       }
       updateGitState(project.id, { isRepo: true, status, loading: false });
-    } catch (err: any) {
-      updateGitState(project.id, { isRepo: true, loading: false, error: err?.message || 'Failed to get status' });
+    } catch (err: unknown) {
+      updateGitState(project.id, { isRepo: true, loading: false, error: err instanceof Error ? err.message : 'Failed to get status' });
     }
   }
 
@@ -448,8 +454,8 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     try {
       const log = await getGitLog(project.path, 50);
       updateGitState(project.id, { log });
-    } catch (err: any) {
-      logger.error('git', 'Failed to fetch log', { projectId: project.id, error: err?.message });
+    } catch (err: unknown) {
+      logger.error('git', 'Failed to fetch log', { projectId: project.id, error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -489,9 +495,9 @@ export function initGitSidebar(onLayoutChange: () => void): void {
 
       await refreshProject(project);
       await fetchLog(project);
-    } catch (err: any) {
+    } catch (err: unknown) {
       updateGitState(project.id, { loading: false });
-      showNotification(project.id, err?.message || 'Commit failed', 'error');
+      showNotification(project.id, err instanceof Error ? err.message : 'Commit failed', 'error');
     }
   }
 
@@ -523,9 +529,9 @@ export function initGitSidebar(onLayoutChange: () => void): void {
         showNotification(project.id, 'Pushed successfully.', 'info');
       }
       await fetchLog(project);
-    } catch (err: any) {
+    } catch (err: unknown) {
       updateGitState(project.id, { loading: false });
-      showNotification(project.id, err?.message || 'Push failed', 'error');
+      showNotification(project.id, err instanceof Error ? err.message : 'Push failed', 'error');
     }
   }
 

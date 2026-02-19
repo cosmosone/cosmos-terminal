@@ -211,7 +211,12 @@ fn search_files_sync(root_path: &str, query: &str) -> Result<Vec<DirEntry>, Stri
 
 #[tauri::command]
 pub async fn show_in_explorer(path: String) -> Result<(), String> {
+    // Canonicalize to resolve symlinks and ".." segments before passing to
+    // OS commands, preventing path traversal via crafted paths.
+    let canonical = std::fs::canonicalize(&path)
+        .map_err(|e| format!("Invalid path: {e}"))?;
     tokio::task::spawn_blocking(move || {
+        let path = canonical.to_string_lossy();
         #[cfg(target_os = "windows")]
         {
             std::process::Command::new("explorer.exe")
@@ -222,13 +227,13 @@ pub async fn show_in_explorer(path: String) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
             std::process::Command::new("open")
-                .args(["-R", &path])
+                .args(["-R", path.as_ref()])
                 .spawn()
                 .map_err(|e| format!("Failed to open Finder: {e}"))?;
         }
         #[cfg(target_os = "linux")]
         {
-            let p = std::path::Path::new(&path);
+            let p = std::path::Path::new(path.as_ref());
             let dir = p.parent().unwrap_or(p);
             std::process::Command::new("xdg-open")
                 .arg(dir.as_os_str())
@@ -257,6 +262,13 @@ pub async fn delete_path(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let p = std::path::Path::new(&path);
         if p.is_dir() {
+            // Guard: refuse to recursively delete through a symlink, which
+            // would destroy the *target* directory's contents.
+            let meta = std::fs::symlink_metadata(p)
+                .map_err(|e| format!("Failed to read path metadata: {e}"))?;
+            if meta.is_symlink() {
+                return Err("Cannot recursively delete a symlinked directory".to_string());
+            }
             std::fs::remove_dir_all(p).map_err(|e| format!("Failed to delete directory: {e}"))
         } else {
             std::fs::remove_file(p).map_err(|e| format!("Failed to delete file: {e}"))

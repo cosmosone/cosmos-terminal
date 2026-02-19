@@ -125,8 +125,9 @@
   background: var(--accent);
 }
 
-.git-graph-divider.hidden {
-  display: none;
+.git-graph-divider.collapsed {
+  cursor: default;
+  pointer-events: none;
 }
 
 /* ===== Graph Panel (bottom, fixed/resizable height) ===== */
@@ -332,7 +333,7 @@
 .git-commit-textarea {
   width: 100%;
   min-height: 60px;
-  max-height: 120px;
+  max-height: 200px;
   padding: 6px 8px;
   background: var(--bg-input);
   border: 1px solid var(--border);

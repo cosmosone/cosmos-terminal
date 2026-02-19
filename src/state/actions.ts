@@ -21,7 +21,7 @@ export function addProject(name: string, path: string): Project {
     path,
     sessions: [{
       id: sessionId,
-      title: 'terminal',
+      title: 'Terminal',
       paneTree: { type: 'leaf', paneId },
       activePaneId: paneId,
       hasActivity: false,
@@ -52,10 +52,14 @@ export function removeProject(projectId: string): void {
   }
 
   store.setState((s) => {
+    const idx = s.projects.findIndex((p) => p.id === projectId);
     const projects = s.projects.filter((p) => p.id !== projectId);
     let activeProjectId = s.activeProjectId;
     if (activeProjectId === projectId) {
-      activeProjectId = projects.length > 0 ? projects[projects.length - 1].id : null;
+      // Activate the nearest neighbor: next project, or previous if we closed the last one
+      activeProjectId = projects.length > 0
+        ? projects[Math.min(idx, projects.length - 1)].id
+        : null;
     }
     return { ...s, projects, activeProjectId };
   });
@@ -111,7 +115,7 @@ export function addSession(projectId: string, opts?: { title?: string }): Sessio
   const paneId = genId();
   const session: Session = {
     id: genId(),
-    title: opts?.title ?? 'terminal',
+    title: opts?.title ?? 'Terminal',
     paneTree: { type: 'leaf', paneId },
     activePaneId: paneId,
     hasActivity: false,

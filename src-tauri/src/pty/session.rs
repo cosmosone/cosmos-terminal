@@ -28,6 +28,12 @@ impl SessionHandle {
         output_channel: Channel<String>,
         exit_channel: Channel<bool>,
     ) -> Result<Self, String> {
+        // Validate CWD exists and is a directory
+        let cwd_path = std::path::Path::new(&cwd);
+        if !cwd_path.is_dir() {
+            return Err(format!("Working directory does not exist: {}", cwd));
+        }
+
         let pty_system = native_pty_system();
 
         let size = PtySize {
