@@ -6,6 +6,8 @@ import { computeLayout } from '../layout/pane-layout';
 import { setupResizeHandle } from '../layout/resize-handler';
 import { findLeafPaneIds } from '../layout/pane-tree';
 import { logger } from '../services/logger';
+import { getAgentCommand } from '../services/agent-definitions';
+import { setInitialCommand } from '../services/initial-command';
 import { TerminalPane } from './terminal-pane';
 
 export class SplitContainer {
@@ -110,6 +112,13 @@ export class SplitContainer {
         // Pre-size element so proposeDimensions() in mount() sees real size
         const r = preMountRects.get(paneId);
         if (r) SplitContainer.positionElement(tp.element, r);
+
+        // For restored agent sessions, register the initial command so the
+        // terminal automatically runs it on mount (e.g. "gemini -y" for Gemini).
+        const agentCmd = getAgentCommand(session.title);
+        if (agentCmd) {
+          setInitialCommand(paneId, agentCmd);
+        }
 
         await tp.mount();
       }

@@ -1,5 +1,7 @@
 import { store } from '../state/store';
 import { addSession, removeSession, removeProject, setActiveSession, setActiveTab, removeContentTab, closeOtherTabs, splitPane, renameSession, setFileTabEditing, toggleSessionLocked, toggleFileTabLocked, toggleFileBrowserSidebar, toggleGitSidebar } from '../state/actions';
+import { AGENT_DEFINITIONS } from '../services/agent-definitions';
+import type { AgentDef } from '../services/agent-definitions';
 import { setInitialCommand } from '../services/initial-command';
 import { findLeafPaneIds } from '../layout/pane-tree';
 import { logger } from '../services/logger';
@@ -9,23 +11,9 @@ import type { MenuItem } from './context-menu';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { PaneLeaf, Project } from '../state/types';
-import { chevronLeftIcon, chevronRightIcon, fileIcon, folderIcon, gitBranchIcon, lockIcon, terminalIcon, claudeIcon, codexIcon, geminiIcon, clineIcon } from '../utils/icons';
+import { chevronLeftIcon, chevronRightIcon, fileIcon, folderIcon, gitBranchIcon, lockIcon, terminalIcon } from '../utils/icons';
 
 const SCROLL_STEP = 200;
-
-interface AgentDef {
-  command: string;
-  label: string;
-  icon: (size?: number) => string;
-  initialCmd?: string;
-}
-
-const AGENT_DEFINITIONS: readonly AgentDef[] = [
-  { command: 'claude', label: 'Claude', icon: claudeIcon },
-  { command: 'codex', label: 'Codex', icon: codexIcon },
-  { command: 'gemini', label: 'Gemini', icon: geminiIcon, initialCmd: 'gemini -y' },
-  { command: 'cline', label: 'Cline', icon: clineIcon },
-];
 
 const SESSION_ICON_MAP: Record<string, (size?: number) => string> = Object.fromEntries(
   AGENT_DEFINITIONS.map((a) => [a.command, a.icon]),
