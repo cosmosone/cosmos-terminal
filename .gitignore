@@ -45,5 +45,3 @@ src-tauri/NSIS/
 # Internal dev notes
 docs/gpt-5-nano-api-notes.md
 
-# Local build scripts
-scripts/
