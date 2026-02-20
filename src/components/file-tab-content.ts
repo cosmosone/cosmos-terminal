@@ -5,7 +5,7 @@ import { showContextMenu } from './context-menu';
 import { getGrammar } from '../highlight/languages/index';
 import { escapeHtml, tokenize, tokensToHtml } from '../highlight/tokenizer';
 import { debounce } from '../utils/debounce';
-import type { FileTab } from '../state/types';
+import type { AppState, FileTab, Project } from '../state/types';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { createFindController, type RenderMode } from './find-in-document';
 
@@ -204,17 +204,36 @@ function renderTables(html: string): string {
   return result.join('\n');
 }
 
+// Precompiled regexes for cleaning up paragraph/br artifacts around block elements
+const BLOCK_ELS = 'h[1-6]|pre|blockquote|hr|li|ol|ul|table';
+const RE_P_OPEN_BEFORE_BLOCK = new RegExp(`<p>\\s*<(${BLOCK_ELS})`, 'g');
+const RE_P_CLOSE_AFTER_BLOCK = new RegExp(`</(${BLOCK_ELS})>\\s*</p>`, 'g');
+const RE_BR_BEFORE_BLOCK = new RegExp(`<br>\\s*<(${BLOCK_ELS})`, 'g');
+const RE_BR_AFTER_BLOCK = new RegExp(`</(${BLOCK_ELS})>\\s*<br>`, 'g');
+
 function renderMarkdown(source: string): string {
-  const escaped = escapeHtml(source);
+  const normalised = source.replace(/\r\n?/g, '\n');
+  const escaped = escapeHtml(normalised);
   let html = escaped;
 
-  // Code blocks (```)
+  // Extract code blocks and inline code into placeholders so that subsequent
+  // transformations (headings, bold, italic, etc.) never touch code content.
+  const placeholders: string[] = [];
+  function addPlaceholder(content: string): string {
+    const index = placeholders.length;
+    placeholders.push(content);
+    return `\x00PH${index}\x00`;
+  }
+
+  // Fenced code blocks (```)
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) =>
-    `<pre class="md-code-block"><code>${code}</code></pre>`,
+    addPlaceholder(`<pre class="md-code-block"><code>${code}</code></pre>`),
   );
 
   // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+  html = html.replace(/`([^`]+)`/g, (_m, code) =>
+    addPlaceholder(`<code class="md-inline-code">${code}</code>`),
+  );
 
   // Headings (h1-h6)
   html = html.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
@@ -250,17 +269,38 @@ function renderMarkdown(source: string): string {
   // Horizontal rules
   html = html.replace(/^---+$/gm, '<hr>');
 
-  // Paragraphs (double newlines)
+  // Paragraphs: double newlines become paragraph breaks
   html = html.replace(/\n\n/g, '</p><p>');
+
+  // Single newlines become visible line breaks
+  html = html.replace(/\n/g, '<br>\n');
+
   html = `<p>${html}</p>`;
 
   // Clean up empty paragraphs around block elements
-  html = html.replace(/<p>\s*<(h[1-6]|pre|blockquote|hr|li|ol|ul|table)/g, '<$1');
-  html = html.replace(/<\/(h[1-6]|pre|blockquote|li|ol|ul|table)>\s*<\/p>/g, '</$1>');
+  html = html.replace(RE_P_OPEN_BEFORE_BLOCK, '<$1');
+  html = html.replace(RE_P_CLOSE_AFTER_BLOCK, '</$1>');
   html = html.replace(/<p>\s*<hr>\s*<\/p>/g, '<hr>');
   html = html.replace(/<p><\/p>/g, '');
 
+  // Strip stray <br> adjacent to block elements
+  html = html.replace(RE_BR_BEFORE_BLOCK, '<$1');
+  html = html.replace(RE_BR_AFTER_BLOCK, '</$1>');
+  html = html.replace(/<br>\s*<\/(p)>/g, '</$1>');
+
+  // Restore placeholders
+  html = html.replace(/\x00PH(\d+)\x00/g, (_m, idx) => placeholders[Number(idx)]);
+
   return html;
+}
+
+/** Look up the active project and its active tab from state. */
+function getActiveTab(s: AppState): { project: Project; tab: FileTab } | null {
+  const project = s.projects.find((p) => p.id === s.activeProjectId);
+  if (!project || !project.activeTabId) return null;
+  const tab = project.tabs.find((t) => t.id === project.activeTabId);
+  if (!tab) return null;
+  return { project, tab };
 }
 
 export function initFileTabContent(): FileTabContentApi {
@@ -291,15 +331,36 @@ export function initFileTabContent(): FileTabContentApi {
     }
   }
 
+  /** Build the Save/Cancel action buttons for the header. */
+  function createHeaderActions(projectId: string, tabId: string): HTMLElement {
+    const actions = createElement('div', { className: 'file-tab-actions' });
+
+    const cancelBtn = createElement('button', { className: 'file-tab-cancel-btn' });
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => {
+      editBuffer = currentContent;
+      setFileTabDirty(projectId, tabId, false);
+      setFileTabEditing(projectId, tabId, false);
+    });
+    actions.appendChild(cancelBtn);
+
+    const saveBtn = createElement('button', { className: 'file-tab-save-btn' });
+    saveBtn.textContent = 'Save';
+    saveBtn.addEventListener('click', () => {
+      const found = getActiveTab(store.getState());
+      if (found) saveTab(projectId, tabId, found.tab.filePath);
+    });
+    actions.appendChild(saveBtn);
+
+    return actions;
+  }
+
   container.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
-      const state = store.getState();
-      const project = state.projects.find((p) => p.id === state.activeProjectId);
-      if (!project || !project.activeTabId) return;
-      const tab = project.tabs.find((t) => t.id === project.activeTabId);
-      if (!tab || !tab.dirty) return;
-      saveTab(project.id, tab.id, tab.filePath);
+      const found = getActiveTab(store.getState());
+      if (!found || !found.tab.dirty) return;
+      saveTab(found.project.id, found.tab.id, found.tab.filePath);
     }
   });
 
@@ -314,25 +375,7 @@ export function initFileTabContent(): FileTabContentApi {
     header.appendChild(pathDisplay);
 
     if (tab.dirty) {
-      const actions = createElement('div', { className: 'file-tab-actions' });
-
-      const cancelBtn = createElement('button', { className: 'file-tab-cancel-btn' });
-      cancelBtn.textContent = 'Cancel';
-      cancelBtn.addEventListener('click', () => {
-        editBuffer = currentContent;
-        setFileTabDirty(projectId, tab.id, false);
-        setFileTabEditing(projectId, tab.id, false);
-      });
-      actions.appendChild(cancelBtn);
-
-      const saveBtn = createElement('button', { className: 'file-tab-save-btn' });
-      saveBtn.textContent = 'Save';
-      saveBtn.addEventListener('click', () => {
-        saveTab(projectId, tab.id, tab.filePath);
-      });
-      actions.appendChild(saveBtn);
-
-      header.appendChild(actions);
+      header.appendChild(createHeaderActions(projectId, tab.id));
     }
 
     container.appendChild(header);
@@ -441,30 +484,54 @@ export function initFileTabContent(): FileTabContentApi {
 
     container.appendChild(content);
     findController.attach(content);
+
+    // Auto-focus textarea when entering edit mode
+    if (tab.editing) {
+      const textarea = content.querySelector('textarea') as HTMLTextAreaElement | null;
+      if (textarea) {
+        requestAnimationFrame(() => {
+          textarea.focus();
+          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        });
+      }
+    }
   }
 
+  /** Update only the header actions (Save/Cancel) without rebuilding content. */
+  function updateHeader(projectId: string, tabId: string, dirty: boolean): void {
+    const header = container.querySelector('.file-tab-header') as HTMLElement | null;
+    if (!header) return;
+
+    const existing = header.querySelector('.file-tab-actions');
+    if (existing) existing.remove();
+
+    if (dirty) {
+      header.appendChild(createHeaderActions(projectId, tabId));
+    }
+  }
+
+  let lastIdentityKey: string | null = null;
+
+  // Identity subscription — triggers full re-render when file, tab, or edit mode changes
   store.select(
     (s) => {
-      const project = s.projects.find((p) => p.id === s.activeProjectId);
-      if (!project || !project.activeTabId) return null;
-      const tab = project.tabs.find((t) => t.id === project.activeTabId);
-      if (!tab) return null;
-      // Return a stable string so the listener only fires when relevant state changes
-      return `${project.id}|${tab.id}|${tab.filePath}|${tab.fileType}|${tab.editing}|${tab.dirty}`;
+      const found = getActiveTab(s);
+      if (!found) return null;
+      const { project, tab } = found;
+      return `${project.id}|${tab.id}|${tab.filePath}|${tab.fileType}|${tab.editing}`;
     },
     async (key) => {
       if (!key) {
         container.classList.add('hidden');
         activeTabId = null;
+        lastIdentityKey = null;
         return;
       }
       container.classList.remove('hidden');
 
-      const [projectId, tabId] = key.split('|');
-      const state = store.getState();
-      const project = state.projects.find((p) => p.id === projectId);
-      const tab = project?.tabs.find((t) => t.id === tabId);
-      if (!project || !tab) return;
+      const found = getActiveTab(store.getState());
+      if (!found) return;
+      const { project, tab } = found;
 
       const version = ++loadVersion;
 
@@ -488,7 +555,23 @@ export function initFileTabContent(): FileTabContentApi {
       lastTabId = tab.id;
       lastFilePath = tab.filePath;
       activeTabId = tab.id;
-      render(projectId, tab);
+      lastIdentityKey = key;
+      render(project.id, tab);
+    },
+  );
+
+  // Dirty subscription — only updates header buttons without rebuilding content
+  store.select(
+    (s) => {
+      const found = getActiveTab(s);
+      if (!found) return null;
+      const { project, tab } = found;
+      return `${project.id}|${tab.id}|${tab.dirty}`;
+    },
+    (key) => {
+      if (!key || !lastIdentityKey) return;
+      const [projectId, tabId, dirtyStr] = key.split('|');
+      updateHeader(projectId, tabId, dirtyStr === 'true');
     },
   );
 
