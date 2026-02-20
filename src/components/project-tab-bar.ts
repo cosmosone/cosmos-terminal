@@ -179,7 +179,7 @@ export function initProjectTabBar(onProjectChange: () => void): void {
       });
 
       const icon = createElement('span', { className: 'project-tab-dropdown-icon' });
-      icon.innerHTML = folderIcon(14);
+      icon.innerHTML = folderIcon(16);
       row.appendChild(icon);
 
       const info = createElement('div', { className: 'project-tab-dropdown-info' });
