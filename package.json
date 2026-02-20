@@ -1,6 +1,6 @@
 {
   "name": "cosmos-terminal",
-  "version": "0.1.55",
+  "version": "0.1.56",
   "license": "MIT",
   "type": "module",
   "scripts": {
