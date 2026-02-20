@@ -32,7 +32,6 @@ Desktop.ini
 *.log
 
 # Tauri debug / bundle output
-src-tauri/target/
 src-tauri/WixTools/
 src-tauri/NSIS/
 

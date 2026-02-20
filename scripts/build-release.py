@@ -80,7 +80,7 @@ def create_release(version: str) -> None:
         print(f"\033[1;31mNo installer files found — skipping release\033[0m")
         return
 
-    notes = f"## Downloads\n\n"
+    notes = "## Downloads\n\n"
     if nsis.exists():
         notes += f"- **NSIS Installer** (recommended) — `{nsis.name}`\n"
     if msi.exists():

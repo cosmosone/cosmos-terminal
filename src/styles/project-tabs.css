@@ -206,7 +206,6 @@
   padding: 8px 10px;
   cursor: pointer;
   border-radius: 6px;
-  border-left: 2px solid transparent;
   transition: background var(--transition-fast);
 }
 
@@ -216,7 +215,6 @@
 
 .project-tab-dropdown-item.active {
   background: var(--bg-active);
-  border-left-color: var(--accent);
 }
 
 .project-tab-dropdown-icon {
