@@ -278,6 +278,20 @@ pub async fn delete_path(path: String) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+pub async fn get_file_mtime(path: String) -> Result<u64, String> {
+    tokio::task::spawn_blocking(move || {
+        std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .map_err(|e| format!("Failed to read file mtime: {e}"))?
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .map_err(|e| format!("Invalid mtime: {e}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

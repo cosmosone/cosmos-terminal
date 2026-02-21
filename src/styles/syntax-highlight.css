@@ -3,17 +3,17 @@
 .tok-type       { color: #2ac3de; }
 .tok-string     { color: #9ece6a; }
 .tok-number     { color: #ff9e64; }
-.tok-comment    { color: #565f89; font-style: italic; }
+.tok-comment    { color: #565f89; }
 .tok-constant   { color: #ff9e64; }
 .tok-function   { color: #7aa2f7; }
 .tok-operator   { color: #89ddff; }
-.tok-punctuation{ color: #c0caf5; }
+.tok-punctuation { color: #c0caf5; }
 .tok-decorator  { color: #bb9af7; }
 .tok-tag        { color: #f7768e; }
 .tok-attribute  { color: #7aa2f7; }
 .tok-property   { color: #73daca; }
 .tok-escape     { color: #89ddff; }
-.tok-heading    { color: #7aa2f7; font-weight: bold; }
+.tok-heading    { color: #7aa2f7; }
 .tok-meta       { color: #f7768e; }
 
 /* ===== Overlay editor layout ===== */

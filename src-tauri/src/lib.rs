@@ -165,6 +165,7 @@ pub fn run() {
             fs_commands::search_files,
             fs_commands::show_in_explorer,
             fs_commands::delete_path,
+            fs_commands::get_file_mtime,
             watcher_commands::watch_directory,
             watcher_commands::unwatch_directory,
         ])

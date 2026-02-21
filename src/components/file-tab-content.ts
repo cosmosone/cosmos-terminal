@@ -1,7 +1,8 @@
 import { store } from '../state/store';
 import { setFileTabEditing, setFileTabDirty } from '../state/actions';
-import { readTextFile, writeTextFile } from '../services/fs-service';
+import { readTextFile, writeTextFile, getFileMtime } from '../services/fs-service';
 import { showContextMenu } from './context-menu';
+import { showConfirmDialog } from './confirm-dialog';
 import { getGrammar } from '../highlight/languages/index';
 import { escapeHtml, tokenize, tokensToHtml } from '../highlight/tokenizer';
 import { debounce } from '../utils/debounce';
@@ -314,6 +315,7 @@ export function initFileTabContent(): FileTabContentApi {
   let activeTabId: string | null = null;
   let currentMode: RenderMode = 'plain-editor';
   let loadVersion = 0;
+  let lastMtime = 0;
 
   const findController = createFindController(
     () => currentContent,
@@ -326,8 +328,65 @@ export function initFileTabContent(): FileTabContentApi {
       currentContent = editBuffer;
       setFileTabDirty(projectId, tabId, false);
       setFileTabEditing(projectId, tabId, false);
+      lastMtime = await getFileMtime(filePath).catch(() => lastMtime);
     } catch (err: unknown) {
       console.error('Failed to save file:', err);
+    }
+  }
+
+  /** Reload file content from disc and re-render. Returns false if the tab changed mid-read. */
+  async function reloadFileContent(
+    projectId: string,
+    tab: FileTab,
+    mtime: number,
+  ): Promise<boolean> {
+    try {
+      const result = await readTextFile(tab.filePath);
+      if (tab.id !== activeTabId) return false;
+      currentContent = result.content;
+      editBuffer = result.content;
+      lastMtime = mtime;
+      render(projectId, tab);
+      return true;
+    } catch {
+      // File may have been deleted; ignore
+      return false;
+    }
+  }
+
+  async function checkForExternalChanges(): Promise<void> {
+    const found = getActiveTab(store.getState());
+    if (!found || isBinary) return;
+    const { project, tab } = found;
+    if (tab.id !== activeTabId) return;
+
+    let currentMtime: number;
+    try {
+      currentMtime = await getFileMtime(tab.filePath);
+    } catch {
+      return;
+    }
+
+    if (currentMtime <= lastMtime) return;
+
+    if (!tab.dirty) {
+      await reloadFileContent(project.id, tab, currentMtime);
+      return;
+    }
+
+    const fileName = tab.filePath.split(/[\\/]/).pop();
+    const { confirmed } = await showConfirmDialog({
+      title: 'File Changed',
+      message: `"${fileName}" has been modified externally. Reload and discard your changes?`,
+      confirmText: 'Reload',
+      danger: true,
+    });
+
+    if (confirmed) {
+      const reloaded = await reloadFileContent(project.id, tab, currentMtime);
+      if (reloaded) setFileTabDirty(project.id, tab.id, false);
+    } else {
+      lastMtime = currentMtime;
     }
   }
 
@@ -525,6 +584,7 @@ export function initFileTabContent(): FileTabContentApi {
         container.classList.add('hidden');
         activeTabId = null;
         lastIdentityKey = null;
+        lastMtime = 0;
         return;
       }
       container.classList.remove('hidden');
@@ -542,13 +602,17 @@ export function initFileTabContent(): FileTabContentApi {
           isBinary = result.binary;
           currentContent = result.content;
           editBuffer = result.content;
+          lastMtime = await getFileMtime(tab.filePath).catch(() => 0);
         } catch (err: unknown) {
           if (version !== loadVersion) return;
           isBinary = false;
           const message = err instanceof Error ? err.message : 'Unknown error';
           currentContent = `Error loading file: ${message}`;
           editBuffer = '';
+          lastMtime = 0;
         }
+      } else {
+        await checkForExternalChanges();
       }
 
       if (version !== loadVersion) return;
@@ -574,6 +638,12 @@ export function initFileTabContent(): FileTabContentApi {
       updateHeader(projectId, tabId, dirtyStr === 'true');
     },
   );
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && activeTabId) {
+      checkForExternalChanges();
+    }
+  });
 
   return {
     openSearch() {

@@ -54,6 +54,11 @@ export async function deletePath(path: string): Promise<void> {
   await invoke('delete_path', { path });
 }
 
+export async function getFileMtime(path: string): Promise<number> {
+  logger.debug('fs', 'IPC: get_file_mtime', { path });
+  return invoke<number>('get_file_mtime', { path });
+}
+
 export async function watchDirectory(path: string): Promise<void> {
   logger.debug('fs', 'IPC: watch_directory', { path });
   await invoke('watch_directory', { path });
