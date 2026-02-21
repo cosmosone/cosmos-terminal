@@ -481,8 +481,6 @@ export function initGitSidebar(onLayoutChange: () => void): void {
       await gitStageAll(project.path);
       const result = await gitCommit(project.path, message);
       logger.info('git', 'Commit created', { projectId: project.id, commitId: result.commitId });
-      localCommitMessages.delete(project.id);
-      setCommitMessage(project.id, '');
 
       if (push) {
         const pushResult = await gitPush(project.path);
@@ -491,6 +489,8 @@ export function initGitSidebar(onLayoutChange: () => void): void {
           showNotification(project.id, `Committed, but push failed: ${pushResult.message}`, 'error', 8000);
           await refreshProject(project);
           await fetchLog(project);
+          localCommitMessages.delete(project.id);
+          setCommitMessage(project.id, '');
           return;
         }
         logger.info('git', 'Push completed', { projectId: project.id });
@@ -498,6 +498,8 @@ export function initGitSidebar(onLayoutChange: () => void): void {
 
       await refreshProject(project);
       await fetchLog(project);
+      localCommitMessages.delete(project.id);
+      setCommitMessage(project.id, '');
     } catch (err: unknown) {
       updateGitState(project.id, { loading: false });
       showNotification(project.id, err instanceof Error ? err.message : 'Commit failed', 'error');
