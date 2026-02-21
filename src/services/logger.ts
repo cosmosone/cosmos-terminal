@@ -33,7 +33,16 @@ const SENSITIVE_PATTERNS = [
 
 function sanitize(value: unknown): string | undefined {
   if (value == null) return undefined;
-  let str = typeof value === 'string' ? value : JSON.stringify(value);
+  let str: string;
+  if (typeof value === 'string') {
+    str = value;
+  } else {
+    try {
+      str = JSON.stringify(value);
+    } catch {
+      str = '[Unserializable log payload]';
+    }
+  }
   if (SENSITIVE_PATTERNS.some((p) => p.test(str))) {
     str = str.replace(
       /("[^"]*(?:password|token|secret|api[_-]?key|authorization|credential)[^"]*"\s*:\s*)"[^"]*"/gi,

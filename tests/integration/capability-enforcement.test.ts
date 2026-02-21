@@ -16,13 +16,27 @@ describe('Capability enforcement', () => {
     };
 
     const permissions = [...capability.permissions].sort();
-    const expected = ['core:default', 'dialog:allow-open', 'shell:default', 'store:default'].sort();
+    const expected = [
+      'core:default',
+      'dialog:allow-open',
+      'shell:allow-open',
+      'store:allow-load',
+      'store:allow-get-store',
+      'store:allow-get',
+      'store:allow-set',
+      'store:allow-save',
+    ].sort();
     expect(permissions).toEqual(expected);
 
     expect(permissions).not.toContain('dialog:default');
+    expect(permissions).not.toContain('shell:default');
     expect(permissions).not.toContain('shell:allow-execute');
     expect(permissions).not.toContain('shell:allow-spawn');
     expect(permissions).not.toContain('shell:allow-stdin-write');
+    expect(permissions).not.toContain('store:default');
+    expect(permissions).not.toContain('store:allow-delete');
+    expect(permissions).not.toContain('store:allow-clear');
+    expect(permissions).not.toContain('store:allow-reset');
   });
 
   it('matches actual plugin command usage in frontend + tauri config', () => {
@@ -40,7 +54,7 @@ describe('Capability enforcement', () => {
     }
 
     if (terminalPane.includes("@tauri-apps/plugin-shell")) {
-      expect(capability.permissions).toContain('shell:default');
+      expect(capability.permissions).toContain('shell:allow-open');
       expect(tauriConfig.plugins?.shell?.open).toBe(true);
     }
   });

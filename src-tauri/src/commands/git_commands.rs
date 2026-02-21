@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use git2::{Repository, Sort, StatusOptions};
 
+use crate::commands::task::spawn_blocking_result;
 use crate::models::{GitCommitResult, GitFileStatus, GitLogEntry, GitPushResult, GitStatusResult};
 
 const DEFAULT_GIT_LOG_LIMIT: usize = 50;
@@ -43,16 +44,12 @@ fn is_staged(status: git2::Status) -> bool {
 
 #[tauri::command]
 pub async fn git_is_repo(path: String) -> Result<bool, String> {
-    tokio::task::spawn_blocking(move || Ok(Repository::discover(&path).is_ok()))
-        .await
-        .map_err(|e| e.to_string())?
+    spawn_blocking_result(move || Ok(Repository::discover(&path).is_ok())).await
 }
 
 #[tauri::command]
 pub async fn git_status(path: String) -> Result<GitStatusResult, String> {
-    tokio::task::spawn_blocking(move || git_status_sync(&path))
-        .await
-        .map_err(|e| e.to_string())?
+    spawn_blocking_result(move || git_status_sync(&path)).await
 }
 
 fn git_status_sync(path: &str) -> Result<GitStatusResult, String> {
@@ -85,9 +82,7 @@ fn git_status_sync(path: &str) -> Result<GitStatusResult, String> {
 
 #[tauri::command]
 pub async fn git_log(path: String, limit: Option<usize>) -> Result<Vec<GitLogEntry>, String> {
-    tokio::task::spawn_blocking(move || git_log_sync(&path, limit))
-        .await
-        .map_err(|e| e.to_string())?
+    spawn_blocking_result(move || git_log_sync(&path, limit)).await
 }
 
 fn git_log_sync(path: &str, limit: Option<usize>) -> Result<Vec<GitLogEntry>, String> {
@@ -158,7 +153,7 @@ fn append_diff(diff: &git2::Diff, out: &mut String) {
 
 #[tauri::command]
 pub async fn git_diff(path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking_result(move || {
         let repo = open_repo(&path)?;
         let mut diff_text = String::new();
 
@@ -185,12 +180,11 @@ pub async fn git_diff(path: String) -> Result<String, String> {
         Ok(diff_text)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn git_stage_all(path: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking_result(move || {
         let repo = open_repo(&path)?;
         let mut index = repo.index().map_err(|e| e.to_string())?;
         index
@@ -200,12 +194,11 @@ pub async fn git_stage_all(path: String) -> Result<(), String> {
         Ok(())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn git_commit(path: String, message: String) -> Result<GitCommitResult, String> {
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking_result(move || {
         let repo = open_repo(&path)?;
         let sig = repo.signature().map_err(|e| e.to_string())?;
         let mut index = repo.index().map_err(|e| e.to_string())?;
@@ -230,12 +223,11 @@ pub async fn git_commit(path: String, message: String) -> Result<GitCommitResult
         })
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn git_push(path: String) -> Result<GitPushResult, String> {
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking_result(move || {
         let repo = open_repo(&path)?;
         let repo_path = repo
             .workdir()
@@ -273,5 +265,4 @@ pub async fn git_push(path: String) -> Result<GitPushResult, String> {
         })
     })
     .await
-    .map_err(|e| e.to_string())?
 }

@@ -10,8 +10,16 @@ use tauri::{AppHandle, Emitter};
 use crate::IGNORED_DIRS;
 
 struct Inner {
-    _watcher: notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>,
-    _thread: std::thread::JoinHandle<()>,
+    watcher: notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+impl Inner {
+    fn shutdown(self) {
+        // Drop watcher first to close the sender side and unblock recv().
+        drop(self.watcher);
+        let _ = self.thread.join();
+    }
 }
 
 pub struct FsWatcher {
@@ -88,17 +96,18 @@ impl FsWatcher {
         });
 
         *self.inner.lock() = Some(Inner {
-            _watcher: debouncer,
-            _thread: thread,
+            watcher: debouncer,
+            thread,
         });
 
         Ok(())
     }
 
     pub fn unwatch(&self) {
-        // Dropping the Inner struct stops the watcher and the channel,
-        // which causes the receiver thread to exit.
-        *self.inner.lock() = None;
+        let inner = self.inner.lock().take();
+        if let Some(inner) = inner {
+            inner.shutdown();
+        }
     }
 }
 

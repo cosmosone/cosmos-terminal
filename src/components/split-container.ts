@@ -18,6 +18,8 @@ export class SplitContainer {
   private lastPaneRects = new Map<string, Rect>();
   private renderInFlight = false;
   private renderPending = false;
+  private fitRafId = 0;
+  private panesNeedingFit = new Set<TerminalPane>();
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -162,19 +164,32 @@ export class SplitContainer {
 
   /** Position panes and defer fit(). When activeOnly is true, skip hidden panes. */
   private applyPaneRects(paneRects: Map<string, Rect>, activeOnly: boolean): void {
-    const panesToFit: TerminalPane[] = [];
     for (const [paneId, r] of paneRects) {
       const tp = this.terminals.get(paneId);
       if (!tp) continue;
       if (activeOnly && tp.element.style.display === 'none') continue;
       SplitContainer.positionElement(tp.element, r);
-      panesToFit.push(tp);
+      this.queueFit(tp);
     }
-    if (panesToFit.length > 0) {
-      requestAnimationFrame(() => {
-        for (const tp of panesToFit) tp.fit();
-      });
+  }
+
+  private queueFit(tp: TerminalPane): void {
+    this.panesNeedingFit.add(tp);
+    if (this.fitRafId) return;
+    this.fitRafId = requestAnimationFrame(() => {
+      this.fitRafId = 0;
+      const panes = Array.from(this.panesNeedingFit);
+      this.panesNeedingFit.clear();
+      for (const pane of panes) pane.fit();
+    });
+  }
+
+  private flushPendingFit(): void {
+    if (this.fitRafId) {
+      cancelAnimationFrame(this.fitRafId);
+      this.fitRafId = 0;
     }
+    this.panesNeedingFit.clear();
   }
 
   /** Lightweight position-only update (no handle recreation). */
@@ -345,6 +360,7 @@ export class SplitContainer {
   }
 
   private async disposeAll(): Promise<void> {
+    this.flushPendingFit();
     for (const [, tp] of this.terminals) {
       await tp.dispose();
       tp.element.remove();

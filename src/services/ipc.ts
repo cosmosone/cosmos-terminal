@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { logger, type LogCategory } from './logger';
 
 export const IPC_COMMANDS = {
   CREATE_SESSION: 'create_session',
@@ -28,4 +29,21 @@ export type IpcCommand = (typeof IPC_COMMANDS)[keyof typeof IPC_COMMANDS];
 
 export function invokeIpc<T>(command: IpcCommand, args?: Record<string, unknown>): Promise<T> {
   return invoke<T>(command, args);
+}
+
+type IpcLogLevel = 'debug' | 'info';
+
+export function invokeIpcLogged<T>(
+  category: LogCategory,
+  command: IpcCommand,
+  args?: Record<string, unknown>,
+  level: IpcLogLevel = 'debug',
+): Promise<T> {
+  const message = `IPC: ${command}`;
+  if (level === 'info') {
+    logger.info(category, message, args);
+  } else {
+    logger.debug(category, message, args);
+  }
+  return invokeIpc<T>(command, args);
 }

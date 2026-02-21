@@ -1,7 +1,9 @@
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use base64::Engine as _;
 use parking_lot::Mutex;
@@ -15,9 +17,13 @@ pub struct SessionHandle {
     master_pty: Mutex<Option<Box<dyn portable_pty::MasterPty + Send>>>,
     alive: Arc<AtomicBool>,
     reader_thread: Mutex<Option<JoinHandle<()>>>,
+    output_thread: Mutex<Option<JoinHandle<()>>>,
     exit_thread: Mutex<Option<JoinHandle<()>>>,
     pub pid: u32,
 }
+
+const IPC_BATCH_WINDOW: Duration = Duration::from_millis(8);
+const IPC_BATCH_MAX_BYTES: usize = 128 * 1024;
 
 impl SessionHandle {
     pub fn spawn(
@@ -77,14 +83,20 @@ impl SessionHandle {
             .map_err(|e| format!("Failed to take master writer: {}", e))?;
 
         let alive = Arc::new(AtomicBool::new(true));
+        let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>();
         let alive_for_reader = alive.clone();
 
         // Thread 1: Read PTY output
         let reader_handle = std::thread::spawn(move || {
-            Self::reader_loop(master_read, output_channel, alive_for_reader);
+            Self::reader_loop(master_read, output_tx, alive_for_reader);
         });
 
-        // Thread 2: Wait for child process to exit, then notify frontend
+        // Thread 2: Batch output chunks before crossing the Tauri IPC boundary.
+        let output_handle = std::thread::spawn(move || {
+            Self::output_loop(output_rx, output_channel);
+        });
+
+        // Thread 3: Wait for child process to exit, then notify frontend
         let alive_for_exit = alive.clone();
         let exit_handle = std::thread::spawn(move || {
             let mut child = child;
@@ -101,6 +113,7 @@ impl SessionHandle {
             master_pty: Mutex::new(Some(pair.master)),
             alive,
             reader_thread: Mutex::new(Some(reader_handle)),
+            output_thread: Mutex::new(Some(output_handle)),
             exit_thread: Mutex::new(Some(exit_handle)),
             pid,
         })
@@ -108,7 +121,7 @@ impl SessionHandle {
 
     fn reader_loop(
         mut reader: Box<dyn Read + Send>,
-        channel: Channel<String>,
+        output_tx: mpsc::Sender<Vec<u8>>,
         alive: Arc<AtomicBool>,
     ) {
         let mut buf = [0u8; 16384];
@@ -116,9 +129,8 @@ impl SessionHandle {
             match reader.read(&mut buf) {
                 Ok(0) => break, // EOF
                 Ok(n) => {
-                    let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
-                    if channel.send(encoded).is_err() {
-                        break; // Channel closed
+                    if output_tx.send(buf[..n].to_vec()).is_err() {
+                        break; // Output thread closed
                     }
                 }
                 Err(_) => break,
@@ -127,12 +139,35 @@ impl SessionHandle {
         alive.store(false, Ordering::Relaxed);
     }
 
+    fn output_loop(output_rx: mpsc::Receiver<Vec<u8>>, channel: Channel<String>) {
+        while let Ok(first_chunk) = output_rx.recv() {
+            let mut batch = first_chunk;
+
+            loop {
+                if batch.len() >= IPC_BATCH_MAX_BYTES {
+                    break;
+                }
+                match output_rx.recv_timeout(IPC_BATCH_WINDOW) {
+                    Ok(chunk) => batch.extend_from_slice(&chunk),
+                    Err(RecvTimeoutError::Timeout) => break,
+                    Err(RecvTimeoutError::Disconnected) => break,
+                }
+            }
+
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&batch);
+            if channel.send(encoded).is_err() {
+                break;
+            }
+        }
+    }
+
     pub fn write(&self, data: &[u8]) -> Result<(), String> {
         let mut guard = self.master_write.lock();
         let writer = guard.as_mut().ok_or("Session closed")?;
         writer
             .write_all(data)
             .map_err(|e| format!("Write error: {}", e))?;
+        writer.flush().map_err(|e| format!("Flush error: {}", e))?;
         Ok(())
     }
 
@@ -159,6 +194,9 @@ impl SessionHandle {
 
         // Wait for spawned threads to finish
         if let Some(handle) = self.reader_thread.lock().take() {
+            let _ = handle.join();
+        }
+        if let Some(handle) = self.output_thread.lock().take() {
             let _ = handle.join();
         }
         if let Some(handle) = self.exit_thread.lock().take() {

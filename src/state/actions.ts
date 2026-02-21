@@ -61,7 +61,18 @@ export function removeProject(projectId: string): void {
         ? projects[Math.min(idx, projects.length - 1)].id
         : null;
     }
-    return { ...s, projects, activeProjectId };
+    const { [projectId]: _removedGitState, ...gitStates } = s.gitStates;
+    return {
+      ...s,
+      projects,
+      activeProjectId,
+      gitStates,
+      gitSidebar: {
+        ...s.gitSidebar,
+        expandedProjectIds: s.gitSidebar.expandedProjectIds.filter((id) => id !== projectId),
+        activeProjectId: s.gitSidebar.activeProjectId === projectId ? null : s.gitSidebar.activeProjectId,
+      },
+    };
   });
 }
 

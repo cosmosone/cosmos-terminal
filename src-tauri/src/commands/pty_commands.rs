@@ -3,6 +3,7 @@ use tauri::State;
 
 use crate::models::PtySessionInfo;
 use crate::pty::manager::SessionManager;
+use crate::pty::shell::normalize_shell_path;
 
 fn validate_dimensions(rows: u16, cols: u16) -> Result<(), String> {
     if rows == 0 || cols == 0 || rows > 500 || cols > 500 {
@@ -11,48 +12,6 @@ fn validate_dimensions(rows: u16, cols: u16) -> Result<(), String> {
             cols, rows
         ));
     }
-    Ok(())
-}
-
-/// Validate that a user-supplied shell path is either a known shell name
-/// (resolved via PATH) or an absolute path to an existing file.
-fn validate_shell_path(shell_path: &str) -> Result<(), String> {
-    const ALLOWED_NAMES: &[&str] = &[
-        "powershell.exe",
-        "pwsh.exe",
-        "cmd.exe",
-        "bash.exe",
-        "bash",
-        "zsh",
-        "fish",
-        "sh",
-        "dash",
-        "pwsh",
-        "powershell",
-        "nu",
-        "elvish",
-    ];
-
-    let path = std::path::Path::new(shell_path);
-
-    if !path.is_absolute() {
-        // Bare name: must match an allowlisted shell
-        if !ALLOWED_NAMES
-            .iter()
-            .any(|s| shell_path.eq_ignore_ascii_case(s))
-        {
-            return Err(format!(
-                "Shell must be an absolute path or a known shell name, got: {shell_path}"
-            ));
-        }
-        return Ok(());
-    }
-
-    // Absolute path: verify the file exists
-    if !path.exists() {
-        return Err(format!("Shell not found: {shell_path}"));
-    }
-
     Ok(())
 }
 
@@ -67,9 +26,7 @@ pub fn create_session(
     on_exit: Channel<bool>,
 ) -> Result<PtySessionInfo, String> {
     validate_dimensions(rows, cols)?;
-    if let Some(ref sp) = shell_path {
-        validate_shell_path(sp)?;
-    }
+    let shell_path = normalize_shell_path(shell_path)?;
     session_manager.create_session(shell_path, project_path, rows, cols, on_output, on_exit)
 }
 

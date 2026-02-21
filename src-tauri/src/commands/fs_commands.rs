@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::commands::task::spawn_blocking_result;
 use crate::models::{DirEntry, DirectoryListing, FileContent};
 use crate::IGNORED_DIRS;
 
@@ -97,9 +98,7 @@ fn dir_entry_from(entry: &std::fs::DirEntry, metadata: &std::fs::Metadata) -> Di
 
 #[tauri::command]
 pub async fn list_directory(path: String) -> Result<DirectoryListing, String> {
-    tokio::task::spawn_blocking(move || list_directory_sync(&path))
-        .await
-        .map_err(|e| e.to_string())?
+    spawn_blocking_result(move || list_directory_sync(&path)).await
 }
 
 const MAX_DIR_ENTRIES: usize = 1000;
@@ -151,9 +150,7 @@ const MAX_ALLOWED_READ_BYTES: u64 = 50 * 1024 * 1024;
 
 #[tauri::command]
 pub async fn read_text_file(path: String, max_bytes: Option<u64>) -> Result<FileContent, String> {
-    tokio::task::spawn_blocking(move || read_text_file_sync(&path, max_bytes))
-        .await
-        .map_err(|e| e.to_string())?
+    spawn_blocking_result(move || read_text_file_sync(&path, max_bytes)).await
 }
 
 fn read_text_file_sync(path: &str, max_bytes: Option<u64>) -> Result<FileContent, String> {
@@ -195,9 +192,7 @@ const MAX_SEARCH_DEPTH: usize = 20;
 
 #[tauri::command]
 pub async fn search_files(root_path: String, query: String) -> Result<Vec<DirEntry>, String> {
-    tokio::task::spawn_blocking(move || search_files_sync(&root_path, &query))
-        .await
-        .map_err(|e| e.to_string())?
+    spawn_blocking_result(move || search_files_sync(&root_path, &query)).await
 }
 
 fn search_files_sync(root_path: &str, query: &str) -> Result<Vec<DirEntry>, String> {
@@ -253,7 +248,7 @@ pub async fn show_in_explorer(path: String) -> Result<(), String> {
     // Canonicalize to resolve symlinks and ".." segments before passing to
     // OS commands, preventing path traversal via crafted paths.
     let canonical = std::fs::canonicalize(&path).map_err(|e| format!("Invalid path: {e}"))?;
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking_result(move || {
         let path = canonical.to_string_lossy();
         #[cfg(target_os = "windows")]
         {
@@ -281,23 +276,21 @@ pub async fn show_in_explorer(path: String) -> Result<(), String> {
         Ok(())
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
     validate_write_path(&path)?;
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking_result(move || {
         std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn delete_path(path: String) -> Result<(), String> {
     validate_write_path(&path)?;
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking_result(move || {
         let p = std::path::Path::new(&path);
         if p.is_dir() {
             // Guard: refuse to recursively delete through a symlink, which
@@ -313,12 +306,11 @@ pub async fn delete_path(path: String) -> Result<(), String> {
         }
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn get_file_mtime(path: String) -> Result<u64, String> {
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking_result(move || {
         std::fs::metadata(&path)
             .and_then(|m| m.modified())
             .map_err(|e| format!("Failed to read file mtime: {e}"))?
@@ -327,7 +319,6 @@ pub async fn get_file_mtime(path: String) -> Result<u64, String> {
             .map_err(|e| format!("Invalid mtime: {e}"))
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
