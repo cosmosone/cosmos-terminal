@@ -30,6 +30,7 @@ Desktop.ini
 
 # Logs
 *.log
+logs/build-test/
 
 # Tauri debug / bundle output
 src-tauri/WixTools/

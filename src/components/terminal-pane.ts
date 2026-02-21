@@ -542,11 +542,11 @@ export class TerminalPane {
    * - Strips handled sequences so xterm.js (which lacks Kitty support)
    *   doesn't see them.
    */
-  private interceptKittyProtocol(data: Uint8Array): Uint8Array {
+  private interceptKittyProtocol(data: Uint8Array, decodedText?: string): Uint8Array {
     // Fast path: skip if no ESC byte present
     if (!data.includes(0x1b)) return data;
 
-    const text = toLatin1(data);
+    const text = decodedText ?? toLatin1(data);
     const re = /\x1b\[([?><])(\d*)(u)/g;
     let match: RegExpExecArray | null;
     const ranges: [number, number][] = [];
@@ -637,16 +637,12 @@ export class TerminalPane {
    *   133;D → command finished (often followed by 133;A)
    * Does NOT strip sequences -- xterm.js can use them for shell integration.
    */
-  private interceptOsc133(data: Uint8Array): void {
-    // Fast path: skip if no ESC byte present
-    if (!data.includes(0x1b)) return;
-
-    const text = toLatin1(data);
+  private interceptOsc133(decodedText: string): void {
     // Match OSC 133;X where X is A/B/C/D, terminated by ST (\x1b\\) or BEL (\x07)
     const re = /\x1b\]133;([ABCD])[^\x07\x1b]*(?:\x07|\x1b\\)/g;
     let match: RegExpExecArray | null;
 
-    while ((match = re.exec(text)) !== null) {
+    while ((match = re.exec(decodedText)) !== null) {
       const marker = match[1];
       this.markOscDetected('OSC 133 shell integration');
 
@@ -668,16 +664,12 @@ export class TerminalPane {
    *   state 4 → paused
    * Strips matched sequences from the data (xterm.js doesn't handle these).
    */
-  private interceptOsc9_4(data: Uint8Array): Uint8Array {
-    // Fast path: skip if no ESC byte present
-    if (!data.includes(0x1b)) return data;
-
-    const text = toLatin1(data);
+  private interceptOsc9_4(data: Uint8Array, decodedText: string): Uint8Array {
     const re = /\x1b\]9;4;(\d+);[^\x07\x1b]*(?:\x07|\x1b\\)/g;
     let match: RegExpExecArray | null;
     const ranges: [number, number][] = [];
 
-    while ((match = re.exec(text)) !== null) {
+    while ((match = re.exec(decodedText)) !== null) {
       const state = parseInt(match[1], 10);
       this.markOscDetected('OSC 9;4 progress indicator');
 
@@ -715,12 +707,19 @@ export class TerminalPane {
     }
     this.pendingOutput = [];
 
-    // Intercept OSC sequences for busy/idle detection
-    this.interceptOsc133(data);          // read-only (does not strip)
-    data = this.interceptOsc9_4(data);   // strips OSC 9;4 sequences
+    // Parse ESC-sequence state with a single decode when possible.
+    if (data.includes(0x1b)) {
+      const decoded = toLatin1(data);
 
-    // Handle Kitty keyboard protocol negotiation before xterm sees the data
-    data = this.interceptKittyProtocol(data);
+      // Intercept OSC sequences for busy/idle detection
+      this.interceptOsc133(decoded); // read-only (does not strip)
+      const afterOsc9_4 = this.interceptOsc9_4(data, decoded); // strips OSC 9;4 sequences
+
+      // Handle Kitty keyboard protocol negotiation before xterm sees the data.
+      // If OSC 9;4 did not strip any bytes, reuse the original decoded text.
+      data = this.interceptKittyProtocol(afterOsc9_4, afterOsc9_4 === data ? decoded : undefined);
+    }
+
     if (data.length > 0) {
       // Use the persistent autoScroll flag instead of re-deriving from buffer
       // state on each flush.  Re-deriving can race: when multiple flushes

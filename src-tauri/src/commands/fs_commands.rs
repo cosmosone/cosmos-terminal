@@ -1,4 +1,5 @@
 use std::io::Read;
+use std::path::{Path, PathBuf};
 
 use crate::models::{DirEntry, DirectoryListing, FileContent};
 use crate::IGNORED_DIRS;
@@ -7,7 +8,7 @@ use crate::IGNORED_DIRS;
 /// well-known system-critical locations.  This is a defense-in-depth measure;
 /// the primary trust boundary is the Tauri capability system.
 fn validate_write_path(path: &str) -> Result<(), String> {
-    let p = std::path::Path::new(path);
+    let p = Path::new(path);
 
     // Reject paths with ".." components (before canonicalization) to prevent
     // TOCTOU races where the target is swapped between check and use.
@@ -17,24 +18,55 @@ fn validate_write_path(path: &str) -> Result<(), String> {
         }
     }
 
-    // Block a small set of system-critical roots
-    #[cfg(target_os = "windows")]
-    {
-        let lower = path.to_lowercase().replace('/', "\\");
-        if lower.starts_with("c:\\windows") || lower.starts_with("c:\\program files") {
-            return Err("Cannot modify system directories".to_string());
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        for prefix in ["/bin", "/sbin", "/usr", "/etc", "/boot", "/lib", "/proc", "/sys"] {
-            if path.starts_with(prefix) {
-                return Err("Cannot modify system directories".to_string());
-            }
-        }
+    let canonical = canonicalize_for_write_target(p)?;
+    if is_system_critical_path(&canonical) {
+        return Err("Cannot modify system directories".to_string());
     }
 
     Ok(())
+}
+
+/// Resolve the target path for validation.
+/// Existing targets are canonicalized directly; new targets resolve via their parent.
+fn canonicalize_for_write_target(path: &Path) -> Result<PathBuf, String> {
+    if path.exists() {
+        return std::fs::canonicalize(path).map_err(|e| format!("Invalid path: {e}"));
+    }
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Path must include a parent directory".to_string())?;
+    let canonical_parent =
+        std::fs::canonicalize(parent).map_err(|e| format!("Invalid path: {e}"))?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| "Path must reference a file or directory name".to_string())?;
+    Ok(canonical_parent.join(file_name))
+}
+
+/// Block a small set of system-critical roots.
+fn is_system_critical_path(path: &Path) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let mut lower = path.to_string_lossy().to_lowercase().replace('/', "\\");
+        if let Some(stripped) = lower.strip_prefix("\\\\?\\") {
+            lower = stripped.to_string();
+        }
+        for prefix in ["c:\\windows", "c:\\program files"] {
+            if lower == prefix || lower.starts_with(&format!("{prefix}\\")) {
+                return true;
+            }
+        }
+        false
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        [
+            "/bin", "/sbin", "/usr", "/etc", "/boot", "/lib", "/proc", "/sys",
+        ]
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
+    }
 }
 
 /// Build a `DirEntry` from a `std::fs::DirEntry` and its pre-fetched metadata.
@@ -115,6 +147,7 @@ fn list_directory_sync(path: &str) -> Result<DirectoryListing, String> {
 }
 
 const DEFAULT_MAX_READ_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_ALLOWED_READ_BYTES: u64 = 50 * 1024 * 1024;
 
 #[tauri::command]
 pub async fn read_text_file(path: String, max_bytes: Option<u64>) -> Result<FileContent, String> {
@@ -124,15 +157,17 @@ pub async fn read_text_file(path: String, max_bytes: Option<u64>) -> Result<File
 }
 
 fn read_text_file_sync(path: &str, max_bytes: Option<u64>) -> Result<FileContent, String> {
-    let max = max_bytes.unwrap_or(DEFAULT_MAX_READ_BYTES);
+    // Clamp caller-provided limits to prevent unbounded memory allocations.
+    let max = max_bytes
+        .unwrap_or(DEFAULT_MAX_READ_BYTES)
+        .min(MAX_ALLOWED_READ_BYTES);
     let metadata =
         std::fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {e}"))?;
     let file_size = metadata.len();
     let truncated = file_size > max;
 
     let read_len = std::cmp::min(file_size, max) as usize;
-    let mut file =
-        std::fs::File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
+    let mut file = std::fs::File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
     let mut buf = vec![0u8; read_len];
     file.read_exact(&mut buf)
         .map_err(|e| format!("Failed to read file: {e}"))?;
@@ -166,6 +201,10 @@ pub async fn search_files(root_path: String, query: String) -> Result<Vec<DirEnt
 }
 
 fn search_files_sync(root_path: &str, query: &str) -> Result<Vec<DirEntry>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
     let query_lower = query.to_lowercase();
     let mut results = Vec::new();
     // Stack entries carry their depth to enforce MAX_SEARCH_DEPTH
@@ -213,8 +252,7 @@ fn search_files_sync(root_path: &str, query: &str) -> Result<Vec<DirEntry>, Stri
 pub async fn show_in_explorer(path: String) -> Result<(), String> {
     // Canonicalize to resolve symlinks and ".." segments before passing to
     // OS commands, preventing path traversal via crafted paths.
-    let canonical = std::fs::canonicalize(&path)
-        .map_err(|e| format!("Invalid path: {e}"))?;
+    let canonical = std::fs::canonicalize(&path).map_err(|e| format!("Invalid path: {e}"))?;
     tokio::task::spawn_blocking(move || {
         let path = canonical.to_string_lossy();
         #[cfg(target_os = "windows")]
@@ -300,8 +338,14 @@ mod tests {
 
     #[test]
     fn validate_write_path_allows_normal_paths() {
-        assert!(validate_write_path("/home/user/projects/foo.txt").is_ok());
-        assert!(validate_write_path("/tmp/test").is_ok());
+        let base = std::env::temp_dir().join("cosmos_validate_write_ok");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let path = base.join("file.txt");
+
+        assert!(validate_write_path(path.to_string_lossy().as_ref()).is_ok());
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -388,6 +432,19 @@ mod tests {
 
         let result = search_files_sync(base.to_str().unwrap(), "readme").unwrap();
         assert_eq!(result.len(), 1);
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn search_files_sync_empty_query_returns_empty() {
+        let base = std::env::temp_dir().join("cosmos_test_search_empty_query");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("README.md"), "content").unwrap();
+
+        let result = search_files_sync(base.to_str().unwrap(), "").unwrap();
+        assert!(result.is_empty());
 
         let _ = std::fs::remove_dir_all(&base);
     }

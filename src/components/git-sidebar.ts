@@ -39,6 +39,7 @@ const STATUS_LETTERS: Record<GitFileStatusKind, string> = {
 export function initGitSidebar(onLayoutChange: () => void): void {
   const container = $('#git-sidebar-container')! as HTMLElement;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let pollInFlight = false;
   let graphHeight = 200;
   let renderRafId = 0;
 
@@ -463,8 +464,14 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   }
 
   async function refreshAllProjects(silent = false): Promise<void> {
+    if (pollInFlight) return;
+    pollInFlight = true;
     const projects = store.getState().projects;
-    await Promise.all(projects.map((p) => refreshProject(p, silent)));
+    try {
+      await Promise.all(projects.map((p) => refreshProject(p, silent)));
+    } finally {
+      pollInFlight = false;
+    }
   }
 
   async function doCommit(project: Project, push: boolean): Promise<void> {

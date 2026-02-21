@@ -4,6 +4,9 @@ use git2::{Repository, Sort, StatusOptions};
 
 use crate::models::{GitCommitResult, GitFileStatus, GitLogEntry, GitPushResult, GitStatusResult};
 
+const DEFAULT_GIT_LOG_LIMIT: usize = 50;
+const MAX_GIT_LOG_LIMIT: usize = 500;
+
 fn open_repo(path: &str) -> Result<Repository, String> {
     Repository::discover(path).map_err(|e| e.to_string())
 }
@@ -89,7 +92,10 @@ pub async fn git_log(path: String, limit: Option<usize>) -> Result<Vec<GitLogEnt
 
 fn git_log_sync(path: &str, limit: Option<usize>) -> Result<Vec<GitLogEntry>, String> {
     let repo = open_repo(path)?;
-    let max = limit.unwrap_or(50);
+    // Clamp user-provided limits to avoid unbounded history walks.
+    let max = limit
+        .unwrap_or(DEFAULT_GIT_LOG_LIMIT)
+        .min(MAX_GIT_LOG_LIMIT);
 
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;
     revwalk.push_head().map_err(|e| e.to_string())?;

@@ -7,7 +7,14 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run tests/integration",
+    "test:stress": "vitest run tests/stress/terminal-pane.stress.test.ts",
+    "bench:frontend": "vitest bench --run tests/bench/terminal-pane.bench.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -22,8 +29,14 @@
     "@xterm/xterm": "^5.5.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
+    "eslint": "^10.0.1",
+    "globals": "^17.3.0",
+    "jsdom": "^28.1.0",
     "typescript": "^5.6.0",
-    "vite": "^6.0.0"
+    "typescript-eslint": "^8.56.0",
+    "vite": "^6.0.0",
+    "vitest": "^4.0.18"
   }
 }

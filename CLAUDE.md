@@ -18,6 +18,16 @@ cd src-tauri && cargo fmt --check            # Rust format check
 
 No frontend test framework. Verification is `tsc --noEmit` + manual testing via `tauri dev`.
 
+### Plan Execution Rule
+
+After implementing any plan, always run:
+
+```bash
+python scripts/build-test.py
+```
+
+If any step fails, continue fixing issues and re-run `build-test.py` until the full pipeline passes with zero failures.
+
 ## Architecture
 
 Tauri v2 desktop app: vanilla TypeScript frontend + Rust backend. Windows-first (ConPTY, WebView2, dark mode title bar). No React/Vue/Svelte — direct DOM manipulation.

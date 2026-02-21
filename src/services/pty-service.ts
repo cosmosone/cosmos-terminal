@@ -1,5 +1,6 @@
-import { invoke, Channel } from '@tauri-apps/api/core';
+import { Channel } from '@tauri-apps/api/core';
 import { logger } from './logger';
+import { IPC_COMMANDS, invokeIpc } from './ipc';
 import type { PtySessionInfo } from '../state/types';
 
 export interface CreateSessionOptions {
@@ -25,7 +26,7 @@ export async function createPtySession(
     onExit();
   };
 
-  const info = await invoke<PtySessionInfo>('create_session', {
+  const info = await invokeIpc<PtySessionInfo>(IPC_COMMANDS.CREATE_SESSION, {
     projectPath: opts.projectPath,
     shellPath: opts.shellPath ?? null,
     rows: opts.rows,
@@ -38,7 +39,7 @@ export async function createPtySession(
 }
 
 export function writeToPtySession(sessionId: string, data: string): void {
-  invoke('write_to_session', { sessionId, data }).catch((err) => {
+  invokeIpc<void>(IPC_COMMANDS.WRITE_TO_SESSION, { sessionId, data }).catch((err) => {
     logger.debug('pty', 'write_to_session failed (session may have exited)', { sessionId, error: String(err) });
   });
 }
@@ -49,10 +50,10 @@ export async function resizePtySession(
   cols: number,
 ): Promise<void> {
   logger.debug('pty', 'IPC: resize_session', { sessionId, rows, cols });
-  await invoke('resize_session', { sessionId, rows, cols });
+  await invokeIpc<void>(IPC_COMMANDS.RESIZE_SESSION, { sessionId, rows, cols });
 }
 
 export async function killPtySession(sessionId: string): Promise<void> {
   logger.info('pty', 'IPC: kill_session', { sessionId });
-  await invoke('kill_session', { sessionId });
+  await invokeIpc<void>(IPC_COMMANDS.KILL_SESSION, { sessionId });
 }
