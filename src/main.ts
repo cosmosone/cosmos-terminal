@@ -15,6 +15,7 @@ import { initLogViewer } from './components/log-viewer';
 import { initGitSidebar } from './components/git-sidebar';
 import { initFileBrowserSidebar } from './components/file-browser-sidebar';
 import { initFileTabContent } from './components/file-tab-content';
+import { watchDirectory, unwatchDirectory } from './services/fs-service';
 import { keybindings, parseKeybinding } from './utils/keybindings';
 import { confirmCloseTerminalTab, confirmCloseProject } from './components/confirm-dialog';
 import { $ } from './utils/dom';
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
       sessions: (p.sessions ?? []).map((s: SavedSession) => ({ ...s, locked: s.locked ?? false })),
       tabs: (p.tabs ?? []).map((t: SavedFileTab) => ({ ...t, locked: t.locked ?? false })),
       activeTabId: p.activeTabId ?? null,
+      tabActivationSeq: p.tabActivationSeq ?? 0,
     })),
     activeProjectId: saved?.activeProjectId ?? null,
     settings,
@@ -82,6 +84,29 @@ async function main(): Promise<void> {
   const fileBrowser = initFileBrowserSidebar(() => splitContainer.reLayout());
   const fileTabContent = initFileTabContent();
 
+  let watchedProjectPath: string | null = null;
+  let watcherSyncVersion = 0;
+
+  async function syncFsWatcher(projectPath: string | null): Promise<void> {
+    if (projectPath === watchedProjectPath) return;
+    const version = ++watcherSyncVersion;
+    try {
+      if (projectPath) {
+        await watchDirectory(projectPath);
+      } else {
+        await unwatchDirectory();
+      }
+      if (version !== watcherSyncVersion) return;
+      watchedProjectPath = projectPath;
+      logger.debug('fs', 'Synced filesystem watcher target', { projectPath });
+    } catch (err: unknown) {
+      if (version !== watcherSyncVersion) return;
+      watchedProjectPath = null;
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn('fs', 'Failed to sync filesystem watcher target', { projectPath, error: message });
+    }
+  }
+
   // Visibility management: hide terminal when file tab is active, show when terminal session is active
   const fileTabContainer = $('#file-tab-container') as HTMLElement | null;
 
@@ -97,6 +122,16 @@ async function main(): Promise<void> {
         fileTabContainer?.classList.add('hidden');
         splitContainer.reLayout();
       }
+    },
+  );
+
+  store.select(
+    (s) => {
+      const project = s.projects.find((p) => p.id === s.activeProjectId);
+      return project?.path ?? null;
+    },
+    (projectPath) => {
+      void syncFsWatcher(projectPath);
     },
   );
 

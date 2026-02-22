@@ -117,7 +117,6 @@ export function initGitSidebar(onLayoutChange: () => void): void {
         toggleProjectExpanded(project.id);
       }
       setGitSidebarActiveProject(project.id);
-      void operations.fetchLog(project);
       void operations.refreshProject(project, true);
     },
     onGenerateCommitMessage: (project) => operations.generateCommitMessage(project),

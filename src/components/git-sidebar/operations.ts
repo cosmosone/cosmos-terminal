@@ -6,7 +6,7 @@ import {
   defaultGitState,
 } from '../../state/actions';
 import {
-  isGitRepo,
+  getGitProjectStatus,
   getGitStatus,
   getGitLog,
   getGitDiff,
@@ -17,7 +17,7 @@ import {
 import { generateCommitMessage } from '../../services/openai-service';
 import { logger } from '../../services/logger';
 import { statusEquals } from './shared';
-import type { Project, ProjectGitState, GitNotificationType } from '../../state/types';
+import type { Project, GitNotificationType } from '../../state/types';
 
 export interface GitSidebarOperations {
   pruneLocalCommitMessages(validProjectIds: Set<string>): void;
@@ -50,31 +50,31 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
 
   async function refreshProject(project: Project, silent = false): Promise<void> {
     const existingState = store.getState().gitStates[project.id];
-    if (!existingState || existingState.isRepo === null) {
-      const repo = await isGitRepo(project.path).catch(() => false);
-      if (!repo) {
-        updateGitState(project.id, { isRepo: false, loading: false });
-        return;
-      }
-    } else if (existingState.isRepo === false) {
-      return;
-    }
+    if (existingState?.isRepo === false) return;
+
+    const needsDiscovery = !existingState || existingState.isRepo === null;
 
     if (!silent) {
-      updateGitState(project.id, { isRepo: true, loading: true, error: null });
+      updateGitState(project.id, { loading: true, error: null });
     }
     try {
-      const status = await getGitStatus(project.path);
+      let status;
+      if (needsDiscovery) {
+        const result = await getGitProjectStatus(project.path);
+        if (!result) {
+          updateGitState(project.id, { isRepo: false, loading: false });
+          return;
+        }
+        status = result;
+      } else {
+        status = await getGitStatus(project.path);
+      }
       const existing = store.getState().gitStates[project.id];
       if (existing && statusEquals(existing.status, status)) {
         if (!silent) updateGitState(project.id, { loading: false });
         return;
       }
-      const next: Partial<ProjectGitState> = { isRepo: true, status };
-      if (!silent) {
-        next.loading = false;
-      }
-      updateGitState(project.id, next);
+      updateGitState(project.id, { isRepo: true, status, loading: false });
     } catch (err: unknown) {
       if (silent) {
         logger.error('git', 'Silent refresh failed', {

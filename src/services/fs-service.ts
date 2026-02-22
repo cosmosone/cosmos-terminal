@@ -23,6 +23,11 @@ export interface FileContent {
   binary: boolean;
 }
 
+export interface FileWriteResult {
+  written: boolean;
+  mtime: number;
+}
+
 export async function listDirectory(path: string): Promise<DirectoryListing> {
   return invokeIpcLogged<DirectoryListing>('fs', IPC_COMMANDS.LIST_DIRECTORY, { path });
 }
@@ -33,6 +38,18 @@ export async function readTextFile(path: string, maxBytes?: number): Promise<Fil
 
 export async function writeTextFile(path: string, content: string): Promise<void> {
   await invokeIpcLogged<void>('fs', IPC_COMMANDS.WRITE_TEXT_FILE, { path, content });
+}
+
+export async function writeTextFileIfUnmodified(
+  path: string,
+  content: string,
+  expectedMtime: number,
+): Promise<FileWriteResult> {
+  return invokeIpcLogged<FileWriteResult>('fs', IPC_COMMANDS.WRITE_TEXT_FILE_IF_UNMODIFIED, {
+    path,
+    content,
+    expectedMtime,
+  });
 }
 
 export async function searchFiles(rootPath: string, query: string): Promise<DirEntry[]> {

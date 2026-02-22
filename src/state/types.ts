@@ -16,6 +16,7 @@ export interface Project {
   activeSessionId: string | null;
   tabs: FileTab[];
   activeTabId: string | null;
+  tabActivationSeq?: number;
 }
 
 export interface Session {

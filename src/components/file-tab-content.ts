@@ -1,12 +1,13 @@
 import { store } from '../state/store';
 import { setFileTabEditing, setFileTabDirty } from '../state/actions';
-import { readTextFile, writeTextFile, getFileMtime } from '../services/fs-service';
+import { readTextFile, writeTextFile, writeTextFileIfUnmodified, getFileMtime, onFsChange } from '../services/fs-service';
 import { showContextMenu } from './context-menu';
 import { showConfirmDialog } from './confirm-dialog';
 import { getGrammar } from '../highlight/languages/index';
 import { tokenize, tokensToHtml } from '../highlight/tokenizer';
 import { renderMarkdownCached } from '../services/markdown-renderer';
 import { debounce } from '../utils/debounce';
+import { normalizeFsPath, isPathWithinDirectory } from '../utils/path';
 import type { AppState, FileTab, Project } from '../state/types';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { createFindController, type RenderMode } from './find-in-document';
@@ -14,6 +15,8 @@ import { createFindController, type RenderMode } from './find-in-document';
 export interface FileTabContentApi {
   openSearch(): void;
 }
+
+let externalChangePollTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Look up the active project and its active tab from state. */
 function getActiveTab(s: AppState): { project: Project; tab: FileTab } | null {
@@ -36,19 +39,89 @@ export function initFileTabContent(): FileTabContentApi {
   let currentMode: RenderMode = 'plain-editor';
   let loadVersion = 0;
   let lastMtime = 0;
+  let externalCheckInFlight = false;
 
   const findController = createFindController(
     () => currentContent,
     () => currentMode,
   );
 
+  function renderFileLoadError(projectId: string, tab: FileTab, message: string): void {
+    if (tab.id !== activeTabId) return;
+    isBinary = false;
+    currentContent = `Error loading file: ${message}`;
+    editBuffer = '';
+    lastMtime = 0;
+    render(projectId, tab);
+  }
+
+  function isCurrentActiveTab(projectId: string, tabId: string): boolean {
+    const state = store.getState();
+    const activeProject = state.projects.find((p) => p.id === state.activeProjectId);
+    return activeProject?.id === projectId && activeProject?.activeTabId === tabId && activeTabId === tabId;
+  }
+
   async function saveTab(projectId: string, tabId: string, filePath: string): Promise<void> {
     try {
-      await writeTextFile(filePath, editBuffer);
-      currentContent = editBuffer;
+      let expectedMtime = lastMtime;
+      if (expectedMtime <= 0) {
+        expectedMtime = await getFileMtime(filePath).catch(() => 0);
+      }
+
+      if (expectedMtime > 0) {
+        const writeResult = await writeTextFileIfUnmodified(filePath, editBuffer, expectedMtime);
+        if (!writeResult.written) {
+          if (!isCurrentActiveTab(projectId, tabId)) return;
+          const fileName = filePath.split(/[\\/]/).pop() ?? filePath;
+          const { confirmed: shouldReload } = await showConfirmDialog({
+            title: 'Save Conflict',
+            message: `"${fileName}" changed on disk. Reload latest file and discard your changes?`,
+            confirmText: 'Reload',
+            danger: true,
+          });
+
+          if (shouldReload) {
+            const found = getActiveTab(store.getState());
+            if (!found || found.project.id !== projectId || found.tab.id !== tabId) return;
+            const reloaded = await reloadFileContent(projectId, found.tab, writeResult.mtime);
+            if (reloaded) setFileTabDirty(projectId, tabId, false);
+            return;
+          }
+
+          const { confirmed: shouldOverwrite } = await showConfirmDialog({
+            title: 'Save Conflict',
+            message: `"${fileName}" changed on disk. Overwrite disk contents with your editor changes?`,
+            confirmText: 'Overwrite',
+            danger: true,
+          });
+          if (!shouldOverwrite) {
+            if (isCurrentActiveTab(projectId, tabId)) {
+              lastMtime = writeResult.mtime;
+            }
+            return;
+          }
+
+          await writeTextFile(filePath, editBuffer);
+          if (isCurrentActiveTab(projectId, tabId)) {
+            lastMtime = await getFileMtime(filePath).catch(() => writeResult.mtime);
+          }
+        } else {
+          if (isCurrentActiveTab(projectId, tabId)) {
+            lastMtime = writeResult.mtime;
+          }
+        }
+      } else {
+        await writeTextFile(filePath, editBuffer);
+        if (isCurrentActiveTab(projectId, tabId)) {
+          lastMtime = await getFileMtime(filePath).catch(() => lastMtime);
+        }
+      }
+
+      if (isCurrentActiveTab(projectId, tabId)) {
+        currentContent = editBuffer;
+      }
       setFileTabDirty(projectId, tabId, false);
       setFileTabEditing(projectId, tabId, false);
-      lastMtime = await getFileMtime(filePath).catch(() => lastMtime);
     } catch (err: unknown) {
       console.error('Failed to save file:', err);
     }
@@ -63,6 +136,7 @@ export function initFileTabContent(): FileTabContentApi {
     try {
       const result = await readTextFile(tab.filePath);
       if (tab.id !== activeTabId) return false;
+      isBinary = result.binary;
       currentContent = result.content;
       editBuffer = result.content;
       lastMtime = mtime;
@@ -75,39 +149,63 @@ export function initFileTabContent(): FileTabContentApi {
   }
 
   async function checkForExternalChanges(): Promise<void> {
+    if (externalCheckInFlight) return;
+    externalCheckInFlight = true;
+
     const found = getActiveTab(store.getState());
-    if (!found || isBinary) return;
-    const { project, tab } = found;
-    if (tab.id !== activeTabId) return;
-
-    let currentMtime: number;
     try {
-      currentMtime = await getFileMtime(tab.filePath);
-    } catch {
-      return;
+      if (!found || isBinary) return;
+      const { project, tab } = found;
+      if (tab.id !== activeTabId) return;
+
+      let currentMtime: number;
+      try {
+        currentMtime = await getFileMtime(tab.filePath);
+      } catch {
+        if (!tab.dirty) {
+          renderFileLoadError(project.id, tab, 'File was removed or is no longer accessible.');
+        }
+        return;
+      }
+
+      if (currentMtime <= lastMtime) return;
+
+      if (!tab.dirty) {
+        await reloadFileContent(project.id, tab, currentMtime);
+        return;
+      }
+
+      const fileName = tab.filePath.split(/[\\/]/).pop();
+      const { confirmed } = await showConfirmDialog({
+        title: 'File Changed',
+        message: `"${fileName}" has been modified externally. Reload and discard your changes?`,
+        confirmText: 'Reload',
+        danger: true,
+      });
+
+      if (confirmed) {
+        const reloaded = await reloadFileContent(project.id, tab, currentMtime);
+        if (reloaded) setFileTabDirty(project.id, tab.id, false);
+      } else {
+        lastMtime = currentMtime;
+      }
+    } finally {
+      externalCheckInFlight = false;
     }
+  }
 
-    if (currentMtime <= lastMtime) return;
+  const scheduleExternalChangeCheck = debounce(() => {
+    void checkForExternalChanges();
+  }, 120);
 
-    if (!tab.dirty) {
-      await reloadFileContent(project.id, tab, currentMtime);
-      return;
-    }
-
-    const fileName = tab.filePath.split(/[\\/]/).pop();
-    const { confirmed } = await showConfirmDialog({
-      title: 'File Changed',
-      message: `"${fileName}" has been modified externally. Reload and discard your changes?`,
-      confirmText: 'Reload',
-      danger: true,
-    });
-
-    if (confirmed) {
-      const reloaded = await reloadFileContent(project.id, tab, currentMtime);
-      if (reloaded) setFileTabDirty(project.id, tab.id, false);
-    } else {
-      lastMtime = currentMtime;
-    }
+  function shouldCheckExternalChangeForDir(affectedDir: string): boolean {
+    const found = getActiveTab(store.getState());
+    if (!found || isBinary) return false;
+    const { tab } = found;
+    if (tab.id !== activeTabId) return false;
+    const normalizedDir = normalizeFsPath(affectedDir);
+    if (!normalizedDir) return false;
+    return isPathWithinDirectory(tab.filePath, normalizedDir);
   }
 
   /** Build the Save/Cancel action buttons for the header. */
@@ -300,7 +398,7 @@ export function initFileTabContent(): FileTabContentApi {
       const found = getActiveTab(s);
       if (!found) return null;
       const { project, tab } = found;
-      return `${project.id}|${tab.id}|${tab.filePath}|${tab.fileType}|${tab.editing}`;
+      return `${project.id}|${tab.id}|${tab.filePath}|${tab.fileType}|${tab.editing}|${project.tabActivationSeq ?? 0}`;
     },
     async (key) => {
       if (!key) {
@@ -362,11 +460,28 @@ export function initFileTabContent(): FileTabContentApi {
     },
   );
 
+  onFsChange((affectedDir) => {
+    if (!shouldCheckExternalChangeForDir(affectedDir)) return;
+    scheduleExternalChangeCheck();
+  }).catch(() => {
+    // File watcher unavailable; focus and tab-activation checks still run.
+  });
+
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && activeTabId) {
-      checkForExternalChanges();
+      void checkForExternalChanges();
     }
   });
+
+  // Fallback polling catches missed watcher events on platforms/filesystems
+  // where native notifications are lossy.
+  if (externalChangePollTimer) {
+    clearInterval(externalChangePollTimer);
+  }
+  externalChangePollTimer = window.setInterval(() => {
+    if (document.hidden || activeTabId === null) return;
+    void checkForExternalChanges();
+  }, 2000);
 
   return {
     openSearch() {

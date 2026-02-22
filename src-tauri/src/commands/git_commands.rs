@@ -43,8 +43,15 @@ fn is_staged(status: git2::Status) -> bool {
 }
 
 #[tauri::command]
-pub async fn git_is_repo(path: String) -> Result<bool, String> {
-    spawn_blocking_result(move || Ok(Repository::discover(&path).is_ok())).await
+pub async fn git_project_status(path: String) -> Result<Option<GitStatusResult>, String> {
+    spawn_blocking_result(move || {
+        let repo = match Repository::discover(&path) {
+            Ok(r) => r,
+            Err(_) => return Ok(None),
+        };
+        git_status_from_repo(&repo).map(Some)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -54,14 +61,20 @@ pub async fn git_status(path: String) -> Result<GitStatusResult, String> {
 
 fn git_status_sync(path: &str) -> Result<GitStatusResult, String> {
     let repo = open_repo(path)?;
-    let branch = current_branch(&repo);
+    git_status_from_repo(&repo)
+}
+
+fn git_status_from_repo(repo: &Repository) -> Result<GitStatusResult, String> {
+    let branch = current_branch(repo);
 
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)
         .include_ignored(false);
 
-    let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .map_err(|e| e.to_string())?;
 
     let mut files = Vec::with_capacity(statuses.len());
 

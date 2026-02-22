@@ -88,3 +88,10 @@ pub struct FileContent {
     pub truncated: bool,
     pub binary: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileWriteResult {
+    pub written: bool,
+    pub mtime: u64,
+}

@@ -12,8 +12,8 @@ interface GitPushResult {
   message: string;
 }
 
-export async function isGitRepo(path: string): Promise<boolean> {
-  return invokeIpcLogged<boolean>('git', IPC_COMMANDS.GIT_IS_REPO, { path });
+export async function getGitProjectStatus(path: string): Promise<GitStatusResult | null> {
+  return invokeIpcLogged<GitStatusResult | null>('git', IPC_COMMANDS.GIT_PROJECT_STATUS, { path });
 }
 
 export async function getGitStatus(path: string): Promise<GitStatusResult> {

@@ -2,7 +2,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::commands::task::spawn_blocking_result;
-use crate::models::{DirEntry, DirectoryListing, FileContent};
+use crate::models::{DirEntry, DirectoryListing, FileContent, FileWriteResult};
 use crate::IGNORED_DIRS;
 
 /// Reject paths that attempt to escape via symlink traversal or that target
@@ -287,6 +287,42 @@ pub async fn write_text_file(path: String, content: String) -> Result<(), String
     .await
 }
 
+fn get_file_mtime_millis(path: &str) -> Result<u64, String> {
+    let modified = std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .map_err(|e| format!("Failed to read file mtime: {e}"))?;
+    let duration = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Invalid mtime: {e}"))?;
+    Ok(u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
+}
+
+#[tauri::command]
+pub async fn write_text_file_if_unmodified(
+    path: String,
+    content: String,
+    expected_mtime: u64,
+) -> Result<FileWriteResult, String> {
+    validate_write_path(&path)?;
+    spawn_blocking_result(move || {
+        let current_mtime = get_file_mtime_millis(&path)?;
+        if current_mtime != expected_mtime {
+            return Ok(FileWriteResult {
+                written: false,
+                mtime: current_mtime,
+            });
+        }
+
+        std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))?;
+        let mtime = get_file_mtime_millis(&path).unwrap_or(current_mtime);
+        Ok(FileWriteResult {
+            written: true,
+            mtime,
+        })
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn delete_path(path: String) -> Result<(), String> {
     validate_write_path(&path)?;
@@ -310,15 +346,7 @@ pub async fn delete_path(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn get_file_mtime(path: String) -> Result<u64, String> {
-    spawn_blocking_result(move || {
-        std::fs::metadata(&path)
-            .and_then(|m| m.modified())
-            .map_err(|e| format!("Failed to read file mtime: {e}"))?
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .map_err(|e| format!("Invalid mtime: {e}"))
-    })
-    .await
+    spawn_blocking_result(move || get_file_mtime_millis(&path)).await
 }
 
 #[cfg(test)]

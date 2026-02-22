@@ -57,6 +57,7 @@ Browse your project's files without leaving the terminal. Toggle it with `Alt+F`
 - **Tree navigation** — Expand and collapse folders inline. The tree auto-scopes to the active project's root directory.
 - **Open any file** — Double-click any file to open it in a built-in viewer tab. Text files open directly in an editable textarea. Markdown files (`.md`) render as formatted output with a right-click "Edit" option to switch to a raw editor, and "View" to switch back.
 - **File tabs in the session bar** — Opened files appear as tabs alongside your terminal sessions, separated by a divider. Dirty (unsaved) files show a `*` prefix. Save with the header button after editing.
+- **Real-time file refresh + safe saves** — Open file tabs auto-check for external changes from filesystem events, tab re-activation, window focus, and periodic fallback polling. Saves are conflict-aware: if the file changed on disk, you can reload or explicitly overwrite.
 - **Tab locking** — Right-click any tab (terminal or file) and select "Lock" to protect it from "Close Others". Locked tabs show a lock icon in place of the close button — click the icon to unlock.
 - **Sidebar mutual exclusion** — Only one sidebar (file browser or Git) is open at a time. Opening one automatically closes the other.
 - **Resizable** — Drag the left edge of the sidebar to adjust width (200–500px). Width persists across restarts.
@@ -79,7 +80,7 @@ This isn't a Linux terminal ported to Windows. Cosmos Terminal is developed and 
 - **Split panes** — Horizontal and vertical splits with keyboard navigation
 - **Activity indicators** — Pulsing blue dots on project and session tabs when background terminals have running commands or output, powered by OSC 133 shell integration with volume-based fallback
 - **File browser sidebar** — Tree view of the project directory; double-click any file to open it in a built-in viewer/editor tab
-- **File tabs** — Text and Markdown viewer/editor tabs alongside terminal sessions, with save support
+- **File tabs** — Text and Markdown viewer/editor tabs alongside terminal sessions, with real-time external change detection and conflict-safe save flows
 - **Tab locking** — Lock any tab (terminal or file) to protect it from "Close Others"
 - **Git sidebar** — Stage, diff, commit, push, and browse commit history from a collapsible panel
 - **AI commit messages** — Generate conventional commit messages from staged changes (OpenAI, optional)

@@ -69,6 +69,36 @@ def commit_and_tag(version: str) -> None:
     print(f"\033[1;32mCommitted, tagged {tag}, and pushed\033[0m")
 
 
+def get_changelog(tag: str) -> str:
+    """Get commit messages since the previous tag, excluding version bump commits."""
+    # Find the tag just before this one
+    result = subprocess.run(
+        ["git", "tag", "--sort=-v:refname"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    tags = [t.strip() for t in result.stdout.splitlines() if t.strip()]
+    prev_tag = None
+    for t in tags:
+        if t != tag:
+            prev_tag = t
+            break
+
+    if prev_tag:
+        log_range = f"{prev_tag}..HEAD"
+    else:
+        log_range = "HEAD"
+
+    result = subprocess.run(
+        ["git", "log", log_range, "--pretty=format:%s"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    lines = [
+        line.strip() for line in result.stdout.splitlines()
+        if line.strip() and not line.strip().startswith("chore: bump version")
+    ]
+    return "\n".join(f"- {line}" for line in lines)
+
+
 def create_release(version: str) -> None:
     """Create a GitHub release with the built installers."""
     tag = f"v{version}"
@@ -80,7 +110,13 @@ def create_release(version: str) -> None:
         print(f"\033[1;31mNo installer files found — skipping release\033[0m")
         return
 
-    notes = "## Downloads\n\n"
+    changelog = get_changelog(tag)
+
+    notes = ""
+    if changelog:
+        notes += f"## Changes\n\n{changelog}\n\n"
+
+    notes += "## Downloads\n\n"
     if nsis.exists():
         notes += f"- **NSIS Installer** (recommended) — `{nsis.name}`\n"
     if msi.exists():

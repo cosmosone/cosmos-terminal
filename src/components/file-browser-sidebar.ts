@@ -5,10 +5,11 @@ import {
   toggleFileBrowserPath,
   addFileTab,
 } from '../state/actions';
-import { listDirectory, searchFiles, showInExplorer, deletePath, watchDirectory, unwatchDirectory, onFsChange } from '../services/fs-service';
+import { listDirectory, searchFiles, showInExplorer, deletePath, onFsChange } from '../services/fs-service';
 import type { DirEntry } from '../services/fs-service';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { setupSidebarResize } from '../utils/sidebar-resize';
+import { normalizeFsPath } from '../utils/path';
 import { folderIcon, fileIcon, chevronRightIcon, searchIcon, refreshIcon } from '../utils/icons';
 import { showContextMenu } from './context-menu';
 import type { MenuItem } from './context-menu';
@@ -30,9 +31,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
   let anchorPath: string | null = null;
   const entryByPath = new Map<string, DirEntry>();
 
-  // --- File-system watcher state ---
-  let currentWatchedPath: string | null = null;
-  let fsChangeUnlisten: (() => void) | null = null;
+  // --- File-system event batching ---
   let fsChangeBatchTimer = 0;
 
   // --- Left-edge resize handle ---
@@ -183,11 +182,12 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
   searchBtn.addEventListener('click', () => searchMode ? exitSearchMode() : enterSearchMode());
 
   async function fetchDir(path: string): Promise<DirEntry[]> {
-    const cached = dirCache.get(path);
+    const cacheKey = normalizeFsPath(path);
+    const cached = dirCache.get(cacheKey);
     if (cached) return cached;
     try {
       const result = await listDirectory(path);
-      dirCache.set(path, result.entries);
+      dirCache.set(cacheKey, result.entries);
       return result.entries;
     } catch {
       return [];
@@ -354,7 +354,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
         if (!e.shiftKey) {
           toggleFileBrowserPath(entry.path);
           if (!expandedPaths.includes(entry.path)) {
-            dirCache.delete(entry.path);
+            dirCache.delete(normalizeFsPath(entry.path));
           }
         }
       });
@@ -393,39 +393,27 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     return wrap;
   }
 
-  async function startWatching(projectPath: string): Promise<void> {
-    if (currentWatchedPath === projectPath) return;
-    await stopWatching();
-    currentWatchedPath = projectPath;
-    try {
-      await watchDirectory(projectPath);
-      fsChangeUnlisten = await onFsChange((affectedDir) => {
-        // Only invalidate if this directory is in cache (i.e. currently expanded)
-        if (!dirCache.delete(affectedDir)) return;
-        // Batch re-renders with a short frontend debounce
-        clearTimeout(fsChangeBatchTimer);
-        fsChangeBatchTimer = window.setTimeout(() => scheduleRender(), 100);
-      });
-    } catch {
-      // Watcher setup failed — sidebar still works, just without auto-refresh
-    }
-  }
+  onFsChange((affectedDir) => {
+    const normalizedChangedDir = normalizeFsPath(affectedDir);
+    let invalidated = false;
 
-  async function stopWatching(): Promise<void> {
-    if (fsChangeUnlisten) {
-      fsChangeUnlisten();
-      fsChangeUnlisten = null;
-    }
-    if (currentWatchedPath) {
-      currentWatchedPath = null;
-      try {
-        await unwatchDirectory();
-      } catch {
-        // ignore
+    if (dirCache.delete(normalizedChangedDir)) {
+      invalidated = true;
+    } else {
+      for (const key of Array.from(dirCache.keys())) {
+        if (key.startsWith(`${normalizedChangedDir}/`)) {
+          dirCache.delete(key);
+          invalidated = true;
+        }
       }
     }
+
+    if (!invalidated) return;
     clearTimeout(fsChangeBatchTimer);
-  }
+    fsChangeBatchTimer = window.setTimeout(() => scheduleRender(), 100);
+  }).catch(() => {
+    // Watcher event stream unavailable — manual refresh still works.
+  });
 
   function applyVisibility(visible: boolean): void {
     container.classList.toggle('hidden', !visible);
@@ -434,10 +422,6 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
       container.style.width = store.getState().fileBrowserSidebar.width + 'px';
       dirCache.clear();
       renderTree();
-      const project = getActiveProject();
-      if (project) startWatching(project.path);
-    } else {
-      stopWatching();
     }
     onLayoutChange();
   }
@@ -472,15 +456,6 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     if (searchMode) exitSearchMode();
     dirCache.clear();
     scheduleRender();
-    // Restart watcher for the new project (if sidebar is visible)
-    if (store.getState().fileBrowserSidebar.visible) {
-      const project = getActiveProject();
-      if (project) {
-        startWatching(project.path);
-      } else {
-        stopWatching();
-      }
-    }
   });
 
   body.addEventListener('click', (e) => {

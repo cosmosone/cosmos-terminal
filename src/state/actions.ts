@@ -31,6 +31,7 @@ export function addProject(name: string, path: string): Project {
     activeSessionId: sessionId,
     tabs: [],
     activeTabId: null,
+    tabActivationSeq: 0,
   };
   store.setState((s) => ({
     ...s,
@@ -710,6 +711,7 @@ export function addFileTab(projectId: string, filePath: string, fileType: string
     tabs: [...p.tabs, tab],
     activeTabId: tab.id,
     activeSessionId: null,
+    tabActivationSeq: (p.tabActivationSeq ?? 0) + 1,
   }));
 }
 
@@ -740,6 +742,7 @@ export function setActiveTab(projectId: string, tabId: string): void {
     ...p,
     activeTabId: tabId,
     activeSessionId: null,
+    tabActivationSeq: (p.tabActivationSeq ?? 0) + 1,
   }));
 }
 
