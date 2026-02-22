@@ -245,37 +245,39 @@ fn search_files_sync(root_path: &str, query: &str) -> Result<Vec<DirEntry>, Stri
 
 #[tauri::command]
 pub async fn show_in_explorer(path: String) -> Result<(), String> {
+    spawn_blocking_result(move || show_in_explorer_sync(&path)).await
+}
+
+fn show_in_explorer_sync(path: &str) -> Result<(), String> {
     // Canonicalize to resolve symlinks and ".." segments before passing to
     // OS commands, preventing path traversal via crafted paths.
-    let canonical = std::fs::canonicalize(&path).map_err(|e| format!("Invalid path: {e}"))?;
-    spawn_blocking_result(move || {
-        let path = canonical.to_string_lossy();
-        #[cfg(target_os = "windows")]
-        {
-            std::process::Command::new("explorer.exe")
-                .arg(format!("/select,{path}"))
-                .spawn()
-                .map_err(|e| format!("Failed to open explorer: {e}"))?;
-        }
-        #[cfg(target_os = "macos")]
-        {
-            std::process::Command::new("open")
-                .args(["-R", path.as_ref()])
-                .spawn()
-                .map_err(|e| format!("Failed to open Finder: {e}"))?;
-        }
-        #[cfg(target_os = "linux")]
-        {
-            let p = std::path::Path::new(path.as_ref());
-            let dir = p.parent().unwrap_or(p);
-            std::process::Command::new("xdg-open")
-                .arg(dir.as_os_str())
-                .spawn()
-                .map_err(|e| format!("Failed to open file manager: {e}"))?;
-        }
-        Ok(())
-    })
-    .await
+    let canonical = std::fs::canonicalize(path).map_err(|e| format!("Invalid path: {e}"))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let arg = format!("/select,{}", canonical.to_string_lossy());
+        std::process::Command::new("explorer.exe")
+            .arg(arg)
+            .spawn()
+            .map_err(|e| format!("Failed to open explorer: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", canonical.to_string_lossy().as_ref()])
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {e}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let dir = canonical.parent().unwrap_or(&canonical);
+        std::process::Command::new("xdg-open")
+            .arg(dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open file manager: {e}"))?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

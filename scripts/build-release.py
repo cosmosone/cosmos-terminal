@@ -56,17 +56,22 @@ def commit_and_tag(version: str) -> None:
     """Commit version bump and create a git tag."""
     tag = f"v{version}"
     subprocess.run(
-        ["git", "add", "package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json"],
+        ["git", "add", "package.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock", "src-tauri/tauri.conf.json"],
         cwd=ROOT, check=True,
     )
-    subprocess.run(
-        ["git", "commit", "-m", f"chore: bump version to {version}"],
-        cwd=ROOT, check=True,
-    )
+    # Skip commit if everything is already committed (e.g. user pushed during the build)
+    has_staged = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ROOT)
+    if has_staged.returncode != 0:
+        subprocess.run(
+            ["git", "commit", "-m", f"chore: bump version to {version}"],
+            cwd=ROOT, check=True,
+        )
+    else:
+        print("\033[1;33mVersion bump already committed — skipping commit\033[0m")
     subprocess.run(["git", "tag", tag], cwd=ROOT, check=True)
     subprocess.run(["git", "push"], cwd=ROOT, check=True)
     subprocess.run(["git", "push", "origin", tag], cwd=ROOT, check=True)
-    print(f"\033[1;32mCommitted, tagged {tag}, and pushed\033[0m")
+    print(f"\033[1;32mTagged {tag} and pushed\033[0m")
 
 
 def get_changelog(tag: str, count: int = 3) -> str:

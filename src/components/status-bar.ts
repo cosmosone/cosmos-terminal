@@ -71,15 +71,20 @@ export function initStatusBar(onCleanup?: () => void): void {
   }
 
   poll();
-  let intervalId = setInterval(poll, POLL_INTERVAL_MS);
+  let intervalId: ReturnType<typeof setInterval> | null = setInterval(poll, POLL_INTERVAL_MS);
 
   // Pause polling when window is not visible (minimized, etc.)
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      clearInterval(intervalId);
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
     } else {
-      poll();
-      intervalId = setInterval(poll, POLL_INTERVAL_MS);
+      void poll();
+      if (!intervalId) {
+        intervalId = setInterval(poll, POLL_INTERVAL_MS);
+      }
     }
   });
 }

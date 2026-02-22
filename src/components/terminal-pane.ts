@@ -63,6 +63,8 @@ const FUNCTIONAL_KEY_CODES: Record<string, number> = {
   Escape: 27,
 };
 
+const ALLOWED_EXTERNAL_URI_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+
 /** Compute CSI u modifier parameter: 1 + Shift(1) + Alt(2) + Ctrl(4) + Meta(8). */
 function csiModifier(e: KeyboardEvent): number {
   return 1
@@ -220,7 +222,9 @@ export class TerminalPane {
     this.fitAddon = new FitAddon();
 
     this.terminal.loadAddon(this.fitAddon);
-    this.terminal.loadAddon(new WebLinksAddon((_e, uri) => open(uri)));
+    this.terminal.loadAddon(new WebLinksAddon((_e, uri) => {
+      this.openExternalUri(uri);
+    }));
     this.terminal.loadAddon(new ImageAddon());
     this.terminal.loadAddon(new Unicode11Addon());
     this.terminal.unicode.activeVersion = '11';
@@ -501,6 +505,33 @@ export class TerminalPane {
       });
       this.webglAddon = null;
     }
+  }
+
+  private openExternalUri(uri: string): void {
+    let parsed: URL;
+    try {
+      parsed = new URL(uri);
+    } catch {
+      logger.warn('pty', 'Blocked malformed terminal link', { paneId: this.paneId, uri });
+      return;
+    }
+
+    if (!ALLOWED_EXTERNAL_URI_PROTOCOLS.has(parsed.protocol)) {
+      logger.warn('pty', 'Blocked terminal link with disallowed scheme', {
+        paneId: this.paneId,
+        uri,
+        protocol: parsed.protocol,
+      });
+      return;
+    }
+
+    void open(uri).catch((err) => {
+      logger.warn('pty', 'Failed to open terminal link', {
+        paneId: this.paneId,
+        uri,
+        error: String(err),
+      });
+    });
   }
 
   /** Read clipboard text and paste it into the terminal. */

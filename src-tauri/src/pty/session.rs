@@ -164,10 +164,11 @@ impl SessionHandle {
     pub fn write(&self, data: &[u8]) -> Result<(), String> {
         let mut guard = self.master_write.lock();
         let writer = guard.as_mut().ok_or("Session closed")?;
+        // PTY masters are unbuffered OS handles; explicit flush adds extra
+        // syscalls without improving delivery guarantees.
         writer
             .write_all(data)
             .map_err(|e| format!("Write error: {}", e))?;
-        writer.flush().map_err(|e| format!("Flush error: {}", e))?;
         Ok(())
     }
 

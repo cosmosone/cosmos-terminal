@@ -31,7 +31,7 @@ export function initSessionTabBar(onTabChange: () => void): void {
   const dragManager = createTabDragManager();
 
   // Reassigned each render so the ResizeObserver always calls the latest version
-  let updateScrollArrows: () => void = () => {};
+  let updateScrollArrows: () => boolean = () => false;
 
   // While an inline rename is in progress we must defer re-renders so the
   // input field is not destroyed.  `pendingRender` stores the latest project
@@ -359,10 +359,11 @@ export function initSessionTabBar(onTabChange: () => void): void {
     requestAnimationFrame(() => {
       const activeTab = tabList.querySelector('.session-tab.active') as HTMLElement | null;
       activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
-      updateScrollArrows();
-      // Second pass: arrow visibility may shift layout, so re-scroll and re-check
-      activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
-      updateScrollArrows();
+      // Re-scroll only if arrows changed visibility and shifted layout.
+      if (updateScrollArrows()) {
+        activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
+        updateScrollArrows();
+      }
     });
   }
 
