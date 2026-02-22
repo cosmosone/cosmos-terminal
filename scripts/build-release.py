@@ -69,34 +69,18 @@ def commit_and_tag(version: str) -> None:
     print(f"\033[1;32mCommitted, tagged {tag}, and pushed\033[0m")
 
 
-def get_changelog(tag: str) -> str:
-    """Get commit messages since the previous tag, excluding version bump commits."""
-    # Find the tag just before this one
+def get_changelog(tag: str, count: int = 3) -> str:
+    """Get the last `count` commit messages, excluding version bump commits."""
+    # Fetch enough commits to find `count` non-bump messages
     result = subprocess.run(
-        ["git", "tag", "--sort=-v:refname"],
-        cwd=ROOT, capture_output=True, text=True,
-    )
-    tags = [t.strip() for t in result.stdout.splitlines() if t.strip()]
-    prev_tag = None
-    for t in tags:
-        if t != tag:
-            prev_tag = t
-            break
-
-    if prev_tag:
-        log_range = f"{prev_tag}..HEAD"
-    else:
-        log_range = "HEAD"
-
-    result = subprocess.run(
-        ["git", "log", log_range, "--pretty=format:%s"],
+        ["git", "log", f"-{count * 3}", "--pretty=format:%s"],
         cwd=ROOT, capture_output=True, text=True,
     )
     lines = [
         line.strip() for line in result.stdout.splitlines()
         if line.strip() and not line.strip().startswith("chore: bump version")
     ]
-    return "\n".join(f"- {line}" for line in lines)
+    return "\n".join(f"- {line}" for line in lines[:count])
 
 
 def create_release(version: str) -> None:

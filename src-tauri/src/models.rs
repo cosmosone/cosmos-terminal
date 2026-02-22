@@ -30,6 +30,8 @@ pub struct GitStatusResult {
     pub branch: String,
     pub dirty: bool,
     pub files: Vec<GitFileStatus>,
+    pub ahead: u32,
+    pub committed_files: Vec<GitFileStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

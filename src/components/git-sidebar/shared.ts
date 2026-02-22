@@ -1,4 +1,4 @@
-import type { GitFileStatusKind, GitStatusResult } from '../../state/types';
+import type { GitFileStatus, GitFileStatusKind, GitStatusResult } from '../../state/types';
 
 export const STATUS_LETTERS: Record<GitFileStatusKind, string> = {
   modified: 'M',
@@ -21,13 +21,18 @@ export function relativeTime(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleDateString();
 }
 
-export function statusEquals(a: GitStatusResult | null, b: GitStatusResult | null): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  if (a.branch !== b.branch || a.dirty !== b.dirty || a.files.length !== b.files.length) return false;
-  for (let i = 0; i < a.files.length; i++) {
-    const fa = a.files[i], fb = b.files[i];
+function filesEqual(a: GitFileStatus[], b: GitFileStatus[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const fa = a[i], fb = b[i];
     if (fa.path !== fb.path || fa.status !== fb.status || fa.staged !== fb.staged) return false;
   }
   return true;
+}
+
+export function statusEquals(a: GitStatusResult | null, b: GitStatusResult | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.branch !== b.branch || a.dirty !== b.dirty || a.ahead !== b.ahead) return false;
+  return filesEqual(a.files, b.files) && filesEqual(a.committedFiles, b.committedFiles);
 }

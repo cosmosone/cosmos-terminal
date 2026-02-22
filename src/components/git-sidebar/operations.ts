@@ -186,21 +186,22 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
     updateGitState(project.id, { loading: true, error: null, notification: null });
     try {
       const pushResult = await gitPush(project.path);
+      updateGitState(project.id, { loading: false });
+
       if (!pushResult.success) {
-        updateGitState(project.id, { loading: false });
         deps.showNotification(project.id, `Push failed: ${pushResult.message}`, 'error');
         return;
       }
 
       const msg = pushResult.message.toLowerCase();
       if (msg.includes('up-to-date') || msg.includes('up to date')) {
-        updateGitState(project.id, { loading: false });
         deps.showNotification(project.id, 'Already up-to-date. Nothing to push.', 'info');
       } else {
         logger.info('git', 'Push completed', { projectId: project.id });
-        updateGitState(project.id, { loading: false });
         deps.showNotification(project.id, 'Pushed successfully.', 'info');
       }
+
+      await refreshProject(project);
       await fetchLog(project);
     } catch (err: unknown) {
       updateGitState(project.id, { loading: false });

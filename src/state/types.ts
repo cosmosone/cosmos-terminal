@@ -114,6 +114,8 @@ export interface GitStatusResult {
   branch: string;
   dirty: boolean;
   files: GitFileStatus[];
+  ahead: number;
+  committedFiles: GitFileStatus[];
 }
 
 export interface GitLogEntry {

@@ -64,6 +64,71 @@ fn git_status_sync(path: &str) -> Result<GitStatusResult, String> {
     git_status_from_repo(&repo)
 }
 
+/// Resolves the local and upstream OIDs for the current branch.
+/// Returns `None` when HEAD, branch name, or upstream ref cannot be resolved.
+fn local_and_upstream_oids(repo: &Repository) -> Option<(git2::Oid, git2::Oid)> {
+    let head = repo.head().ok()?;
+    let branch_name = head.shorthand()?;
+    let local_oid = head.target()?;
+    let upstream_ref = format!("refs/remotes/origin/{}", branch_name);
+    let upstream_oid = repo.refname_to_id(&upstream_ref).ok()?;
+    Some((local_oid, upstream_oid))
+}
+
+fn commits_ahead(repo: &Repository) -> u32 {
+    let (local_oid, upstream_oid) = match local_and_upstream_oids(repo) {
+        Some(pair) => pair,
+        None => return 0,
+    };
+
+    repo.graph_ahead_behind(local_oid, upstream_oid)
+        .map(|(ahead, _)| ahead as u32)
+        .unwrap_or(0)
+}
+
+fn committed_files(repo: &Repository) -> Vec<GitFileStatus> {
+    let (local_oid, upstream_oid) = match local_and_upstream_oids(repo) {
+        Some(pair) => pair,
+        None => return Vec::new(),
+    };
+
+    let local_tree = match repo.find_commit(local_oid).and_then(|c| c.tree()) {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+    let upstream_tree = match repo.find_commit(upstream_oid).and_then(|c| c.tree()) {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+
+    let diff = match repo.diff_tree_to_tree(Some(&upstream_tree), Some(&local_tree), None) {
+        Ok(d) => d,
+        Err(_) => return Vec::new(),
+    };
+
+    diff.deltas()
+        .map(|delta| {
+            let path = delta
+                .new_file()
+                .path()
+                .unwrap_or_else(|| std::path::Path::new(""))
+                .to_string_lossy()
+                .to_string();
+            let status = match delta.status() {
+                git2::Delta::Added => "added",
+                git2::Delta::Deleted => "deleted",
+                git2::Delta::Renamed => "renamed",
+                _ => "modified",
+            };
+            GitFileStatus {
+                path,
+                status: status.to_string(),
+                staged: false,
+            }
+        })
+        .collect()
+}
+
 fn git_status_from_repo(repo: &Repository) -> Result<GitStatusResult, String> {
     let branch = current_branch(repo);
 
@@ -86,10 +151,15 @@ fn git_status_from_repo(repo: &Repository) -> Result<GitStatusResult, String> {
         });
     }
 
+    let ahead = commits_ahead(repo);
+    let committed = committed_files(repo);
+
     Ok(GitStatusResult {
         branch,
         dirty: !files.is_empty(),
         files,
+        ahead,
+        committed_files: committed,
     })
 }
 

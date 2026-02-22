@@ -2,6 +2,8 @@ import { createElement } from '../../utils/dom';
 import { STATUS_LETTERS, relativeTime } from './shared';
 import type { Project, ProjectGitState, GitFileStatus, GitLogEntry } from '../../state/types';
 
+const committedFilesExpanded = new Map<string, boolean>();
+
 export interface GitSidebarRenderHandlers {
   onProjectRowClick(project: Project, canExpand: boolean): void;
   onGenerateCommitMessage(project: Project): Promise<void>;
@@ -19,7 +21,8 @@ export function renderProject(project: Project, gs: ProjectGitState, expanded: b
   const wrap = createElement('div');
   const hasStatus = gs.status !== null;
   const hasFileChanges = (gs.status?.files.length ?? 0) > 0;
-  const canExpand = hasStatus && hasFileChanges;
+  const ahead = gs.status?.ahead ?? 0;
+  const canExpand = hasStatus && (hasFileChanges || ahead > 0);
   const isExpanded = expanded && canExpand;
 
   const row = createElement('div', { className: `git-project-row${isExpanded ? ' active' : ''}` });
@@ -44,6 +47,12 @@ export function renderProject(project: Project, gs: ProjectGitState, expanded: b
       dirty.textContent = '*';
       row.appendChild(dirty);
     }
+
+    if (gs.status.ahead > 0) {
+      const aheadBadge = createElement('span', { className: 'git-project-ahead' });
+      aheadBadge.textContent = `\u2191${gs.status.ahead}`;
+      row.appendChild(aheadBadge);
+    }
   }
 
   row.addEventListener('click', () => deps.handlers.onProjectRowClick(project, canExpand));
@@ -59,12 +68,16 @@ export function renderProject(project: Project, gs: ProjectGitState, expanded: b
       err.textContent = gs.error;
       wrap.appendChild(err);
     } else if (gs.status) {
-      wrap.appendChild(renderCommitArea(project, gs, deps));
-      const fileList = createElement('div', { className: 'git-file-list' });
-      for (const file of gs.status.files) {
-        fileList.appendChild(renderFile(file));
+      if (hasFileChanges) {
+        wrap.appendChild(renderCommitArea(project, gs, deps));
+        const fileList = createElement('div', { className: 'git-file-list' });
+        for (const file of gs.status.files) {
+          fileList.appendChild(renderFile(file));
+        }
+        wrap.appendChild(fileList);
+      } else if (ahead > 0) {
+        wrap.appendChild(renderPushArea(project, ahead, gs.status.committedFiles, deps));
       }
-      wrap.appendChild(fileList);
     }
 
     if (gs.notification) {
@@ -158,6 +171,54 @@ function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjec
   });
 
   area.appendChild(buttons);
+  return area;
+}
+
+function renderPushArea(project: Project, ahead: number, committedFiles: GitFileStatus[], deps: GitProjectRenderDeps): HTMLElement {
+  const area = createElement('div', { className: 'git-push-area' });
+
+  const row = createElement('div', { className: 'git-push-row' });
+  const msg = createElement('span', { className: 'git-push-message' });
+  msg.textContent = `${ahead} unpushed commit${ahead === 1 ? '' : 's'}`;
+  row.appendChild(msg);
+
+  const pushBtn = createElement('button', { className: 'git-commit-btn secondary' });
+  pushBtn.textContent = 'Push';
+  pushBtn.addEventListener('click', () => {
+    void deps.handlers.onPush(project);
+  });
+  row.appendChild(pushBtn);
+  area.appendChild(row);
+
+  if (committedFiles.length > 0) {
+    const expanded = committedFilesExpanded.get(project.id) ?? false;
+
+    const header = createElement('div', { className: 'git-section-header' });
+    const arrow = createElement('span', { className: `git-section-arrow${expanded ? '' : ' collapsed'}` });
+    arrow.textContent = '\u25B6';
+    header.appendChild(arrow);
+
+    const label = createElement('span');
+    label.textContent = 'Committed Files';
+    header.appendChild(label);
+
+    const fileList = createElement('div', { className: 'git-file-list' });
+    fileList.style.display = expanded ? '' : 'none';
+    for (const file of committedFiles) {
+      fileList.appendChild(renderFile(file));
+    }
+
+    header.addEventListener('click', () => {
+      const nowExpanded = !(committedFilesExpanded.get(project.id) ?? false);
+      committedFilesExpanded.set(project.id, nowExpanded);
+      arrow.className = `git-section-arrow${nowExpanded ? '' : ' collapsed'}`;
+      fileList.style.display = nowExpanded ? '' : 'none';
+    });
+
+    area.appendChild(header);
+    area.appendChild(fileList);
+  }
+
   return area;
 }
 

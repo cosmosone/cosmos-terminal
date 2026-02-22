@@ -236,13 +236,17 @@
   white-space: nowrap;
 }
 
-.git-project-branch {
+.git-project-branch,
+.git-project-ahead {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 8px;
+  white-space: nowrap;
+}
+
+.git-project-branch {
   background: var(--accent-dim);
   color: var(--accent);
-  white-space: nowrap;
 }
 
 .git-project-dirty {
@@ -466,4 +470,30 @@
 .git-sidebar-notification.error {
   border-left-color: var(--danger);
   color: var(--danger);
+}
+
+/* ===== Ahead Badge ===== */
+.git-project-ahead {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+}
+
+/* ===== Push Area (unpushed commits, no file changes) ===== */
+.git-push-area {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.git-push-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+}
+
+.git-push-message {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
