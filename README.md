@@ -46,6 +46,8 @@ When a background terminal has a running command, a pulsing blue dot appears on 
 
 Stage files, review diffs, write commit messages, and push — right next to your terminal. No context switching to another app. Toggle it with `Ctrl+Shift+G`.
 
+Projects with no working-tree file changes stay compact in the list (no expand chevron and no commit action panel) to reduce visual noise.
+
 Optionally generate conventional commit messages with AI (OpenAI) for large changesets.
 
 ### File Browser Sidebar

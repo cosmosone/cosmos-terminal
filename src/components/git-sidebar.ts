@@ -112,8 +112,8 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   }
 
   const renderHandlers: GitSidebarRenderHandlers = {
-    onProjectRowClick: (project, hasStatus) => {
-      if (hasStatus) {
+    onProjectRowClick: (project, canExpand) => {
+      if (canExpand) {
         toggleProjectExpanded(project.id);
       }
       setGitSidebarActiveProject(project.id);

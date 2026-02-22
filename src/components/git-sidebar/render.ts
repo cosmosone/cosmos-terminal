@@ -3,7 +3,7 @@ import { STATUS_LETTERS, relativeTime } from './shared';
 import type { Project, ProjectGitState, GitFileStatus, GitLogEntry } from '../../state/types';
 
 export interface GitSidebarRenderHandlers {
-  onProjectRowClick(project: Project, hasStatus: boolean): void;
+  onProjectRowClick(project: Project, canExpand: boolean): void;
   onGenerateCommitMessage(project: Project): Promise<void>;
   onCommit(project: Project, push: boolean): Promise<void>;
   onPush(project: Project): Promise<void>;
@@ -18,12 +18,13 @@ export interface GitProjectRenderDeps {
 export function renderProject(project: Project, gs: ProjectGitState, expanded: boolean, deps: GitProjectRenderDeps): HTMLElement {
   const wrap = createElement('div');
   const hasStatus = gs.status !== null;
-  const hasFiles = (gs.status?.files.length ?? 0) > 0;
-  const isExpanded = expanded && hasStatus;
+  const hasFileChanges = (gs.status?.files.length ?? 0) > 0;
+  const canExpand = hasStatus && hasFileChanges;
+  const isExpanded = expanded && canExpand;
 
   const row = createElement('div', { className: `git-project-row${isExpanded ? ' active' : ''}` });
 
-  if (hasStatus) {
+  if (canExpand) {
     const arrow = createElement('span', { className: `git-project-arrow${isExpanded ? ' expanded' : ''}` });
     arrow.textContent = '\u25B6';
     row.appendChild(arrow);
@@ -45,7 +46,7 @@ export function renderProject(project: Project, gs: ProjectGitState, expanded: b
     }
   }
 
-  row.addEventListener('click', () => deps.handlers.onProjectRowClick(project, hasStatus));
+  row.addEventListener('click', () => deps.handlers.onProjectRowClick(project, canExpand));
   wrap.appendChild(row);
 
   if (isExpanded) {
@@ -59,18 +60,11 @@ export function renderProject(project: Project, gs: ProjectGitState, expanded: b
       wrap.appendChild(err);
     } else if (gs.status) {
       wrap.appendChild(renderCommitArea(project, gs, deps));
-
-      if (hasFiles) {
-        const fileList = createElement('div', { className: 'git-file-list' });
-        for (const file of gs.status.files) {
-          fileList.appendChild(renderFile(file));
-        }
-        wrap.appendChild(fileList);
-      } else {
-        const empty = createElement('div', { className: 'git-sidebar-empty' });
-        empty.textContent = 'No Changes';
-        wrap.appendChild(empty);
+      const fileList = createElement('div', { className: 'git-file-list' });
+      for (const file of gs.status.files) {
+        fileList.appendChild(renderFile(file));
       }
+      wrap.appendChild(fileList);
     }
 
     if (gs.notification) {
