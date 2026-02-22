@@ -164,7 +164,7 @@
   position: fixed;
   z-index: 300;
   width: 300px;
-  max-height: 400px;
+  max-height: 70vh;
   display: flex;
   flex-direction: column;
   background: var(--bg-tertiary);

@@ -22,10 +22,11 @@ RED = "\033[31m"
 
 
 class Step:
-    def __init__(self, name: str, cmd: str, cwd: Path):
+    def __init__(self, name: str, cmd: str, cwd: Path, desc: str = ""):
         self.name = name
         self.cmd = cmd
         self.cwd = cwd
+        self.desc = desc
 
 
 ANSI_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
@@ -78,6 +79,8 @@ def run_step(
     run_log_dir: Path,
 ) -> Tuple[bool, int, float, Path]:
     print(f"{BOLD}{CYAN}[{index}/{total}] {step.name}{RESET}", flush=True)
+    if step.desc:
+        print(f"{DIM}    {step.desc}{RESET}", flush=True)
     print(f"{DIM}$ {step.cmd}{RESET}", flush=True)
 
     started = time.perf_counter()
@@ -164,14 +167,29 @@ def main() -> int:
     hr()
 
     steps = [
-        Step("ESLint", "npm run lint", ROOT),
-        Step("Integration Tests", "npm run test:integration", ROOT),
-        Step("Stress Tests", "npm run test:stress", ROOT),
-        Step("Frontend Benchmarks", "npm run bench:frontend", ROOT),
-        Step("TypeScript Typecheck", "npx tsc --noEmit", ROOT),
-        Step("Frontend Build", "npm run build", ROOT),
-        Step("Rust Clippy", "cargo clippy --all-targets --all-features", RUST_ROOT),
-        Step("Rust Unit Tests", "cargo test --lib", RUST_ROOT),
+        Step("ESLint", "npm run lint", ROOT,
+             "Catches unused vars, bad patterns, and style violations across all TS files"),
+        Step("Integration Tests", "npm run test:integration", ROOT,
+             "IPC contract sync, markdown XSS hardening, CSS layout invariants, "
+             "git sidebar rendering, file-tab lifecycle, and Tauri permission auditing"),
+        Step("Stress Tests", "npm run test:stress", ROOT,
+             "High-volume terminal output with scroll-pinning and position "
+             "preservation under randomised burst/scroll/hide sequences"),
+        Step("Frontend Benchmarks", "npm run bench:frontend", ROOT,
+             "Measures output flush latency, resize/fit latency, "
+             "and IPC dispatch counts to catch performance regressions"),
+        Step("TypeScript Typecheck", "npx tsc --noEmit", ROOT,
+             "Full strict-mode type check - catches type errors, "
+             "unused locals/params, and missing annotations"),
+        Step("Frontend Build", "npm run build", ROOT,
+             "Vite production bundle - verifies no import errors, "
+             "tree-shaking issues, or asset pipeline failures"),
+        Step("Rust Clippy", "cargo clippy --all-targets --all-features", RUST_ROOT,
+             "Rust linter catching correctness bugs, performance pitfalls, "
+             "and non-idiomatic patterns in the backend"),
+        Step("Rust Unit Tests", "cargo test --lib", RUST_ROOT,
+             "FS security (path traversal, system dir rejection), directory listing, "
+             "file search, binary detection, and shell path validation"),
     ]
 
     pipeline_started = time.perf_counter()
