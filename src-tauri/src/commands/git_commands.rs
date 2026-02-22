@@ -7,6 +7,7 @@ use crate::models::{GitCommitResult, GitFileStatus, GitLogEntry, GitPushResult, 
 
 const DEFAULT_GIT_LOG_LIMIT: usize = 50;
 const MAX_GIT_LOG_LIMIT: usize = 500;
+const MAX_DIFF_BYTES: usize = 5 * 1024 * 1024; // 5 MB
 
 fn open_repo(path: &str) -> Result<Repository, String> {
     Repository::discover(path).map_err(|e| e.to_string())
@@ -218,7 +219,12 @@ fn git_log_sync(path: &str, limit: Option<usize>) -> Result<Vec<GitLogEntry>, St
 }
 
 fn append_diff(diff: &git2::Diff, out: &mut String) {
+    let mut truncated = false;
     diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+        if out.len() >= MAX_DIFF_BYTES {
+            truncated = true;
+            return false;
+        }
         if let Ok(content) = std::str::from_utf8(line.content()) {
             match line.origin() {
                 '+' | '-' | ' ' => {
@@ -232,6 +238,9 @@ fn append_diff(diff: &git2::Diff, out: &mut String) {
         true
     })
     .ok();
+    if truncated {
+        out.push_str("\n\n[Diff truncated — output exceeded 5 MB]\n");
+    }
 }
 
 #[tauri::command]

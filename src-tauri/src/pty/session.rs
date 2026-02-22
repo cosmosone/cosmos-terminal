@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use parking_lot::Mutex;
@@ -100,7 +100,32 @@ impl SessionHandle {
         let alive_for_exit = alive.clone();
         let exit_handle = std::thread::spawn(move || {
             let mut child = child;
-            let _ = child.wait();
+            const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+            // Wait for the child to exit naturally or the PTY to close.
+            while alive_for_exit.load(Ordering::Relaxed) {
+                match child.try_wait() {
+                    Ok(Some(_)) | Err(_) => break,
+                    Ok(None) => std::thread::sleep(POLL_INTERVAL),
+                }
+            }
+
+            // If the PTY was closed but the child hasn't exited yet, give it
+            // a grace period before force-killing.
+            const KILL_TIMEOUT: Duration = Duration::from_secs(5);
+            let deadline = Instant::now() + KILL_TIMEOUT;
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_)) | Err(_) => break,
+                    Ok(None) if Instant::now() >= deadline => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break;
+                    }
+                    Ok(None) => std::thread::sleep(POLL_INTERVAL),
+                }
+            }
+
             alive_for_exit.store(false, Ordering::Relaxed);
             let _ = exit_channel.send(true);
         });
