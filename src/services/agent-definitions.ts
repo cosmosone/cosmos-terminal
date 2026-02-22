@@ -14,9 +14,11 @@ export const AGENT_DEFINITIONS: readonly AgentDef[] = [
   { command: 'cline', label: 'Cline', icon: clineIcon },
 ];
 
-/** Look up the initial command for an agent session title (e.g. "Gemini" -> "gemini -y"). */
-export function getAgentCommand(sessionTitle: string): string | null {
-  const agent = AGENT_DEFINITIONS.find((a) => a.command === sessionTitle.toLowerCase());
+/** Look up the initial command for an agent session.
+ *  Prefers the stored `agentCommand` field; falls back to matching `sessionTitle` for older data. */
+export function getAgentCommand(agentCommand: string | undefined, sessionTitle: string): string | null {
+  const key = agentCommand ?? sessionTitle.toLowerCase();
+  const agent = AGENT_DEFINITIONS.find((a) => a.command === key);
   if (!agent) return null;
   return agent.initialCmd ?? agent.command;
 }

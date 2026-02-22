@@ -1,0 +1,242 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`markdown renderer > matches snapshot output for the fixture corpus 1`] = `
+{
+  "edge/blank-lines.md": "<h1>Blank Line Preservation</h1>
+<p class="md-empty-line"></p>
+<p>First paragraph line one.
+Second line in same paragraph.</p>
+<p class="md-empty-line"></p>
+<p class="md-empty-line"></p>
+<p>Paragraph after two blank lines.</p>
+<p class="md-empty-line"></p>
+<ul>
+<li>
+<p>item one</p>
+</li>
+<li>
+<p>item two after blank line</p>
+</li>
+</ul>
+<p class="md-empty-line"></p>
+<h2>Next Section</h2>
+<p class="md-empty-line"></p>
+<p>Text after heading.</p>
+<p class="md-empty-line"></p>
+<p class="md-empty-line"></p>
+<p class="md-empty-line"></p>
+<p>Text after three blank lines.</p>",
+  "edge/crlf.md": "<h1>CRLF Fixture</h1>
+<p class="md-empty-line"></p>
+<p>Paragraph one.</p>
+<p class="md-empty-line"></p>
+<p>Paragraph two after blank line.</p>",
+  "edge/links.md": "<h1>Link Policy</h1>
+<p class="md-empty-line"></p>
+<ul>
+<li><a href="https://openai.com" target="_blank" rel="noopener noreferrer">OpenAI</a></li>
+<li><a href="mailto:test@example.com" target="_blank" rel="noopener noreferrer">Mail</a></li>
+<li>Local File</li>
+<li>Javascript URL</li>
+<li>Relative</li>
+</ul>",
+  "edge/lists-tables.md": "<h1>Nested Lists and Tables</h1>
+<p class="md-empty-line"></p>
+<ol>
+<li>Ordered one
+<ul>
+<li>Unordered nested one</li>
+<li>Unordered nested two</li>
+</ul>
+</li>
+<li>Ordered two</li>
+</ol>
+<p class="md-empty-line"></p>
+<table>
+<thead>
+<tr>
+<th align="left">Name</th>
+<th align="right">Score</th>
+<th align="center">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">Alpha</td>
+<td align="right">10</td>
+<td align="center">ok</td>
+</tr>
+<tr>
+<td align="left">Beta</td>
+<td align="right">20</td>
+<td align="center">fine</td>
+</tr>
+</tbody>
+</table>
+<p class="md-empty-line"></p>
+<pre><code class="language-ts">const value = 42;
+console.log(value);
+</code></pre>",
+  "edge/security.md": "<h1>Security Payloads</h1>
+<p class="md-empty-line"></p>
+<p class="md-empty-line"></p>
+<p class="md-empty-line"></p>
+<p class="md-empty-line"></p>
+<p><code>&#x3C;script>inline in code is safe text&#x3C;/script></code></p>
+<p class="md-empty-line"></p>
+<p>Malicious</p>",
+  "real/CLAUDE.md": "<h1>CLAUDE.md</h1>
+<p class="md-empty-line"></p>
+<p>This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.</p>
+<p class="md-empty-line"></p>
+<h2>Build &#x26; Dev Commands</h2>
+<p class="md-empty-line"></p>
+<pre><code class="language-bash">npm run tauri dev              # Full dev mode (frontend + Rust backend)
+npm run dev                    # Frontend only (Vite at localhost:1420)
+npm run build                  # Frontend production build (tsc + vite)
+npm run tauri build            # Full production build (installer in src-tauri/target/release/bundle/)
+
+npx tsc --noEmit               # TypeScript type check
+cd src-tauri &#x26;&#x26; cargo clippy --all-targets   # Rust linting
+cd src-tauri &#x26;&#x26; cargo test      # Rust tests
+cd src-tauri &#x26;&#x26; cargo fmt --check            # Rust format check
+</code></pre>
+<p class="md-empty-line"></p>
+<p>No frontend test framework. Verification is <code>tsc --noEmit</code> + manual testing via <code>tauri dev</code>.</p>
+<p class="md-empty-line"></p>
+<h3>Plan Execution Rule</h3>
+<p class="md-empty-line"></p>
+<p>After implementing any plan, always run:</p>
+<p class="md-empty-line"></p>
+<pre><code class="language-bash">python scripts/build-test.py
+</code></pre>
+<p class="md-empty-line"></p>
+<p>If any step fails, continue fixing issues and re-run <code>build-test.py</code> until the full pipeline passes with zero failures.</p>
+<p class="md-empty-line"></p>
+<h2>Architecture</h2>
+<p class="md-empty-line"></p>
+<p>Tauri v2 desktop app: vanilla TypeScript frontend + Rust backend. Windows-first (ConPTY, WebView2, dark mode title bar). No React/Vue/Svelte — direct DOM manipulation.</p>
+<p class="md-empty-line"></p>
+<h3>Frontend (<code>src/</code>)</h3>
+<p class="md-empty-line"></p>
+<p><strong>State</strong>: Custom Redux-like store (<code>state/store.ts</code>) with selector-based subscriptions. <code>store.select(selector, listener)</code> only fires when the selector's output changes (shallow equality). All mutations go through action functions in <code>state/actions.ts</code>. All interfaces in <code>state/types.ts</code>.</p>
+<p class="md-empty-line"></p>
+<p><strong>Components</strong> (<code>components/</code>): Init functions that receive a container, set up DOM, and subscribe to store. Pattern:</p>
+<pre><code class="language-typescript">export function initComponent(onLayoutChange: () => void): void {
+  const el = $('#container')!;
+  store.select(selector, (value) => { /* re-render */ });
+}
+</code></pre>
+<p class="md-empty-line"></p>
+<p><strong>Services</strong> (<code>services/</code>): One file per domain. Thin wrappers around <code>@tauri-apps/api/core.invoke()</code> for IPC. PTY output streams via Tauri <code>Channel</code> (base64-encoded).</p>
+<p class="md-empty-line"></p>
+<p><strong>Layout</strong> (<code>layout/</code>): Recursive binary tree for pane splits. <code>PaneNode = PaneLeaf | PaneBranch</code>. <code>computeLayout(paneTree, rect)</code> calculates bounding boxes. Resize updates <code>ratios</code> array on branch nodes.</p>
+<p class="md-empty-line"></p>
+<p><strong>DOM helpers</strong>: <code>createElement()</code> and <code>$()</code> from <code>utils/dom.ts</code>. Use <code>textContent</code> for user data; <code>innerHTML</code> only for trusted SVG from <code>utils/icons.ts</code>.</p>
+<p class="md-empty-line"></p>
+<h3>Backend (<code>src-tauri/</code>)</h3>
+<p class="md-empty-line"></p>
+<p><strong>IPC commands</strong> (<code>commands/</code>): One file per domain (pty, git, fs, system, watcher). All serialized as camelCase via <code>#[serde(rename_all = "camelCase")]</code> in <code>models.rs</code>.</p>
+<p class="md-empty-line"></p>
+<p><strong>PTY</strong> (<code>pty/</code>): <code>SessionManager</code> holds a global registry of <code>SessionHandle</code>s. Each session spawns a thread for reading PTY output. Uses <code>portable-pty</code> crate with ConPTY backend.</p>
+<p class="md-empty-line"></p>
+<p><strong>Git</strong>: Uses <code>git2</code> crate for all operations except push (falls back to CLI <code>git push</code>).</p>
+<p class="md-empty-line"></p>
+<p><strong>Concurrency</strong>: <code>parking_lot::Mutex</code> preferred over <code>std::sync::Mutex</code>. Blocking I/O wrapped in <code>tokio::task::spawn_blocking</code>. Lightweight ops (PTY write/resize) are sync commands.</p>
+<p class="md-empty-line"></p>
+<p><strong>Error handling</strong>: IPC commands return <code>Result&#x3C;T, String></code>.</p>
+<p class="md-empty-line"></p>
+<h3>Data Flow</h3>
+<p class="md-empty-line"></p>
+<pre><code>User input → xterm.js → writeToPtySession(invoke) → Rust write_to_session
+PTY output → Rust reader thread → Channel(base64) → Frontend decode → xterm.js terminal.write()
+Git ops    → git-service.ts(invoke) → Rust git2 commands → serialized response
+State      → actions.ts mutates store → selectors notify subscribed components → DOM updates
+</code></pre>
+<p class="md-empty-line"></p>
+<h3>Hierarchy</h3>
+<p class="md-empty-line"></p>
+<p>Projects → Sessions → Panes (3-level). Each project has its own git state, file browser scope, and set of sessions. Each session has a pane tree for splits.</p>
+<p class="md-empty-line"></p>
+<h2>Conventions</h2>
+<p class="md-empty-line"></p>
+<ul>
+<li><strong>Australian English</strong> in user-facing strings and commit messages (colour, initialise, behaviour, organisation)</li>
+<li><strong>Conventional commits</strong>: <code>feat:</code>, <code>fix:</code>, <code>chore:</code>, <code>refactor:</code>, <code>docs:</code>, <code>style:</code>, <code>test:</code>, <code>perf:</code></li>
+<li><strong>CSS</strong>: One file per component in <code>styles/</code>. Theme via CSS custom properties in <code>theme.css</code>. BEM-style prefixes (<code>git-</code>, <code>pane-</code>, <code>settings-</code>)</li>
+<li><strong>TypeScript strict mode</strong>: <code>noUnusedLocals</code>, <code>noUnusedParameters</code>, <code>noFallthroughCasesInSwitch</code></li>
+<li><strong>Type imports</strong>: <code>import type { ... }</code> for type-only imports</li>
+<li><strong>Rust</strong>: Edition 2021, <code>cargo fmt</code> formatting, input validation on IPC boundaries (<code>validate_dimensions()</code>, <code>validate_shell_path()</code>, <code>validate_write_path()</code>)</li>
+</ul>
+<p class="md-empty-line"></p>
+<h2>Commit Message Generation (In-App)</h2>
+<p class="md-empty-line"></p>
+<p>The AI commit message prompt lives in <code>src/services/openai-service.ts</code> (the <code>SYSTEM_PROMPT</code> constant). Changes to commit message style/format should be made there, not in external config. Uses OpenAI <code>gpt-5-nano</code> with <code>reasoning_effort: 'low'</code>. Large diffs use a two-tier batching strategy (summarise batches → final message).</p>",
+  "real/CONTRIBUTING.md": "<h1>Contributing to Cosmos Terminal</h1>
+<p class="md-empty-line"></p>
+<p>Thanks for your interest in contributing! Here's how to get started.</p>
+<p class="md-empty-line"></p>
+<h2>Prerequisites</h2>
+<p class="md-empty-line"></p>
+<ul>
+<li><a href="https://nodejs.org/" target="_blank" rel="noopener noreferrer">Node.js</a> v18+</li>
+<li><a href="https://www.rust-lang.org/tools/install" target="_blank" rel="noopener noreferrer">Rust</a> (stable)</li>
+<li><a href="https://v2.tauri.app/start/prerequisites/" target="_blank" rel="noopener noreferrer">Tauri v2 prerequisites</a> for your platform</li>
+</ul>
+<p class="md-empty-line"></p>
+<h2>Setup</h2>
+<p class="md-empty-line"></p>
+<pre><code class="language-bash">git clone https://github.com/user/cosmos-terminal.git
+cd cosmos-terminal
+npm install
+npm run tauri dev
+</code></pre>
+<p class="md-empty-line"></p>
+<h2>Project Structure</h2>
+<p class="md-empty-line"></p>
+<pre><code>src/                  # Frontend (TypeScript + xterm.js)
+  components/         # UI components
+  services/           # PTY, settings, git, OpenAI services
+  state/              # Centralised state management
+  styles/             # CSS stylesheets
+  layout/             # Pane tree layout logic
+
+src-tauri/            # Backend (Rust + Tauri v2)
+  src/
+    commands/          # Tauri IPC command handlers
+    pty/               # PTY session management
+</code></pre>
+<p class="md-empty-line"></p>
+<h2>Making Changes</h2>
+<p class="md-empty-line"></p>
+<ol>
+<li>Fork the repo and create a branch from <code>main</code></li>
+<li>Make your changes</li>
+<li>Run <code>npx tsc --noEmit</code> to check for type errors</li>
+<li>Run <code>cargo clippy</code> in <code>src-tauri/</code> to check for Rust warnings</li>
+<li>Test your changes with <code>npm run tauri dev</code></li>
+<li>Submit a pull request</li>
+</ol>
+<p class="md-empty-line"></p>
+<h2>Code Style</h2>
+<p class="md-empty-line"></p>
+<ul>
+<li><strong>TypeScript</strong>: Strict mode with <code>noUnusedLocals</code> and <code>noUnusedParameters</code> enabled</li>
+<li><strong>Rust</strong>: Standard formatting via <code>cargo fmt</code>, linting via <code>cargo clippy</code></li>
+<li><strong>CSS</strong>: One file per component, BEM-style class naming with <code>git-</code>, <code>pane-</code>, <code>settings-</code> prefixes</li>
+<li><strong>Commits</strong>: <a href="https://www.conventionalcommits.org/" target="_blank" rel="noopener noreferrer">Conventional commits</a> (<code>feat:</code>, <code>fix:</code>, <code>refactor:</code>, etc.)</li>
+</ul>
+<p class="md-empty-line"></p>
+<h2>Reporting Issues</h2>
+<p class="md-empty-line"></p>
+<ul>
+<li>Search existing issues before creating a new one</li>
+<li>Include steps to reproduce, expected behaviour, and actual behaviour</li>
+<li>Include your OS and app version</li>
+</ul>
+<p class="md-empty-line"></p>
+<h2>License</h2>
+<p class="md-empty-line"></p>
+<p>By contributing, you agree that your contributions will be licensed under the MIT License.</p>",
+}
+`;

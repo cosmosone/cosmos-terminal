@@ -21,6 +21,7 @@ export interface Project {
 export interface Session {
   id: string;
   title: string;
+  agentCommand?: string;
   paneTree: PaneNode;
   activePaneId: string | null;
   hasActivity: boolean;

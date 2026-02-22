@@ -117,7 +117,7 @@ export class SplitContainer {
 
         // For restored agent sessions, register the initial command so the
         // terminal automatically runs it on mount (e.g. "gemini -y" for Gemini).
-        const agentCmd = getAgentCommand(session.title);
+        const agentCmd = getAgentCommand(session.agentCommand, session.title);
         if (agentCmd) {
           setInitialCommand(paneId, agentCmd);
         }

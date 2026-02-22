@@ -19,8 +19,9 @@ const SESSION_ICON_MAP: Record<string, (size?: number) => string> = Object.fromE
   AGENT_DEFINITIONS.map((a) => [a.command, a.icon]),
 );
 
-function sessionIcon(title: string, size?: number): string {
-  const iconFn = SESSION_ICON_MAP[title.toLowerCase()] ?? terminalIcon;
+function sessionIcon(agentCommand: string | undefined, title: string, size?: number): string {
+  const key = agentCommand ?? title.toLowerCase();
+  const iconFn = SESSION_ICON_MAP[key] ?? terminalIcon;
   return iconFn(size);
 }
 
@@ -44,7 +45,7 @@ export function initSessionTabBar(onTabChange: () => void): void {
     btn.title = `New ${agent.label} session`;
     btn.addEventListener('click', () => {
       logger.info('session', `Add ${agent.label} session via tab bar`, { projectId: project.id });
-      const session = addSession(project.id, { title: agent.label });
+      const session = addSession(project.id, { title: agent.label, agentCommand: agent.command });
       setInitialCommand((session.paneTree as PaneLeaf).paneId, agent.initialCmd ?? agent.command);
       onTabChange();
     });
@@ -124,7 +125,7 @@ export function initSessionTabBar(onTabChange: () => void): void {
         className: `session-tab${isActive ? ' active' : ''}`,
       });
       const iconEl = createElement('span', { className: 'session-tab-icon' });
-      iconEl.innerHTML = sessionIcon(session.title, 11);
+      iconEl.innerHTML = sessionIcon(session.agentCommand, session.title, 11);
       tab.appendChild(iconEl);
 
       const tabLabel = createElement('span', { className: 'tab-label' });

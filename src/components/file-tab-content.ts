@@ -4,7 +4,8 @@ import { readTextFile, writeTextFile, getFileMtime } from '../services/fs-servic
 import { showContextMenu } from './context-menu';
 import { showConfirmDialog } from './confirm-dialog';
 import { getGrammar } from '../highlight/languages/index';
-import { escapeHtml, tokenize, tokensToHtml } from '../highlight/tokenizer';
+import { tokenize, tokensToHtml } from '../highlight/tokenizer';
+import { renderMarkdownCached } from '../services/markdown-renderer';
 import { debounce } from '../utils/debounce';
 import type { AppState, FileTab, Project } from '../state/types';
 import { createElement, clearChildren, $ } from '../utils/dom';
@@ -12,287 +13,6 @@ import { createFindController, type RenderMode } from './find-in-document';
 
 export interface FileTabContentApi {
   openSearch(): void;
-}
-
-interface ListItem {
-  indent: number;
-  ordered: boolean;
-  content: string;
-  spaceBefore?: boolean;
-}
-
-const LIST_LINE_RE = /^(\s*)([-*]|\d+\.)\s+(.+)$/;
-
-/** Create a ListItem from a LIST_LINE_RE match. */
-function parseListMatch(m: RegExpMatchArray, spaceBefore?: boolean): ListItem {
-  const item: ListItem = {
-    indent: m[1].length,
-    ordered: /^\d+\.$/.test(m[2]),
-    content: m[3],
-  };
-  if (spaceBefore) item.spaceBefore = true;
-  return item;
-}
-
-/** Build nested HTML lists from parsed list items. */
-function buildNestedList(items: ListItem[]): string {
-  let html = '';
-  const stack: { indent: number; tag: 'ol' | 'ul' }[] = [];
-
-  for (const item of items) {
-    const tag = item.ordered ? 'ol' : 'ul';
-
-    // Close deeper nesting levels when returning to a shallower indent
-    while (stack.length > 0 && stack[stack.length - 1].indent > item.indent) {
-      const closed = stack.pop()!;
-      html += `</li></${closed.tag}>`;
-    }
-
-    if (stack.length === 0 || stack[stack.length - 1].indent < item.indent) {
-      html += `<${tag}>`;
-      stack.push({ indent: item.indent, tag });
-    } else {
-      html += '</li>';
-      // If list type changed at the same indent, close and reopen
-      const cur = stack[stack.length - 1];
-      if (cur.tag !== tag) {
-        html += `</${cur.tag}><${tag}>`;
-        cur.tag = tag;
-      }
-    }
-
-    const cls = item.spaceBefore ? ' class="md-list-spaced"' : '';
-    html += `<li${cls}>${item.content}`;
-  }
-
-  while (stack.length > 0) {
-    const closed = stack.pop()!;
-    html += `</li></${closed.tag}>`;
-  }
-
-  return html;
-}
-
-/** Skip blank lines starting at index `from`, returning the next non-blank index. */
-function skipBlankLines(lines: string[], from: number): number {
-  let j = from;
-  while (j < lines.length && lines[j].trim() === '') j++;
-  return j;
-}
-
-/** Convert markdown list lines (including nested) into HTML lists. */
-function renderLists(html: string): string {
-  const lines = html.split('\n');
-  const result: string[] = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const firstMatch = lines[i].match(LIST_LINE_RE);
-    if (!firstMatch) {
-      result.push(lines[i]);
-      i++;
-      continue;
-    }
-
-    const items: ListItem[] = [parseListMatch(firstMatch)];
-    i++;
-
-    while (i < lines.length) {
-      const line = lines[i];
-      const m = line.match(LIST_LINE_RE);
-      if (m) {
-        items.push(parseListMatch(m));
-        i++;
-      } else if (line.trim() === '') {
-        // Blank line -- peek past consecutive blanks for more list items
-        const j = skipBlankLines(lines, i + 1);
-        const next = j < lines.length ? lines[j].match(LIST_LINE_RE) : null;
-        if (next) {
-          items.push(parseListMatch(next, true));
-          i = j + 1;
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-
-    result.push(buildNestedList(items));
-  }
-
-  return result.join('\n');
-}
-
-type TableAlign = 'left' | 'center' | 'right' | null;
-
-/** Check if a line looks like a markdown table row (starts and ends with |). */
-function isTableRow(line: string): boolean {
-  const t = line.trim();
-  return t.length > 1 && t[0] === '|' && t[t.length - 1] === '|';
-}
-
-/** Split a table row into its raw cell strings (outer pipes removed). */
-function splitRowCells(line: string): string[] {
-  return line.trim().slice(1, -1).split('|');
-}
-
-/** Check if a line is a table separator (| --- | --- |). */
-function isTableSeparator(line: string): boolean {
-  if (!isTableRow(line)) return false;
-  const cells = splitRowCells(line);
-  return cells.length > 0 && cells.every((c) => /^\s*:?-+:?\s*$/.test(c));
-}
-
-/** Extract trimmed cell contents from a table row. */
-function parseTableCells(line: string): string[] {
-  return splitRowCells(line).map((c) => c.trim());
-}
-
-/** Parse alignment hints from a separator row. */
-function parseAlignments(line: string): TableAlign[] {
-  return splitRowCells(line).map((c) => {
-    const s = c.trim();
-    const left = s.startsWith(':');
-    const right = s.endsWith(':');
-    if (left && right) return 'center';
-    if (right) return 'right';
-    return left ? 'left' : null;
-  });
-}
-
-/** Build an inline style attribute for a table cell alignment (empty string if none). */
-function alignAttr(align: TableAlign): string {
-  return align ? ` style="text-align:${align}"` : '';
-}
-
-/** Convert markdown table blocks into HTML tables. */
-function renderTables(html: string): string {
-  const lines = html.split('\n');
-  const result: string[] = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    if (i + 1 < lines.length && isTableRow(lines[i]) && isTableSeparator(lines[i + 1])) {
-      const headers = parseTableCells(lines[i]);
-      const aligns = parseAlignments(lines[i + 1]);
-      i += 2;
-
-      let table = '<table class="md-table"><thead><tr>';
-      for (let c = 0; c < headers.length; c++) {
-        table += `<th${alignAttr(aligns[c])}>${headers[c]}</th>`;
-      }
-      table += '</tr></thead><tbody>';
-
-      while (i < lines.length && isTableRow(lines[i])) {
-        const cells = parseTableCells(lines[i]);
-        table += '<tr>';
-        for (let c = 0; c < headers.length; c++) {
-          table += `<td${alignAttr(aligns[c])}>${c < cells.length ? cells[c] : ''}</td>`;
-        }
-        table += '</tr>';
-        i++;
-      }
-
-      table += '</tbody></table>';
-      result.push(table);
-    } else {
-      result.push(lines[i]);
-      i++;
-    }
-  }
-
-  return result.join('\n');
-}
-
-// Precompiled regexes for cleaning up paragraph/br artifacts around block elements
-const BLOCK_ELS = 'h[1-6]|pre|blockquote|hr|li|ol|ul|table';
-const RE_P_OPEN_BEFORE_BLOCK = new RegExp(`<p>\\s*<(${BLOCK_ELS})`, 'g');
-const RE_P_CLOSE_AFTER_BLOCK = new RegExp(`</(${BLOCK_ELS})>\\s*</p>`, 'g');
-const RE_BR_BEFORE_BLOCK = new RegExp(`<br>\\s*<(${BLOCK_ELS})`, 'g');
-const RE_BR_AFTER_BLOCK = new RegExp(`</(${BLOCK_ELS})>\\s*<br>`, 'g');
-
-function renderMarkdown(source: string): string {
-  const normalised = source.replace(/\r\n?/g, '\n');
-  const escaped = escapeHtml(normalised);
-  let html = escaped;
-
-  // Extract code blocks and inline code into placeholders so that subsequent
-  // transformations (headings, bold, italic, etc.) never touch code content.
-  const placeholders: string[] = [];
-  function addPlaceholder(content: string): string {
-    const index = placeholders.length;
-    placeholders.push(content);
-    return `\x00PH${index}\x00`;
-  }
-
-  // Fenced code blocks (```)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) =>
-    addPlaceholder(`<pre class="md-code-block"><code>${code}</code></pre>`),
-  );
-
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, (_m, code) =>
-    addPlaceholder(`<code class="md-inline-code">${code}</code>`),
-  );
-
-  // Headings (h1-h6)
-  html = html.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
-  html = html.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>');
-  html = html.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
-  html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
-
-  // Bold and italic
-  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-  // Blockquotes
-  html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
-
-  // Lists (ordered and unordered, with nesting support)
-  html = renderLists(html);
-
-  // Tables (GFM-style: header | separator | rows)
-  html = renderTables(html);
-
-  // Links: [text](url) — only allow http(s) and mailto protocols
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
-    const decoded = href.replace(/&amp;/g, '&');
-    if (/^https?:|^mailto:/i.test(decoded)) {
-      return `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
-    }
-    return `${text} (${href})`;
-  });
-
-  // Horizontal rules
-  html = html.replace(/^---+$/gm, '<hr>');
-
-  // Paragraphs: double newlines become paragraph breaks
-  html = html.replace(/\n\n/g, '</p><p>');
-
-  // Single newlines become visible line breaks
-  html = html.replace(/\n/g, '<br>\n');
-
-  html = `<p>${html}</p>`;
-
-  // Clean up empty paragraphs around block elements
-  html = html.replace(RE_P_OPEN_BEFORE_BLOCK, '<$1');
-  html = html.replace(RE_P_CLOSE_AFTER_BLOCK, '</$1>');
-  html = html.replace(/<p>\s*<hr>\s*<\/p>/g, '<hr>');
-  html = html.replace(/<p><\/p>/g, '');
-
-  // Strip stray <br> adjacent to block elements
-  html = html.replace(RE_BR_BEFORE_BLOCK, '<$1');
-  html = html.replace(RE_BR_AFTER_BLOCK, '</$1>');
-  html = html.replace(/<br>\s*<\/(p)>/g, '</$1>');
-
-  // Restore placeholders
-  html = html.replace(/\x00PH(\d+)\x00/g, (_m, idx) => placeholders[Number(idx)]);
-
-  return html;
 }
 
 /** Look up the active project and its active tab from state. */
@@ -452,7 +172,7 @@ export function initFileTabContent(): FileTabContentApi {
     if (tab.fileType === 'markdown' && !tab.editing) {
       currentMode = 'markdown';
       const mdView = createElement('div', { className: 'file-tab-markdown' });
-      mdView.innerHTML = renderMarkdown(currentContent);
+      mdView.innerHTML = renderMarkdownCached(tab.filePath, currentContent, lastMtime);
       content.appendChild(mdView);
 
       content.addEventListener('contextmenu', (e) => {
@@ -468,7 +188,9 @@ export function initFileTabContent(): FileTabContentApi {
         ]);
       });
     } else {
-      const grammar = getGrammar(tab.fileType);
+      // Markdown editing uses the plain textarea path to avoid overlay
+      // hit-testing drift between textarea and syntax backdrop.
+      const grammar = tab.fileType === 'markdown' ? null : getGrammar(tab.fileType);
 
       if (grammar) {
         currentMode = 'highlighted-editor';
@@ -512,6 +234,7 @@ export function initFileTabContent(): FileTabContentApi {
       } else {
         currentMode = 'plain-editor';
         const textarea = createElement('textarea', { className: 'file-tab-editor' }) as HTMLTextAreaElement;
+        textarea.spellcheck = false;
         textarea.value = tab.dirty ? editBuffer : currentContent;
         textarea.addEventListener('input', () => {
           editBuffer = textarea.value;

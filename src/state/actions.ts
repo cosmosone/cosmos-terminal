@@ -121,12 +121,13 @@ function updateFileTab(projectId: string, tabId: string, updater: (t: FileTab) =
   }));
 }
 
-export function addSession(projectId: string, opts?: { title?: string }): Session {
+export function addSession(projectId: string, opts?: { title?: string; agentCommand?: string }): Session {
   logger.info('session', 'addSession', { projectId });
   const paneId = genId();
   const session: Session = {
     id: genId(),
     title: opts?.title ?? 'Terminal',
+    agentCommand: opts?.agentCommand,
     paneTree: { type: 'leaf', paneId },
     activePaneId: paneId,
     hasActivity: false,

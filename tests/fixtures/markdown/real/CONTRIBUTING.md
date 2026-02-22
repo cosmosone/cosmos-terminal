@@ -17,11 +17,6 @@ npm install
 npm run tauri dev
 ```
 
-### Dependency Security Note
-
-- `package.json` uses an `overrides` rule to pin `minimatch` to a patched version across transitive dependencies.
-- Keep this override in place unless the upstream dependency chain is updated and verified with `npm audit`.
-
 ## Project Structure
 
 ```

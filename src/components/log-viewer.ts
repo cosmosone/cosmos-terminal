@@ -182,6 +182,13 @@ export function initLogViewer(): void {
     }
   });
 
+  // Re-render when the log viewer becomes visible
+  new MutationObserver(() => {
+    if (!container.classList.contains('hidden')) {
+      renderEntries();
+    }
+  }).observe(container, { attributes: true, attributeFilter: ['class'] });
+
   // Initial render
   renderEntries();
 }
