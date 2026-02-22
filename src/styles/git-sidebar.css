@@ -188,7 +188,7 @@
 
 .git-section-arrow {
   display: inline-block;
-  font-size: 10px;
+  font-size: 8px;
   transition: transform var(--transition-fast);
 }
 

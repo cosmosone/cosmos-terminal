@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 RUST_ROOT = ROOT / "src-tauri"
-LOG_ROOT = ROOT / "logs" / "build-test"
+LOG_ROOT = ROOT / "logs" / "test"
 
 # ANSI palette (minimal + readable)
 RESET = "\033[0m"

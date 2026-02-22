@@ -69,12 +69,12 @@ export function renderProject(project: Project, gs: ProjectGitState, expanded: b
       err.textContent = gs.error;
       wrap.appendChild(err);
     } else if (gs.status) {
+      wrap.appendChild(renderCommitArea(project, gs, deps));
       if (hasFileChanges) {
-        wrap.appendChild(renderCommitArea(project, gs, deps));
         wrap.appendChild(renderChangesSection(project, gs.status.files));
       }
       if (ahead > 0) {
-        wrap.appendChild(renderPushArea(project, ahead, gs.status.committedFiles, deps));
+        wrap.appendChild(renderPushArea(project, gs.status.committedFiles));
       }
     }
 
@@ -213,21 +213,8 @@ function renderCollapsibleFileSection(
   return wrap;
 }
 
-function renderPushArea(project: Project, ahead: number, committedFiles: GitFileStatus[], deps: GitProjectRenderDeps): HTMLElement {
+function renderPushArea(project: Project, committedFiles: GitFileStatus[]): HTMLElement {
   const area = createElement('div', { className: 'git-push-area' });
-
-  const row = createElement('div', { className: 'git-push-row' });
-  const msg = createElement('span', { className: 'git-push-message' });
-  msg.textContent = `${ahead} unpushed commit${ahead === 1 ? '' : 's'}`;
-  row.appendChild(msg);
-
-  const pushBtn = createElement('button', { className: 'git-commit-btn secondary' });
-  pushBtn.textContent = 'Push';
-  pushBtn.addEventListener('click', () => {
-    void deps.handlers.onPush(project);
-  });
-  row.appendChild(pushBtn);
-  area.appendChild(row);
 
   if (committedFiles.length > 0) {
     area.appendChild(renderCollapsibleFileSection(project.id, `Committed Files (${committedFiles.length})`, committedFiles, committedFilesExpanded, false));

@@ -108,10 +108,10 @@ cd src-tauri &#x26;&#x26; cargo fmt --check            # Rust format check
 <p class="md-empty-line"></p>
 <p>After implementing any plan, always run:</p>
 <p class="md-empty-line"></p>
-<pre><code class="language-bash">python scripts/build-test.py
+<pre><code class="language-bash">python scripts/test.py
 </code></pre>
 <p class="md-empty-line"></p>
-<p>If any step fails, continue fixing issues and re-run <code>build-test.py</code> until the full pipeline passes with zero failures.</p>
+<p>If any step fails, continue fixing issues and re-run <code>test.py</code> until the full pipeline passes with zero failures.</p>
 <p class="md-empty-line"></p>
 <h2>Architecture</h2>
 <p class="md-empty-line"></p>

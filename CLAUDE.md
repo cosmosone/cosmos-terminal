@@ -23,10 +23,10 @@ No frontend test framework. Verification is `tsc --noEmit` + manual testing via 
 After implementing any plan, always run:
 
 ```bash
-python scripts/build-test.py
+python scripts/test.py
 ```
 
-If any step fails, continue fixing issues and re-run `build-test.py` until the full pipeline passes with zero failures.
+If any step fails, continue fixing issues and re-run `test.py` until the full pipeline passes with zero failures.
 
 ## Architecture
 

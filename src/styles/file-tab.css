@@ -71,6 +71,10 @@
   min-height: 0;
 }
 
+.file-tab-content:has(.file-tab-editor) {
+  overflow: hidden;
+}
+
 .file-tab-content::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -108,6 +112,24 @@
 
 .file-tab-editor:focus {
   outline: none;
+}
+
+.file-tab-editor::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.file-tab-editor::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.file-tab-editor::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.file-tab-editor::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 /* ===== Markdown viewer ===== */
