@@ -419,3 +419,11 @@
   color: var(--danger);
   background: rgba(247, 118, 142, 0.1);
 }
+
+/* ── Version footer ── */
+.settings-version {
+  text-align: center;
+  padding: 12px 0 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}

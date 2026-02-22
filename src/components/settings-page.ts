@@ -1,3 +1,4 @@
+import { getVersion } from '@tauri-apps/api/app';
 import { store } from '../state/store';
 import { toggleDebugLogging, updateSettings, toggleSettingsView } from '../state/actions';
 import { saveSettings, TERMINAL_FONT_PRESETS, UI_FONT_PRESETS, DEFAULT_KEYBINDINGS, DEFAULT_FONT_SETTINGS } from '../services/settings-service';
@@ -234,6 +235,11 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     log.content.appendChild(viewerRow);
 
     inner.appendChild(log.wrapper);
+
+    // ── Version footer ──
+    const versionFooter = createElement('div', { className: 'settings-version' });
+    getVersion().then((v) => { versionFooter.textContent = `v${v}`; });
+    inner.appendChild(versionFooter);
 
     // Wire up expand/collapse all
     expandAllBtn.addEventListener('click', () => {
