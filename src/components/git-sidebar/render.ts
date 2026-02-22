@@ -3,6 +3,7 @@ import { STATUS_LETTERS, relativeTime } from './shared';
 import type { Project, ProjectGitState, GitFileStatus, GitLogEntry } from '../../state/types';
 
 const committedFilesExpanded = new Map<string, boolean>();
+const changesExpanded = new Map<string, boolean>();
 
 export interface GitSidebarRenderHandlers {
   onProjectRowClick(project: Project, canExpand: boolean): void;
@@ -70,12 +71,9 @@ export function renderProject(project: Project, gs: ProjectGitState, expanded: b
     } else if (gs.status) {
       if (hasFileChanges) {
         wrap.appendChild(renderCommitArea(project, gs, deps));
-        const fileList = createElement('div', { className: 'git-file-list' });
-        for (const file of gs.status.files) {
-          fileList.appendChild(renderFile(file));
-        }
-        wrap.appendChild(fileList);
-      } else if (ahead > 0) {
+        wrap.appendChild(renderChangesSection(project, gs.status.files));
+      }
+      if (ahead > 0) {
         wrap.appendChild(renderPushArea(project, ahead, gs.status.committedFiles, deps));
       }
     }
@@ -174,6 +172,47 @@ function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjec
   return area;
 }
 
+function renderChangesSection(project: Project, files: GitFileStatus[]): HTMLElement {
+  return renderCollapsibleFileSection(project.id, `Changes (${files.length})`, files, changesExpanded, true);
+}
+
+function renderCollapsibleFileSection(
+  projectId: string,
+  title: string,
+  files: GitFileStatus[],
+  expandedState: Map<string, boolean>,
+  defaultExpanded: boolean,
+): HTMLElement {
+  const wrap = createElement('div');
+  const expanded = expandedState.get(projectId) ?? defaultExpanded;
+
+  const header = createElement('div', { className: 'git-section-header' });
+  const arrow = createElement('span', { className: `git-section-arrow${expanded ? ' expanded' : ''}` });
+  arrow.textContent = '\u25B6';
+  header.appendChild(arrow);
+
+  const label = createElement('span');
+  label.textContent = title;
+  header.appendChild(label);
+
+  const fileList = createElement('div', { className: 'git-file-list' });
+  fileList.style.display = expanded ? '' : 'none';
+  for (const file of files) {
+    fileList.appendChild(renderFile(file));
+  }
+
+  header.addEventListener('click', () => {
+    const nowExpanded = !(expandedState.get(projectId) ?? defaultExpanded);
+    expandedState.set(projectId, nowExpanded);
+    arrow.className = `git-section-arrow${nowExpanded ? ' expanded' : ''}`;
+    fileList.style.display = nowExpanded ? '' : 'none';
+  });
+
+  wrap.appendChild(header);
+  wrap.appendChild(fileList);
+  return wrap;
+}
+
 function renderPushArea(project: Project, ahead: number, committedFiles: GitFileStatus[], deps: GitProjectRenderDeps): HTMLElement {
   const area = createElement('div', { className: 'git-push-area' });
 
@@ -191,32 +230,7 @@ function renderPushArea(project: Project, ahead: number, committedFiles: GitFile
   area.appendChild(row);
 
   if (committedFiles.length > 0) {
-    const expanded = committedFilesExpanded.get(project.id) ?? false;
-
-    const header = createElement('div', { className: 'git-section-header' });
-    const arrow = createElement('span', { className: `git-section-arrow${expanded ? '' : ' collapsed'}` });
-    arrow.textContent = '\u25B6';
-    header.appendChild(arrow);
-
-    const label = createElement('span');
-    label.textContent = 'Committed Files';
-    header.appendChild(label);
-
-    const fileList = createElement('div', { className: 'git-file-list' });
-    fileList.style.display = expanded ? '' : 'none';
-    for (const file of committedFiles) {
-      fileList.appendChild(renderFile(file));
-    }
-
-    header.addEventListener('click', () => {
-      const nowExpanded = !(committedFilesExpanded.get(project.id) ?? false);
-      committedFilesExpanded.set(project.id, nowExpanded);
-      arrow.className = `git-section-arrow${nowExpanded ? '' : ' collapsed'}`;
-      fileList.style.display = nowExpanded ? '' : 'none';
-    });
-
-    area.appendChild(header);
-    area.appendChild(fileList);
+    area.appendChild(renderCollapsibleFileSection(project.id, `Committed Files (${committedFiles.length})`, committedFiles, committedFilesExpanded, false));
   }
 
   return area;

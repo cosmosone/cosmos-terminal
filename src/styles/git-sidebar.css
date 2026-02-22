@@ -192,8 +192,8 @@
   transition: transform var(--transition-fast);
 }
 
-.git-section-arrow.collapsed {
-  transform: rotate(-90deg);
+.git-section-arrow.expanded {
+  transform: rotate(90deg);
 }
 
 /* ===== Project Row ===== */

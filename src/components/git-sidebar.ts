@@ -151,8 +151,8 @@ export function initGitSidebar(onLayoutChange: () => void): void {
 
     // --- Graph header ---
     clearChildren(graphHeaderEl);
-    const graphArrow = createElement('span', { className: `git-section-arrow${gitSidebar.graphExpanded ? '' : ' collapsed'}` });
-    graphArrow.textContent = '\u25BC';
+    const graphArrow = createElement('span', { className: `git-section-arrow${gitSidebar.graphExpanded ? ' expanded' : ''}` });
+    graphArrow.textContent = '\u25B6';
     const graphLabel = createElement('span');
     const activeId = gitSidebar.activeProjectId || gitProjects[0]?.id;
     const activeProject = activeId ? projects.find((p) => p.id === activeId) : null;
