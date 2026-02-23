@@ -78,7 +78,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingConfig = {
   searchFileBrowser: 'Ctrl+Shift+f',
   closeTerminalTab: 'Alt+l',
   closeProjectTab: 'Alt+o',
-  scrollToBottom: 'Alt+m',
+  scrollToBottom: 'Alt+b',
   findInDocument: 'Ctrl+f',
 };
 

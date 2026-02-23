@@ -150,6 +150,8 @@ export class TerminalPane {
   private lastResizeTime = 0;
   private pendingOutput: Uint8Array[] = [];
   private outputRafId = 0;
+  /** Number of terminal.write() callbacks still pending — suppresses onScroll during async processing. */
+  private writesInFlight = 0;
   private scrollBtn: HTMLElement;
   /** Persistent auto-scroll intent — true when the user is following output at the bottom. */
   private autoScroll = true;
@@ -381,6 +383,10 @@ export class TerminalPane {
       // Ignore during fit() — terminal.resize() temporarily disrupts
       // viewport position; the fit() method restores scroll state itself.
       if (this.fitting) return;
+      // Ignore during async terminal.write() processing — xterm yields
+      // across frames for large writes, causing transient viewportY < baseY
+      // that would incorrectly flip autoScroll to false.
+      if (this.writesInFlight > 0) return;
 
       const buf = this.terminal.buffer.active;
       const isAtBottom = buf.viewportY >= buf.baseY;
@@ -757,7 +763,15 @@ export class TerminalPane {
       // overlap, baseY increases from the first write but viewportY hasn't
       // caught up, causing the second flush to think the user scrolled up.
       const shouldScroll = this.autoScroll;
+      if (!shouldScroll) {
+        logger.debug('pty', 'flushOutput: writing without auto-scroll', {
+          paneId: this.paneId,
+          bytes: data.length,
+        });
+      }
+      this.writesInFlight++;
       this.terminal.write(data, () => {
+        this.writesInFlight--;
         if (this.disposed) return;
         if (shouldScroll) {
           this.syncScrollToBottom();
@@ -893,7 +907,8 @@ export class TerminalPane {
   /** Restore auto-scroll intent, scroll to bottom, and hide the scroll button.
    *  After a display:none → visible transition the viewport may not have
    *  reflowed yet, so scrollToBottom() can silently fail.  When that happens,
-   *  schedule a single RAF retry to catch the deferred layout update.
+   *  retry across up to two animation frames to catch deferred layout updates
+   *  (WebView2 can batch reflows across frames).
    */
   private syncScrollToBottom(): void {
     this.autoScroll = true;
@@ -902,9 +917,22 @@ export class TerminalPane {
 
     const buf = this.terminal.buffer.active;
     if (buf.viewportY < buf.baseY && !this.isHidden) {
+      logger.debug('pty', 'syncScrollToBottom: initial scroll incomplete, retrying', {
+        paneId: this.paneId,
+        viewportY: buf.viewportY,
+        baseY: buf.baseY,
+      });
+      // Double RAF: after display:none → visible, WebView2 can batch reflows
+      // across frames, so the first retry may still find the viewport behind.
       requestAnimationFrame(() => {
-        if (!this.disposed && this.autoScroll) {
-          this.terminal.scrollToBottom();
+        if (this.disposed || !this.autoScroll) return;
+        this.terminal.scrollToBottom();
+        const buf2 = this.terminal.buffer.active;
+        if (buf2.viewportY < buf2.baseY && !this.isHidden) {
+          requestAnimationFrame(() => {
+            if (this.disposed || !this.autoScroll) return;
+            this.terminal.scrollToBottom();
+          });
         }
       });
     }
