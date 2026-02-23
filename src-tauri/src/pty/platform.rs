@@ -5,6 +5,11 @@ pub fn default_shell() -> String {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
+        // Validate SHELL through the same allowlist used for user-supplied paths
+        // to prevent untrusted env vars from selecting arbitrary binaries.
+        std::env::var("SHELL")
+            .ok()
+            .and_then(|s| super::shell::normalize_shell_path(Some(s)).ok().flatten())
+            .unwrap_or_else(|| "/bin/zsh".to_string())
     }
 }

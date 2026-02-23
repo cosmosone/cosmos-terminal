@@ -121,7 +121,6 @@ export function initFileTabContent(): FileTabContentApi {
         currentContent = editBuffer;
       }
       setFileTabDirty(projectId, tabId, false);
-      setFileTabEditing(projectId, tabId, false);
     } catch (err: unknown) {
       console.error('Failed to save file:', err);
     }
@@ -295,7 +294,7 @@ export function initFileTabContent(): FileTabContentApi {
         const wrap = createElement('div', { className: 'highlighted-editor-wrap' });
 
         const backdrop = createElement('pre', { className: 'highlighted-editor-backdrop' });
-        const code = document.createElement('code');
+        const code = createElement('code');
         backdrop.appendChild(code);
 
         const textarea = createElement('textarea', { className: 'highlighted-editor-textarea' }) as HTMLTextAreaElement;
