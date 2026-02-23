@@ -40,6 +40,7 @@ pub struct GitLogEntry {
     pub id: String,
     pub full_id: String,
     pub message: String,
+    pub body: String,
     pub author: String,
     pub author_email: String,
     pub timestamp: i64,

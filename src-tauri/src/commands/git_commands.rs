@@ -194,12 +194,13 @@ fn git_log_sync(path: &str, limit: Option<usize>) -> Result<Vec<GitLogEntry>, St
         let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
         let full_id = oid.to_string();
         let id = full_id[..7.min(full_id.len())].to_string();
-        let message = commit
-            .message()
+        let raw_message = commit.message().unwrap_or("");
+        let message = raw_message.lines().next().unwrap_or("").to_string();
+        let body = raw_message
+            .splitn(2, "\n\n")
+            .nth(1)
             .unwrap_or("")
-            .lines()
-            .next()
-            .unwrap_or("")
+            .trim()
             .to_string();
         let author = commit.author();
         let refs_list = ref_map.get(&oid).cloned().unwrap_or_default();
@@ -208,6 +209,7 @@ fn git_log_sync(path: &str, limit: Option<usize>) -> Result<Vec<GitLogEntry>, St
             id,
             full_id,
             message,
+            body,
             author: author.name().unwrap_or("").to_string(),
             author_email: author.email().unwrap_or("").to_string(),
             timestamp: commit.time().seconds(),

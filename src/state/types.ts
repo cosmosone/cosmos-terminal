@@ -122,6 +122,7 @@ export interface GitLogEntry {
   id: string;
   fullId: string;
   message: string;
+  body: string;
   author: string;
   authorEmail: string;
   timestamp: number;

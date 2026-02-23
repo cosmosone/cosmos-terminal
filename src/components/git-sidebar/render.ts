@@ -245,7 +245,27 @@ function renderLogEntry(entry: GitLogEntry): HTMLElement {
   time.textContent = relativeTime(entry.timestamp);
   meta.appendChild(time);
 
-  el.appendChild(meta);
+  if (entry.body) {
+    const moreBtn = createElement('button', { className: 'git-log-more-btn' });
+    moreBtn.textContent = 'More';
+    meta.appendChild(moreBtn);
+
+    el.appendChild(meta);
+
+    const bodyEl = createElement('div', { className: 'git-log-body' });
+    bodyEl.textContent = entry.body;
+    bodyEl.style.display = 'none';
+    el.appendChild(bodyEl);
+
+    moreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const visible = bodyEl.style.display !== 'none';
+      bodyEl.style.display = visible ? 'none' : '';
+      moreBtn.textContent = visible ? 'More' : 'Less';
+    });
+  } else {
+    el.appendChild(meta);
+  }
 
   if (entry.refsList.length > 0) {
     const refs = createElement('div', { className: 'git-log-refs' });
