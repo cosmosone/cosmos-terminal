@@ -1,78 +1,18 @@
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::commands::task::spawn_blocking_result;
 use crate::models::{DirEntry, DirectoryListing, FileContent, FileWriteResult};
+use crate::security::path_guard::{
+    canonicalize_existing_dir, canonicalize_existing_file, canonicalize_existing_path,
+    canonicalize_write_target,
+};
 use crate::IGNORED_DIRS;
 
-/// Reject paths that attempt to escape via symlink traversal or that target
-/// well-known system-critical locations.  This is a defense-in-depth measure;
-/// the primary trust boundary is the Tauri capability system.
-fn validate_write_path(path: &str) -> Result<(), String> {
-    let p = Path::new(path);
-
-    // Reject paths with ".." components (before canonicalization) to prevent
-    // TOCTOU races where the target is swapped between check and use.
-    for component in p.components() {
-        if matches!(component, std::path::Component::ParentDir) {
-            return Err("Path must not contain '..' components".to_string());
-        }
-    }
-
-    let canonical = canonicalize_for_write_target(p)?;
-    if is_system_critical_path(&canonical) {
-        return Err("Cannot modify system directories".to_string());
-    }
-
-    Ok(())
-}
-
-/// Resolve the target path for validation.
-/// Existing targets are canonicalized directly; new targets resolve via their parent.
-fn canonicalize_for_write_target(path: &Path) -> Result<PathBuf, String> {
-    if path.exists() {
-        return std::fs::canonicalize(path).map_err(|e| format!("Invalid path: {e}"));
-    }
-
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Path must include a parent directory".to_string())?;
-    let canonical_parent =
-        std::fs::canonicalize(parent).map_err(|e| format!("Invalid path: {e}"))?;
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| "Path must reference a file or directory name".to_string())?;
-    Ok(canonical_parent.join(file_name))
-}
-
-/// Block a small set of system-critical roots.
-fn is_system_critical_path(path: &Path) -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        let mut lower = path.to_string_lossy().to_lowercase().replace('/', "\\");
-        if let Some(stripped) = lower.strip_prefix("\\\\?\\") {
-            lower = stripped.to_string();
-        }
-        for prefix in [
-            "c:\\windows",
-            "c:\\program files",
-            "c:\\program files (x86)",
-            "c:\\programdata",
-        ] {
-            if lower == prefix || lower.starts_with(&format!("{prefix}\\")) {
-                return true;
-            }
-        }
-        false
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        [
-            "/bin", "/sbin", "/usr", "/etc", "/boot", "/lib", "/proc", "/sys",
-        ]
-        .iter()
-        .any(|prefix| path.starts_with(prefix))
-    }
+/// Reject paths that attempt to escape via symlink traversal or target
+/// well-known system-critical locations.
+fn validate_write_path(path: &str) -> Result<std::path::PathBuf, String> {
+    canonicalize_write_target(path)
 }
 
 /// Build a `DirEntry` from a `std::fs::DirEntry` and its pre-fetched metadata.
@@ -109,7 +49,9 @@ pub async fn list_directory(path: String) -> Result<DirectoryListing, String> {
 const MAX_DIR_ENTRIES: usize = 1000;
 
 fn list_directory_sync(path: &str) -> Result<DirectoryListing, String> {
-    let read_dir = std::fs::read_dir(path).map_err(|e| format!("Failed to read directory: {e}"))?;
+    let canonical_dir = canonicalize_existing_dir(path)?;
+    let read_dir =
+        std::fs::read_dir(&canonical_dir).map_err(|e| format!("Failed to read directory: {e}"))?;
 
     let mut dirs = Vec::new();
     let mut files = Vec::new();
@@ -159,17 +101,20 @@ pub async fn read_text_file(path: String, max_bytes: Option<u64>) -> Result<File
 }
 
 fn read_text_file_sync(path: &str, max_bytes: Option<u64>) -> Result<FileContent, String> {
+    let canonical_file = canonicalize_existing_file(path)?;
+
     // Clamp caller-provided limits to prevent unbounded memory allocations.
     let max = max_bytes
         .unwrap_or(DEFAULT_MAX_READ_BYTES)
         .min(MAX_ALLOWED_READ_BYTES);
-    let metadata =
-        std::fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {e}"))?;
+    let metadata = std::fs::metadata(&canonical_file)
+        .map_err(|e| format!("Failed to read file metadata: {e}"))?;
     let file_size = metadata.len();
     let truncated = file_size > max;
 
     let read_len = std::cmp::min(file_size, max) as usize;
-    let mut file = std::fs::File::open(path).map_err(|e| format!("Failed to open file: {e}"))?;
+    let mut file =
+        std::fs::File::open(&canonical_file).map_err(|e| format!("Failed to open file: {e}"))?;
     let mut buf = vec![0u8; read_len];
     file.read_exact(&mut buf)
         .map_err(|e| format!("Failed to read file: {e}"))?;
@@ -205,10 +150,11 @@ fn search_files_sync(root_path: &str, query: &str) -> Result<Vec<DirEntry>, Stri
         return Ok(Vec::new());
     }
 
+    let canonical_root = canonicalize_existing_dir(root_path)?;
     let query_lower = query.to_lowercase();
     let mut results = Vec::new();
     // Stack entries carry their depth to enforce MAX_SEARCH_DEPTH
-    let mut stack = vec![(std::path::PathBuf::from(root_path), 0usize)];
+    let mut stack = vec![(canonical_root, 0usize)];
 
     while let Some((dir, depth)) = stack.pop() {
         let read_dir = match std::fs::read_dir(&dir) {
@@ -222,6 +168,16 @@ fn search_files_sync(root_path: &str, query: &str) -> Result<Vec<DirEntry>, Stri
                 Err(_) => continue,
             };
 
+            let file_type = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+            // Never follow symlinked directories in recursive search:
+            // this avoids cycles and crossing trust boundaries.
+            if file_type.is_symlink() {
+                continue;
+            }
+
             let metadata = match entry.metadata() {
                 Ok(m) => m,
                 Err(_) => continue,
@@ -229,7 +185,7 @@ fn search_files_sync(root_path: &str, query: &str) -> Result<Vec<DirEntry>, Stri
 
             let name = entry.file_name().to_string_lossy().to_string();
 
-            if metadata.is_dir() {
+            if file_type.is_dir() {
                 if depth < MAX_SEARCH_DEPTH && !IGNORED_DIRS.contains(&name.as_str()) {
                     stack.push((entry.path(), depth + 1));
                 }
@@ -254,9 +210,8 @@ pub async fn show_in_explorer(path: String) -> Result<(), String> {
 }
 
 fn show_in_explorer_sync(path: &str) -> Result<(), String> {
-    // Canonicalize to resolve symlinks and ".." segments before passing to
-    // OS commands, preventing path traversal via crafted paths.
-    let canonical = std::fs::canonicalize(path).map_err(|e| format!("Invalid path: {e}"))?;
+    // Canonicalize before passing to OS commands.
+    let canonical = canonicalize_existing_path(path)?;
 
     #[cfg(target_os = "windows")]
     {
@@ -295,13 +250,13 @@ fn show_in_explorer_sync(path: &str) -> Result<(), String> {
 #[tauri::command]
 pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
     spawn_blocking_result(move || {
-        validate_write_path(&path)?;
-        std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))
+        let canonical = validate_write_path(&path)?;
+        std::fs::write(&canonical, content).map_err(|e| format!("Failed to write file: {e}"))
     })
     .await
 }
 
-fn get_file_mtime_millis(path: &str) -> Result<u64, String> {
+fn get_file_mtime_millis(path: &Path) -> Result<u64, String> {
     let modified = std::fs::metadata(path)
         .and_then(|m| m.modified())
         .map_err(|e| format!("Failed to read file mtime: {e}"))?;
@@ -318,8 +273,8 @@ pub async fn write_text_file_if_unmodified(
     expected_mtime: u64,
 ) -> Result<FileWriteResult, String> {
     spawn_blocking_result(move || {
-        validate_write_path(&path)?;
-        let current_mtime = get_file_mtime_millis(&path)?;
+        let canonical = validate_write_path(&path)?;
+        let current_mtime = get_file_mtime_millis(&canonical)?;
         if current_mtime != expected_mtime {
             return Ok(FileWriteResult {
                 written: false,
@@ -327,8 +282,8 @@ pub async fn write_text_file_if_unmodified(
             });
         }
 
-        std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))?;
-        let mtime = get_file_mtime_millis(&path).unwrap_or(current_mtime);
+        std::fs::write(&canonical, content).map_err(|e| format!("Failed to write file: {e}"))?;
+        let mtime = get_file_mtime_millis(&canonical).unwrap_or(current_mtime);
         Ok(FileWriteResult {
             written: true,
             mtime,
@@ -340,19 +295,19 @@ pub async fn write_text_file_if_unmodified(
 #[tauri::command]
 pub async fn delete_path(path: String) -> Result<(), String> {
     spawn_blocking_result(move || {
-        validate_write_path(&path)?;
-        let p = std::path::Path::new(&path);
-        if p.is_dir() {
+        let canonical = validate_write_path(&path)?;
+        if canonical.is_dir() {
             // Guard: refuse to recursively delete through a symlink, which
             // would destroy the *target* directory's contents.
-            let meta = std::fs::symlink_metadata(p)
+            let meta = std::fs::symlink_metadata(&canonical)
                 .map_err(|e| format!("Failed to read path metadata: {e}"))?;
             if meta.is_symlink() {
                 return Err("Cannot recursively delete a symlinked directory".to_string());
             }
-            std::fs::remove_dir_all(p).map_err(|e| format!("Failed to delete directory: {e}"))
+            std::fs::remove_dir_all(&canonical)
+                .map_err(|e| format!("Failed to delete directory: {e}"))
         } else {
-            std::fs::remove_file(p).map_err(|e| format!("Failed to delete file: {e}"))
+            std::fs::remove_file(&canonical).map_err(|e| format!("Failed to delete file: {e}"))
         }
     })
     .await
@@ -360,7 +315,11 @@ pub async fn delete_path(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn get_file_mtime(path: String) -> Result<u64, String> {
-    spawn_blocking_result(move || get_file_mtime_millis(&path)).await
+    spawn_blocking_result(move || {
+        let canonical = canonicalize_existing_path(&path)?;
+        get_file_mtime_millis(&canonical)
+    })
+    .await
 }
 
 #[cfg(test)]

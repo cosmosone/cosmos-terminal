@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -7,6 +7,7 @@ use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter};
 
+use crate::security::path_guard::canonicalize_existing_dir;
 use crate::IGNORED_DIRS;
 
 struct Inner {
@@ -39,10 +40,7 @@ impl FsWatcher {
         // Stop any existing watcher first
         self.unwatch();
 
-        let watch_path = PathBuf::from(path);
-        if !watch_path.is_dir() {
-            return Err(format!("Not a directory: {path}"));
-        }
+        let watch_path = canonicalize_existing_dir(path)?;
 
         let (tx, rx) = mpsc::channel();
         let mut debouncer = new_debouncer(Duration::from_millis(500), tx)

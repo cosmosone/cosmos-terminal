@@ -6,7 +6,7 @@
   "permissions": [
     "core:default",
     "dialog:allow-open",
-    "shell:allow-open",
+    "shell:default",
     "store:allow-load",
     "store:allow-get-store",
     "store:allow-get",

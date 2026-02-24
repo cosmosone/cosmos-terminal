@@ -1,6 +1,7 @@
 mod commands;
 mod models;
 mod pty;
+mod security;
 mod watcher;
 
 use commands::fs_commands;

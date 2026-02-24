@@ -4,6 +4,7 @@ use git2::{Repository, Sort, StatusOptions};
 
 use crate::commands::task::spawn_blocking_result;
 use crate::models::{GitCommitResult, GitFileStatus, GitLogEntry, GitPushResult, GitStatusResult};
+use crate::security::path_guard::canonicalize_existing_path;
 
 const DEFAULT_GIT_LOG_LIMIT: usize = 50;
 const MAX_GIT_LOG_LIMIT: usize = 500;
@@ -42,7 +43,8 @@ fn short_id(oid: &git2::Oid) -> String {
 }
 
 fn open_repo(path: &str) -> Result<Repository, String> {
-    Repository::discover(path).map_err(|e| e.to_string())
+    let canonical = canonicalize_existing_path(path)?;
+    Repository::discover(&canonical).map_err(|e| e.to_string())
 }
 
 fn current_branch(repo: &Repository) -> String {
@@ -78,7 +80,7 @@ fn is_staged(status: git2::Status) -> bool {
 #[tauri::command]
 pub async fn git_project_status(path: String) -> Result<Option<GitStatusResult>, String> {
     spawn_blocking_result(move || {
-        let repo = match Repository::discover(&path) {
+        let repo = match open_repo(&path) {
             Ok(r) => r,
             Err(_) => return Ok(None),
         };
@@ -360,8 +362,7 @@ pub async fn git_remove_lock_file(path: String) -> Result<(), String> {
         if !lock_file.exists() {
             return Err("No lock file found".to_string());
         }
-        std::fs::remove_file(&lock_file)
-            .map_err(|e| format!("Failed to remove lock file: {e}"))
+        std::fs::remove_file(&lock_file).map_err(|e| format!("Failed to remove lock file: {e}"))
     })
     .await
 }
@@ -386,7 +387,9 @@ pub async fn git_push(path: String) -> Result<GitPushResult, String> {
         }
 
         let mut cmd = std::process::Command::new("git");
-        cmd.args(["push", "-u", "origin", &branch])
+        // `--` terminates option parsing so branch names cannot be interpreted
+        // as additional git flags.
+        cmd.args(["push", "-u", "origin", "--", &branch])
             .current_dir(&repo_path);
 
         #[cfg(target_os = "windows")]

@@ -11,6 +11,7 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tauri::ipc::Channel;
 
 use super::platform::default_shell;
+use crate::security::path_guard::canonicalize_existing_dir;
 
 pub struct SessionHandle {
     master_write: Mutex<Option<Box<dyn Write + Send>>>,
@@ -34,11 +35,8 @@ impl SessionHandle {
         output_channel: Channel<String>,
         exit_channel: Channel<bool>,
     ) -> Result<Self, String> {
-        // Validate CWD exists and is a directory
-        let cwd_path = std::path::Path::new(&cwd);
-        if !cwd_path.is_dir() {
-            return Err(format!("Working directory does not exist: {}", cwd));
-        }
+        // Canonicalize CWD at IPC boundary before spawning a shell process.
+        let cwd_path = canonicalize_existing_dir(&cwd)?;
 
         let pty_system = native_pty_system();
 
@@ -55,7 +53,7 @@ impl SessionHandle {
 
         let shell = shell_path.unwrap_or_else(default_shell);
         let mut cmd = CommandBuilder::new(&shell);
-        cmd.cwd(&cwd);
+        cmd.cwd(&cwd_path);
 
         // Windows PowerShell: suppress logo
         #[cfg(target_os = "windows")]
