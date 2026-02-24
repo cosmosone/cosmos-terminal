@@ -123,6 +123,7 @@ function extractCwdFromTitle(title: string): string | null {
 export class TerminalPane {
   readonly element: HTMLElement;
   readonly paneId: string;
+  private readonly projectId: string;
 
   private terminal: Terminal;
   private fitAddon: FitAddon;
@@ -172,8 +173,8 @@ export class TerminalPane {
   // OSC-based busy/idle detection (primary signal when available)
   private oscBusy = false;
   private hasOscSupport = false;
-  private onOscBusy?: (paneId: string) => void;
-  private onOscIdle?: (paneId: string) => void;
+  private onOscBusy?: () => void;
+  private onOscIdle?: () => void;
 
   constructor(
     paneId: string,
@@ -183,11 +184,12 @@ export class TerminalPane {
       onProcessExit?: () => void;
       onCwdChange?: (cwd: string) => void;
       onActivity?: () => void;
-      onOscBusy?: (paneId: string) => void;
-      onOscIdle?: (paneId: string) => void;
+      onOscBusy?: () => void;
+      onOscIdle?: () => void;
     },
   ) {
     this.paneId = paneId;
+    this.projectId = projectId;
     this.projectPath = projectPath;
     this.onProcessExit = callbacks?.onProcessExit;
     this.onCwdChange = callbacks?.onCwdChange;
@@ -375,6 +377,21 @@ export class TerminalPane {
       }
     });
 
+    // Detect user scroll-up independently of xterm's onScroll event.
+    // onScroll is suppressed while writesInFlight > 0 (to avoid transient
+    // state corruption), but the wheel event fires only from real user
+    // interaction, so it's safe to honour at any time.
+    this.element.addEventListener('wheel', (e) => {
+      if (e.deltaY < 0 && this.autoScroll) {
+        this.autoScroll = false;
+        this.scrollBtn.classList.add('visible');
+        logger.debug('pty', 'autoScroll disabled via wheel-up', {
+          paneId: this.paneId,
+          writesInFlight: this.writesInFlight,
+        });
+      }
+    }, { passive: true });
+
     this.terminal.onScroll(() => {
       // Ignore scroll events when terminal is hidden — viewport state is
       // unreliable and scrollToBottom() is a no-op, so acting on these
@@ -389,7 +406,9 @@ export class TerminalPane {
       if (this.writesInFlight > 0) return;
 
       const buf = this.terminal.buffer.active;
-      const isAtBottom = buf.viewportY >= buf.baseY;
+      // Allow 1-row tolerance — mouse-wheel scroll granularity may not
+      // align with cell height, leaving viewportY one row short of baseY.
+      const isAtBottom = buf.viewportY >= buf.baseY - 1;
       if (this.autoScroll !== isAtBottom) {
         logger.debug('pty', 'autoScroll changed', {
           paneId: this.paneId,
@@ -654,7 +673,7 @@ export class TerminalPane {
     if (this.oscBusy) return;
     this.oscBusy = true;
     logger.debug('pty', reason, { paneId: this.paneId });
-    this.onOscBusy?.(this.paneId);
+    this.onOscBusy?.();
   }
 
   /** Transition to OSC idle state if currently busy. */
@@ -662,7 +681,7 @@ export class TerminalPane {
     if (!this.oscBusy) return;
     this.oscBusy = false;
     logger.debug('pty', reason, { paneId: this.paneId });
-    this.onOscIdle?.(this.paneId);
+    this.onOscIdle?.();
   }
 
   /**
@@ -758,12 +777,7 @@ export class TerminalPane {
     }
 
     if (data.length > 0) {
-      // Use the persistent autoScroll flag instead of re-deriving from buffer
-      // state on each flush.  Re-deriving can race: when multiple flushes
-      // overlap, baseY increases from the first write but viewportY hasn't
-      // caught up, causing the second flush to think the user scrolled up.
-      const shouldScroll = this.autoScroll;
-      if (!shouldScroll) {
+      if (!this.autoScroll) {
         logger.debug('pty', 'flushOutput: writing without auto-scroll', {
           paneId: this.paneId,
           bytes: data.length,
@@ -771,9 +785,11 @@ export class TerminalPane {
       }
       this.writesInFlight++;
       this.terminal.write(data, () => {
-        this.writesInFlight--;
+        this.writesInFlight = Math.max(0, this.writesInFlight - 1);
         if (this.disposed) return;
-        if (shouldScroll) {
+        // Wait for ALL concurrent writes to complete so baseY has stabilised,
+        // then scroll only if the user hasn't opted out via wheel-up.
+        if (this.autoScroll && this.writesInFlight === 0) {
           this.syncScrollToBottom();
         }
       });
@@ -838,6 +854,12 @@ export class TerminalPane {
         wasAutoScroll,
         autoScrollAfterResize: this.autoScroll,
       });
+    } else {
+      // Dimensions unchanged (e.g. returning from hidden state with the
+      // same terminal size) — terminal.resize() is a no-op and no render
+      // is triggered.  Explicitly refresh so the viewport scroll area
+      // reflects any data that was written while the pane was invisible.
+      this.terminal.refresh(0, this.terminal.rows - 1);
     }
 
     // Restore scroll intent and re-sync position after resize.
@@ -922,19 +944,49 @@ export class TerminalPane {
         viewportY: buf.viewportY,
         baseY: buf.baseY,
       });
-      // Double RAF: after display:none → visible, WebView2 can batch reflows
-      // across frames, so the first retry may still find the viewport behind.
+      // xterm defers viewport DOM updates via its internal _refresh() RAF.
+      // Force a reflow before each retry to commit pending layout changes.
       requestAnimationFrame(() => {
         if (this.disposed || !this.autoScroll) return;
+        void this.element.offsetHeight;
         this.terminal.scrollToBottom();
         const buf2 = this.terminal.buffer.active;
         if (buf2.viewportY < buf2.baseY && !this.isHidden) {
+          logger.debug('pty', 'syncScrollToBottom: second retry needed', {
+            paneId: this.paneId,
+            viewportY: buf2.viewportY,
+            baseY: buf2.baseY,
+          });
           requestAnimationFrame(() => {
             if (this.disposed || !this.autoScroll) return;
+            void this.element.offsetHeight;
             this.terminal.scrollToBottom();
+            // Final fallback: force DOM scrollTop directly if xterm's
+            // deferred viewport sync still hasn't caught up.
+            this.forceViewportScroll();
           });
         }
       });
+    }
+  }
+
+  /**
+   * Set scrollTop directly on the .xterm-viewport element, bypassing xterm's
+   * deferred viewport sync which can lag after visibility transitions
+   * (xtermjs/xterm.js#494, #3311).
+   */
+  private forceViewportScroll(): void {
+    const viewport = this.element.querySelector('.xterm-viewport') as HTMLElement | null;
+    if (!viewport) return;
+    void viewport.offsetHeight; // commit pending layout
+    if (viewport.scrollTop < viewport.scrollHeight - viewport.offsetHeight - 1) {
+      logger.debug('pty', 'forceViewportScroll: DOM scrollTop behind, forcing', {
+        paneId: this.paneId,
+        scrollTop: viewport.scrollTop,
+        scrollHeight: viewport.scrollHeight,
+        offsetHeight: viewport.offsetHeight,
+      });
+      viewport.scrollTop = viewport.scrollHeight;
     }
   }
 
@@ -975,6 +1027,6 @@ export class TerminalPane {
     }
     this.webglAddon?.dispose();
     this.terminal.dispose();
-    logger.debug('pty', 'Terminal pane disposed', { paneId: this.paneId });
+    logger.debug('pty', 'Terminal pane disposed', { paneId: this.paneId, projectId: this.projectId });
   }
 }

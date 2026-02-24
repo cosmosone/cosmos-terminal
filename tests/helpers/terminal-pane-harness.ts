@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import { initStore } from '../../src/state/store';
-import type { AppSettings, AppState, KeybindingConfig } from '../../src/state/types';
+import { DEFAULT_KEYBINDINGS } from '../../src/services/settings-service';
+import type { AppSettings, AppState } from '../../src/state/types';
 
 export const ptyMocks = {
   createPtySession: vi.fn(async () => ({ id: 'test-session', pid: 1 })),
@@ -33,6 +34,7 @@ export class FakeTerminal {
   onTitleChange(_handler: (title: string) => void): void {}
   focus(): void {}
   clear(): void {}
+  refresh(_start: number, _end: number): void {}
   dispose(): void {}
   paste(_text: string): void {}
   getSelection(): string { return ''; }
@@ -121,30 +123,6 @@ export function installTerminalPaneModuleMocks(): void {
   vi.mock('/src/services/initial-command.ts', () => ({ consumeInitialCommand: vi.fn(() => null) }));
   vi.mock('/src/utils/keybindings.ts', () => ({ keybindings: { matchesBinding: vi.fn(() => false) } }));
 }
-
-const DEFAULT_KEYBINDINGS: KeybindingConfig = {
-  newSession: 'Ctrl+Shift+t',
-  toggleSettings: 'Ctrl+,',
-  navigatePaneLeft: 'Alt+ArrowLeft',
-  navigatePaneRight: 'Alt+ArrowRight',
-  navigatePaneUp: 'Alt+ArrowUp',
-  navigatePaneDown: 'Alt+ArrowDown',
-  splitDown: 'Alt+x',
-  splitUp: 'Alt+s',
-  splitLeft: 'Alt+z',
-  splitRight: 'Alt+c',
-  cycleSessionNext: 'Alt+k',
-  cycleSessionPrev: 'Alt+j',
-  cycleProjectNext: 'Alt+i',
-  cycleProjectPrev: 'Alt+u',
-  toggleGitSidebar: 'Alt+d',
-  toggleFileBrowser: 'Alt+f',
-  searchFileBrowser: 'Ctrl+Shift+f',
-  closeTerminalTab: 'Alt+l',
-  closeProjectTab: 'Alt+o',
-  scrollToBottom: 'Alt+b',
-  findInDocument: 'Ctrl+f',
-};
 
 const DEFAULT_SETTINGS: AppSettings = {
   shellPath: 'powershell.exe',

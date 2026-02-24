@@ -117,9 +117,13 @@ export class SplitContainer {
 
         // For restored agent sessions, register the initial command so the
         // terminal automatically runs it on mount (e.g. "gemini -y" for Gemini).
-        const agentCmd = getAgentCommand(session.agentCommand, session.title);
-        if (agentCmd) {
-          setInitialCommand(paneId, agentCmd);
+        // Only do this for the session's first pane — split panes should open
+        // a plain shell, not re-launch the agent.
+        if (activePaneIds.size === 1) {
+          const agentCmd = getAgentCommand(session.agentCommand, session.title);
+          if (agentCmd) {
+            setInitialCommand(paneId, agentCmd);
+          }
         }
 
         await tp.mount();
@@ -356,7 +360,7 @@ export class SplitContainer {
       removePane(projectId, sessionId, paneId);
     }
 
-    this.render();
+    void this.render();
   }
 
   private async disposeAll(): Promise<void> {

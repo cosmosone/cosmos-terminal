@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultFileBrowserSidebarState, defaultGitSidebarState, setActiveTab, setFileTabEditing } from '../../src/state/actions';
 import { initFileTabContent } from '../../src/components/file-tab-content';
 import { initStore } from '../../src/state/store';
-import type { AppState, KeybindingConfig } from '../../src/state/types';
+import { DEFAULT_KEYBINDINGS } from '../../src/services/settings-service';
+import type { AppState } from '../../src/state/types';
 
 const runtime = vi.hoisted(() => ({
   fsChangeHandler: null as ((affectedDir: string) => void) | null,
@@ -40,30 +41,6 @@ vi.mock('../../src/components/find-in-document', () => ({
     open: vi.fn(),
   })),
 }));
-
-const KEYBINDINGS: KeybindingConfig = {
-  newSession: 'Ctrl+Shift+t',
-  toggleSettings: 'Ctrl+,',
-  navigatePaneLeft: 'Alt+ArrowLeft',
-  navigatePaneRight: 'Alt+ArrowRight',
-  navigatePaneUp: 'Alt+ArrowUp',
-  navigatePaneDown: 'Alt+ArrowDown',
-  splitDown: 'Alt+x',
-  splitUp: 'Alt+s',
-  splitLeft: 'Alt+z',
-  splitRight: 'Alt+c',
-  cycleSessionNext: 'Alt+k',
-  cycleSessionPrev: 'Alt+j',
-  cycleProjectNext: 'Alt+i',
-  cycleProjectPrev: 'Alt+u',
-  toggleGitSidebar: 'Alt+d',
-  toggleFileBrowser: 'Alt+f',
-  searchFileBrowser: 'Ctrl+Shift+f',
-  closeTerminalTab: 'Alt+l',
-  closeProjectTab: 'Alt+o',
-  scrollToBottom: 'Alt+b',
-  findInDocument: 'Ctrl+f',
-};
 
 function createState(): AppState {
   return {
@@ -116,7 +93,7 @@ function createState(): AppState {
       debugLoggingExpiry: null,
       confirmCloseTerminalTab: true,
       confirmCloseProjectTab: true,
-      keybindings: { ...KEYBINDINGS },
+      keybindings: { ...DEFAULT_KEYBINDINGS },
       openaiApiKey: '',
     },
     view: 'terminal',

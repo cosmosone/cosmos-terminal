@@ -271,7 +271,7 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     logger.info('settings', 'Setting changed', partial);
     updateSettings(partial);
     const settings = store.getState().settings;
-    saveSettings(settings);
+    void saveSettings(settings);
     onSettingsChanged();
   }
 

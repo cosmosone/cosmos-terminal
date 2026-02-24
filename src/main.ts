@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     if (new Date(settings.debugLoggingExpiry).getTime() <= Date.now()) {
       settings.debugLogging = false;
       settings.debugLoggingExpiry = null;
-      saveSettings(settings);
+      void saveSettings(settings);
     }
   }
   if (settings.debugLogging) {

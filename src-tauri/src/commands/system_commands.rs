@@ -18,6 +18,12 @@ impl SystemMonitor {
     }
 }
 
+impl Default for SystemMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[tauri::command]
 pub fn get_system_stats(monitor: State<'_, SystemMonitor>) -> SystemStats {
     let mut sys = monitor.sys.lock();

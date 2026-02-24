@@ -518,7 +518,7 @@ export function toggleDebugLogging(): void {
     updateSettings({ debugLogging: false, debugLoggingExpiry: null });
     logger.disable();
   }
-  saveSettings(store.getState().settings);
+  void saveSettings(store.getState().settings);
 }
 
 // --- View actions ---

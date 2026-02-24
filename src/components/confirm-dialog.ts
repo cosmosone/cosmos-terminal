@@ -136,7 +136,7 @@ async function confirmClose(
 
   if (result.checkboxChecked) {
     updateSettings({ [settingKey]: false });
-    saveSettings(store.getState().settings);
+    void saveSettings(store.getState().settings);
   }
 
   return true;

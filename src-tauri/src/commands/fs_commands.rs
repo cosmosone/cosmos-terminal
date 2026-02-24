@@ -53,7 +53,12 @@ fn is_system_critical_path(path: &Path) -> bool {
         if let Some(stripped) = lower.strip_prefix("\\\\?\\") {
             lower = stripped.to_string();
         }
-        for prefix in ["c:\\windows", "c:\\program files"] {
+        for prefix in [
+            "c:\\windows",
+            "c:\\program files",
+            "c:\\program files (x86)",
+            "c:\\programdata",
+        ] {
             if lower == prefix || lower.starts_with(&format!("{prefix}\\")) {
                 return true;
             }
@@ -175,7 +180,7 @@ fn read_text_file_sync(path: &str, max_bytes: Option<u64>) -> Result<FileContent
     let content = if binary {
         String::new()
     } else {
-        String::from_utf8_lossy(&buf).to_string()
+        String::from_utf8_lossy(&buf).into_owned()
     };
 
     Ok(FileContent {
@@ -255,7 +260,9 @@ fn show_in_explorer_sync(path: &str) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        let arg = format!("/select,{}", canonical.to_string_lossy());
+        // Quote the path so commas in directory/file names aren't misinterpreted
+        // as argument separators by explorer.exe.
+        let arg = format!("/select,\"{}\"", canonical.to_string_lossy());
         std::process::Command::new("explorer.exe")
             .arg(arg)
             .spawn()
@@ -282,8 +289,8 @@ fn show_in_explorer_sync(path: &str) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
-    validate_write_path(&path)?;
     spawn_blocking_result(move || {
+        validate_write_path(&path)?;
         std::fs::write(&path, content).map_err(|e| format!("Failed to write file: {e}"))
     })
     .await
@@ -305,8 +312,8 @@ pub async fn write_text_file_if_unmodified(
     content: String,
     expected_mtime: u64,
 ) -> Result<FileWriteResult, String> {
-    validate_write_path(&path)?;
     spawn_blocking_result(move || {
+        validate_write_path(&path)?;
         let current_mtime = get_file_mtime_millis(&path)?;
         if current_mtime != expected_mtime {
             return Ok(FileWriteResult {
@@ -327,8 +334,8 @@ pub async fn write_text_file_if_unmodified(
 
 #[tauri::command]
 pub async fn delete_path(path: String) -> Result<(), String> {
-    validate_write_path(&path)?;
     spawn_blocking_result(move || {
+        validate_write_path(&path)?;
         let p = std::path::Path::new(&path);
         if p.is_dir() {
             // Guard: refuse to recursively delete through a symlink, which

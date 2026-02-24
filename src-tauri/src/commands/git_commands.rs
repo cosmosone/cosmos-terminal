@@ -9,6 +9,36 @@ const DEFAULT_GIT_LOG_LIMIT: usize = 50;
 const MAX_GIT_LOG_LIMIT: usize = 500;
 const MAX_DIFF_BYTES: usize = 5 * 1024 * 1024; // 5 MB
 
+/// Strip embedded credentials from URLs (e.g. `https://user:token@host/...`
+/// → `https://***@host/...`) to prevent accidental leakage to the frontend.
+fn redact_credentials(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut remaining = text;
+    while let Some(scheme_end) = remaining.find("://") {
+        let after_scheme = &remaining[scheme_end + 3..];
+        if let Some(at_pos) = after_scheme.find('@') {
+            // Only redact if the '@' comes before the next '/' or whitespace
+            let next_slash = after_scheme.find('/').unwrap_or(after_scheme.len());
+            let next_space = after_scheme.find(char::is_whitespace).unwrap_or(after_scheme.len());
+            if at_pos < next_slash && at_pos < next_space {
+                result.push_str(&remaining[..scheme_end + 3]);
+                result.push_str("***@");
+                remaining = &after_scheme[at_pos + 1..];
+                continue;
+            }
+        }
+        result.push_str(&remaining[..scheme_end + 3]);
+        remaining = after_scheme;
+    }
+    result.push_str(remaining);
+    result
+}
+
+fn short_id(oid: &git2::Oid) -> String {
+    let full = oid.to_string();
+    full[..7.min(full.len())].to_string()
+}
+
 fn open_repo(path: &str) -> Result<Repository, String> {
     Repository::discover(path).map_err(|e| e.to_string())
 }
@@ -76,8 +106,8 @@ fn local_and_upstream_oids(repo: &Repository) -> Option<(git2::Oid, git2::Oid)> 
     Some((local_oid, upstream_oid))
 }
 
-fn commits_ahead(repo: &Repository) -> u32 {
-    let (local_oid, upstream_oid) = match local_and_upstream_oids(repo) {
+fn commits_ahead(repo: &Repository, oids: Option<(git2::Oid, git2::Oid)>) -> u32 {
+    let (local_oid, upstream_oid) = match oids {
         Some(pair) => pair,
         None => return 0,
     };
@@ -87,8 +117,8 @@ fn commits_ahead(repo: &Repository) -> u32 {
         .unwrap_or(0)
 }
 
-fn committed_files(repo: &Repository) -> Vec<GitFileStatus> {
-    let (local_oid, upstream_oid) = match local_and_upstream_oids(repo) {
+fn committed_files(repo: &Repository, oids: Option<(git2::Oid, git2::Oid)>) -> Vec<GitFileStatus> {
+    let (local_oid, upstream_oid) = match oids {
         Some(pair) => pair,
         None => return Vec::new(),
     };
@@ -152,8 +182,9 @@ fn git_status_from_repo(repo: &Repository) -> Result<GitStatusResult, String> {
         });
     }
 
-    let ahead = commits_ahead(repo);
-    let committed = committed_files(repo);
+    let oids = local_and_upstream_oids(repo);
+    let ahead = commits_ahead(repo, oids);
+    let committed = committed_files(repo, oids);
 
     Ok(GitStatusResult {
         branch,
@@ -192,8 +223,8 @@ fn git_log_sync(path: &str, limit: Option<usize>) -> Result<Vec<GitLogEntry>, St
     let mut entries = Vec::with_capacity(max);
     for oid in revwalk.flatten().take(max) {
         let commit = repo.find_commit(oid).map_err(|e| e.to_string())?;
+        let id = short_id(&oid);
         let full_id = oid.to_string();
-        let id = full_id[..7.min(full_id.len())].to_string();
         let raw_message = commit.message().unwrap_or("");
         let message = raw_message.lines().next().unwrap_or("").to_string();
         let body = raw_message
@@ -309,10 +340,9 @@ pub async fn git_commit(path: String, message: String) -> Result<GitCommitResult
             .commit(Some("HEAD"), &sig, &sig, &message, &tree, &parents)
             .map_err(|e| e.to_string())?;
 
-        let full_id = oid.to_string();
         Ok(GitCommitResult {
             success: true,
-            commit_id: full_id[..7.min(full_id.len())].to_string(),
+            commit_id: short_id(&oid),
             message,
         })
     })
@@ -350,9 +380,12 @@ pub async fn git_push(path: String) -> Result<GitPushResult, String> {
 
         let output = cmd
             .output()
-            .map_err(|e| format!("Failed to run git push: {}", e))?;
+            .map_err(|e| format!("Failed to run git push: {e}"))?;
 
-        let message = String::from_utf8_lossy(&output.stderr).to_string();
+        let raw_message = String::from_utf8_lossy(&output.stderr).into_owned();
+        // Redact embedded credentials (e.g. https://user:token@host/...) from
+        // stderr before forwarding to the frontend.
+        let message = redact_credentials(&raw_message);
         Ok(GitPushResult {
             success: output.status.success(),
             message,

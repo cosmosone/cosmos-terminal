@@ -446,7 +446,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     if (!renderRafId) {
       renderRafId = requestAnimationFrame(() => {
         renderRafId = 0;
-        renderTree();
+        void renderTree();
       });
     }
   }
