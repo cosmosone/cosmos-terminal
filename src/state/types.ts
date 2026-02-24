@@ -141,6 +141,7 @@ export interface ProjectGitState {
   status: GitStatusResult | null;
   log: GitLogEntry[];
   loading: boolean;
+  loadingLabel?: string;
   error: string | null;
   commitMessage: string;
   generating: boolean;

@@ -77,7 +77,9 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       if (needsDiscovery) {
         const result = await getGitProjectStatus(project.path);
         if (!result) {
-          updateGitState(project.id, { isRepo: false, loading: false });
+          const payload: Partial<ProjectGitState> = { isRepo: false };
+          if (!silent) payload.loading = false;
+          updateGitState(project.id, payload);
           return;
         }
         status = result;
@@ -89,7 +91,9 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
         if (!silent) updateGitState(project.id, { loading: false });
         return;
       }
-      updateGitState(project.id, { isRepo: true, status, loading: false });
+      const updatePayload: Partial<ProjectGitState> = { isRepo: true, status };
+      if (!silent) updatePayload.loading = false;
+      updateGitState(project.id, updatePayload);
     } catch (err: unknown) {
       if (silent) {
         logger.error('git', 'Silent refresh failed', {
@@ -159,7 +163,8 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       return;
     }
 
-    updateGitState(project.id, { loading: true, error: null, notification: null });
+    const actionLabel = push ? 'Pushing...' : 'Committing...';
+    updateGitState(project.id, { loading: true, loadingLabel: actionLabel, error: null, notification: null });
     try {
       await gitStageAll(project.path);
       const result = await gitCommit(project.path, message);
@@ -223,7 +228,7 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       return;
     }
 
-    updateGitState(project.id, { loading: true, error: null, notification: null });
+    updateGitState(project.id, { loading: true, loadingLabel: 'Pushing...', error: null, notification: null });
     try {
       const pushResult = await gitPush(project.path);
 

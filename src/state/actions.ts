@@ -621,6 +621,7 @@ export function defaultGitState(): ProjectGitState {
     status: null,
     log: [],
     loading: false,
+    loadingLabel: undefined,
     error: null,
     commitMessage: '',
     generating: false,

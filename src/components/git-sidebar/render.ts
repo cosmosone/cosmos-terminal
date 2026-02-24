@@ -69,7 +69,7 @@ export function renderProject(project: Project, gs: ProjectGitState, expanded: b
   wrap.appendChild(row);
 
   if (isExpanded) {
-    if (gs.loading) {
+    if (gs.loading && !gs.status) {
       const loading = createElement('div', { className: 'git-sidebar-loading' });
       loading.textContent = 'Loading...';
       wrap.appendChild(loading);
@@ -134,6 +134,7 @@ function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjec
   const textarea = createElement('textarea', { className: 'git-commit-textarea' });
   textarea.placeholder = 'Commit message...';
   textarea.value = deps.localCommitMessages.get(project.id) ?? gs.commitMessage;
+  textarea.disabled = gs.loading;
 
   const autoResize = () => {
     textarea.style.height = 'auto';
@@ -154,26 +155,27 @@ function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjec
 
   const generateBtn = createElement('button', { className: 'git-commit-btn secondary git-generate-btn' });
   generateBtn.textContent = gs.generating ? (gs.generatingLabel || 'Generating...') : 'Generate';
-  generateBtn.disabled = gs.generating;
+  generateBtn.disabled = gs.generating || gs.loading;
   generateBtn.addEventListener('click', () => {
     void deps.handlers.onGenerateCommitMessage(project);
   });
   buttons.appendChild(generateBtn);
 
-  function addButton(label: string, handler: () => void): void {
+  function addButton(label: string, activeLabel: string, handler: () => void): void {
     const btn = createElement('button', { className: 'git-commit-btn secondary' });
-    btn.textContent = label;
+    btn.textContent = gs.loading && gs.loadingLabel === activeLabel ? activeLabel : label;
+    btn.disabled = gs.loading || gs.generating;
     btn.addEventListener('click', handler);
     buttons.appendChild(btn);
   }
 
-  addButton('Commit', () => {
+  addButton('Commit', 'Committing...', () => {
     void deps.handlers.onCommit(project, false);
   });
-  addButton('Push', () => {
+  addButton('Push', 'Pushing...', () => {
     void deps.handlers.onPush(project);
   });
-  addButton('Commit & Push', () => {
+  addButton('Commit & Push', 'Pushing...', () => {
     void deps.handlers.onCommit(project, true);
   });
 
