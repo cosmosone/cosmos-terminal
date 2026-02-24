@@ -14,6 +14,7 @@ export const IPC_COMMANDS = {
   GIT_STAGE_ALL: 'git_stage_all',
   GIT_COMMIT: 'git_commit',
   GIT_PUSH: 'git_push',
+  GIT_REMOVE_LOCK_FILE: 'git_remove_lock_file',
   LIST_DIRECTORY: 'list_directory',
   READ_TEXT_FILE: 'read_text_file',
   WRITE_TEXT_FILE: 'write_text_file',

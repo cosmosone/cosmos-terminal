@@ -76,8 +76,8 @@ export const DEFAULT_KEYBINDINGS: KeybindingConfig = {
   toggleGitSidebar: 'Alt+d',
   toggleFileBrowser: 'Alt+f',
   searchFileBrowser: 'Ctrl+Shift+f',
-  closeTerminalTab: 'Alt+l',
-  closeProjectTab: 'Alt+o',
+  closeTerminalTab: 'Ctrl+w',
+  closeProjectTab: 'Ctrl+q',
   scrollToBottom: 'Alt+b',
   findInDocument: 'Ctrl+f',
 };

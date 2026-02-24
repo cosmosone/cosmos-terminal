@@ -13,7 +13,9 @@ import {
   gitStageAll,
   gitCommit,
   gitPush,
+  gitRemoveLockFile,
 } from '../../services/git-service';
+import { showConfirmDialog } from '../confirm-dialog';
 import { generateCommitMessage } from '../../services/openai-service';
 import { logger } from '../../services/logger';
 import { statusEquals } from './shared';
@@ -181,8 +183,35 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       }
     } catch (err: unknown) {
       updateGitState(project.id, { loading: false });
-      deps.showNotification(project.id, err instanceof Error ? err.message : 'Commit failed', 'error');
+      const errorMsg = err instanceof Error ? err.message : String(err);
+
+      if (isLockFileError(errorMsg)) {
+        const { confirmed } = await showConfirmDialog({
+          title: 'Git Lock File Detected',
+          message: 'A git lock file is preventing the commit. This usually means a previous git operation was interrupted. Would you like to remove the lock file and retry?',
+          confirmText: 'Remove & Retry',
+          cancelText: 'Cancel',
+          danger: true,
+        });
+        if (confirmed) {
+          try {
+            await gitRemoveLockFile(project.path);
+            logger.info('git', 'Removed git lock file', { projectId: project.id });
+            await doCommit(project, push);
+          } catch (removeErr: unknown) {
+            deps.showNotification(project.id, removeErr instanceof Error ? removeErr.message : 'Failed to remove lock file', 'error');
+          }
+        }
+        return;
+      }
+
+      deps.showNotification(project.id, errorMsg, 'error');
     }
+  }
+
+  function isLockFileError(message: string): boolean {
+    const lower = message.toLowerCase();
+    return lower.includes('lock') && (lower.includes('file') || lower.includes('index'));
   }
 
   async function doPush(project: Project): Promise<void> {

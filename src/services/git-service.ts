@@ -39,3 +39,7 @@ export async function gitCommit(path: string, message: string): Promise<GitCommi
 export async function gitPush(path: string): Promise<GitPushResult> {
   return invokeIpcLogged<GitPushResult>('git', IPC_COMMANDS.GIT_PUSH, { path }, 'info');
 }
+
+export async function gitRemoveLockFile(path: string): Promise<void> {
+  await invokeIpcLogged<void>('git', IPC_COMMANDS.GIT_REMOVE_LOCK_FILE, { path }, 'info');
+}

@@ -156,6 +156,7 @@ export class TerminalPane {
   private scrollBtn: HTMLElement;
   /** Persistent auto-scroll intent — true when the user is following output at the bottom. */
   private autoScroll = true;
+  private ignoreScrollTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Whether the terminal element is hidden (zero width). */
   private get isHidden(): boolean {
@@ -404,6 +405,9 @@ export class TerminalPane {
       // across frames for large writes, causing transient viewportY < baseY
       // that would incorrectly flip autoScroll to false.
       if (this.writesInFlight > 0) return;
+      // Ignore during syncScrollToBottom() to prevent stale DOM scroll events
+      // from falsely disabling auto-scroll.
+      if (this.ignoreScrollTimer) return;
 
       const buf = this.terminal.buffer.active;
       // Allow 1-row tolerance — mouse-wheel scroll granularity may not
@@ -926,6 +930,28 @@ export class TerminalPane {
     this.terminal.clear();
   }
 
+  private ignoreScrollEvents(): void {
+    if (this.ignoreScrollTimer) clearTimeout(this.ignoreScrollTimer);
+    this.ignoreScrollTimer = setTimeout(() => {
+      this.ignoreScrollTimer = null;
+      if (!this.disposed && !this.isHidden) {
+        const buf = this.terminal.buffer.active;
+        const isAtBottom = buf.viewportY >= buf.baseY - 1;
+        if (this.autoScroll !== isAtBottom) {
+          logger.debug('pty', 'autoScroll changed after ignore timeout', {
+            paneId: this.paneId,
+            autoScroll: isAtBottom,
+            viewportY: buf.viewportY,
+            baseY: buf.baseY,
+            rows: this.terminal.rows,
+          });
+          this.autoScroll = isAtBottom;
+          this.scrollBtn.classList.toggle('visible', !isAtBottom);
+        }
+      }
+    }, 150);
+  }
+
   /** Restore auto-scroll intent, scroll to bottom, and hide the scroll button.
    *  After a display:none → visible transition the viewport may not have
    *  reflowed yet, so scrollToBottom() can silently fail.  When that happens,
@@ -934,8 +960,10 @@ export class TerminalPane {
    */
   private syncScrollToBottom(): void {
     this.autoScroll = true;
-    this.terminal.scrollToBottom();
     this.scrollBtn.classList.remove('visible');
+
+    this.ignoreScrollEvents();
+    this.terminal.scrollToBottom();
 
     const buf = this.terminal.buffer.active;
     if (buf.viewportY < buf.baseY && !this.isHidden) {
@@ -948,6 +976,7 @@ export class TerminalPane {
       // Force a reflow before each retry to commit pending layout changes.
       requestAnimationFrame(() => {
         if (this.disposed || !this.autoScroll) return;
+        this.ignoreScrollEvents();
         void this.element.offsetHeight;
         this.terminal.scrollToBottom();
         const buf2 = this.terminal.buffer.active;
@@ -959,6 +988,7 @@ export class TerminalPane {
           });
           requestAnimationFrame(() => {
             if (this.disposed || !this.autoScroll) return;
+            this.ignoreScrollEvents();
             void this.element.offsetHeight;
             this.terminal.scrollToBottom();
             // Final fallback: force DOM scrollTop directly if xterm's
@@ -1007,6 +1037,7 @@ export class TerminalPane {
     if (this.outputRafId) cancelAnimationFrame(this.outputRafId);
     if (this.resizeRafId) cancelAnimationFrame(this.resizeRafId);
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
+    if (this.ignoreScrollTimer) clearTimeout(this.ignoreScrollTimer);
     this.pendingOutput = [];
     // Clean up OSC busy state so tracking Sets stay consistent
     this.setOscIdle('Pane disposed while busy');

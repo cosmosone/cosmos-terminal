@@ -64,7 +64,6 @@ export function initStatusBar(onCleanup?: () => void): void {
       const stats = await getSystemStats();
       memEl.textContent = `${stats.memoryMb.toFixed(0)} MB`;
       cpuEl.textContent = `${stats.cpuPercent.toFixed(0)}%`;
-      logger.debug('app', 'System stats', { memoryMb: stats.memoryMb.toFixed(1), cpuPercent: stats.cpuPercent.toFixed(1) });
     } catch {
       // Backend not ready yet
     }

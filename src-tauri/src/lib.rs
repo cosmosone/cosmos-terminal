@@ -159,6 +159,7 @@ pub fn run() {
             git_commands::git_stage_all,
             git_commands::git_commit,
             git_commands::git_push,
+            git_commands::git_remove_lock_file,
             fs_commands::list_directory,
             fs_commands::read_text_file,
             fs_commands::write_text_file,

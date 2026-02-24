@@ -353,6 +353,20 @@ pub async fn git_commit(path: String, message: String) -> Result<GitCommitResult
 }
 
 #[tauri::command]
+pub async fn git_remove_lock_file(path: String) -> Result<(), String> {
+    spawn_blocking_result(move || {
+        let repo = open_repo(&path)?;
+        let lock_file = repo.path().join("index.lock");
+        if !lock_file.exists() {
+            return Err("No lock file found".to_string());
+        }
+        std::fs::remove_file(&lock_file)
+            .map_err(|e| format!("Failed to remove lock file: {e}"))
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn git_push(path: String) -> Result<GitPushResult, String> {
     spawn_blocking_result(move || {
         let repo = open_repo(&path)?;
