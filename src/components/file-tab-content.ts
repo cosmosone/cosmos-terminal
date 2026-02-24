@@ -6,6 +6,7 @@ import { showConfirmDialog } from './confirm-dialog';
 import { getGrammar } from '../highlight/languages/index';
 import { tokenize, tokensToHtml } from '../highlight/tokenizer';
 import { renderMarkdownCached } from '../services/markdown-renderer';
+import { logger } from '../services/logger';
 import { debounce } from '../utils/debounce';
 import { normalizeFsPath, isPathWithinDirectory } from '../utils/path';
 import type { AppState, FileTab, Project } from '../state/types';
@@ -122,7 +123,7 @@ export function initFileTabContent(): FileTabContentApi {
       }
       setFileTabDirty(projectId, tabId, false);
     } catch (err: unknown) {
-      console.error('Failed to save file:', err);
+      logger.error('fs', 'Failed to save file', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -224,7 +225,7 @@ export function initFileTabContent(): FileTabContentApi {
     saveBtn.textContent = 'Save';
     saveBtn.addEventListener('click', () => {
       const found = getActiveTab(store.getState());
-      if (found) saveTab(projectId, tabId, found.tab.filePath);
+      if (found) void saveTab(projectId, tabId, found.tab.filePath);
     });
     actions.appendChild(saveBtn);
 
@@ -236,7 +237,7 @@ export function initFileTabContent(): FileTabContentApi {
       e.preventDefault();
       const found = getActiveTab(store.getState());
       if (!found || !found.tab.dirty) return;
-      saveTab(found.project.id, found.tab.id, found.tab.filePath);
+      void saveTab(found.project.id, found.tab.id, found.tab.filePath);
     }
   });
 

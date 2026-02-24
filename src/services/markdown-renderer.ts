@@ -7,7 +7,6 @@ import rehypeStringify from 'rehype-stringify';
 import { visit } from 'unist-util-visit';
 import type { Root as MdastRoot, RootContent } from 'mdast';
 import type { Element, Parent, Root as HastRoot } from 'hast';
-import type { MarkdownRenderCacheStats } from './markdown-types';
 
 const MARKDOWN_CACHE_MAX_ENTRIES = 128;
 const ALLOWED_HREF_PROTOCOL_RE = /^(https?:|mailto:)/i;
@@ -15,7 +14,6 @@ const ALLOWED_HREF_PROTOCOL_RE = /^(https?:|mailto:)/i;
 const renderCache = new Map<string, string>();
 let cacheHits = 0;
 let cacheMisses = 0;
-let cacheEvictions = 0;
 
 function normalizeLineEndings(source: string): string {
   return source.replace(/\r\n?/g, '\n');
@@ -65,7 +63,6 @@ function setCachedRender(key: string, html: string): void {
   const oldestKey = renderCache.keys().next().value;
   if (oldestKey) {
     renderCache.delete(oldestKey);
-    cacheEvictions++;
   }
 }
 
@@ -242,6 +239,16 @@ export function renderMarkdown(source: string): string {
   return renderMarkdownInternal(normalizeLineEndings(source));
 }
 
+export function clearMarkdownRenderCache(): void {
+  renderCache.clear();
+  cacheHits = 0;
+  cacheMisses = 0;
+}
+
+export function getMarkdownRenderCacheStats(): { entries: number; hits: number; misses: number } {
+  return { entries: renderCache.size, hits: cacheHits, misses: cacheMisses };
+}
+
 export function renderMarkdownCached(path: string, source: string, mtime?: number): string {
   const normalized = normalizeLineEndings(source);
   const key = makeCacheKey(path, normalized, mtime);
@@ -252,21 +259,4 @@ export function renderMarkdownCached(path: string, source: string, mtime?: numbe
   const rendered = renderMarkdownInternal(normalized);
   setCachedRender(key, rendered);
   return rendered;
-}
-
-export function clearMarkdownRenderCache(): void {
-  renderCache.clear();
-  cacheHits = 0;
-  cacheMisses = 0;
-  cacheEvictions = 0;
-}
-
-export function getMarkdownRenderCacheStats(): MarkdownRenderCacheStats {
-  return {
-    entries: renderCache.size,
-    hits: cacheHits,
-    misses: cacheMisses,
-    evictions: cacheEvictions,
-    maxEntries: MARKDOWN_CACHE_MAX_ENTRIES,
-  };
 }

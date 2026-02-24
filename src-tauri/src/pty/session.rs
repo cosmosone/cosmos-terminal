@@ -103,7 +103,7 @@ impl SessionHandle {
             const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
             // Wait for the child to exit naturally or the PTY to close.
-            while alive_for_exit.load(Ordering::Relaxed) {
+            while alive_for_exit.load(Ordering::Acquire) {
                 match child.try_wait() {
                     Ok(Some(_)) | Err(_) => break,
                     Ok(None) => std::thread::sleep(POLL_INTERVAL),
@@ -126,7 +126,7 @@ impl SessionHandle {
                 }
             }
 
-            alive_for_exit.store(false, Ordering::Relaxed);
+            alive_for_exit.store(false, Ordering::Release);
             let _ = exit_channel.send(true);
         });
 
@@ -161,7 +161,7 @@ impl SessionHandle {
                 Err(_) => break,
             }
         }
-        alive.store(false, Ordering::Relaxed);
+        alive.store(false, Ordering::Release);
     }
 
     fn output_loop(output_rx: mpsc::Receiver<Vec<u8>>, channel: Channel<String>) {
@@ -211,7 +211,7 @@ impl SessionHandle {
     }
 
     pub fn kill(&self) {
-        self.alive.store(false, Ordering::Relaxed);
+        self.alive.store(false, Ordering::Release);
 
         // Drop the master writer and PTY — closing the PTY fd causes the
         // child to receive EOF/SIGHUP and the reader thread to see EOF.

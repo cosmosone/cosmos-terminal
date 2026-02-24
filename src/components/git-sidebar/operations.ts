@@ -17,7 +17,7 @@ import {
 import { generateCommitMessage } from '../../services/openai-service';
 import { logger } from '../../services/logger';
 import { statusEquals } from './shared';
-import type { Project, GitNotificationType } from '../../state/types';
+import type { Project, ProjectGitState, GitNotificationType } from '../../state/types';
 
 export interface GitSidebarOperations {
   pruneLocalCommitMessages(validProjectIds: Set<string>): void;
@@ -36,6 +36,19 @@ interface GitSidebarOperationsDeps {
 
 export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitSidebarOperations {
   let pollInFlight = false;
+
+  function getProjectGitState(projectId: string): ProjectGitState {
+    return store.getState().gitStates[projectId] || defaultGitState();
+  }
+
+  /** Fetch fresh status + log in parallel, then apply them with any extra partial state atomically. */
+  async function refreshAndUpdate(project: Project, extra: Partial<ProjectGitState> = {}): Promise<void> {
+    const [status, log] = await Promise.all([
+      getGitStatus(project.path),
+      getGitLog(project.path, 50),
+    ]);
+    updateGitState(project.id, { loading: false, status, log, ...extra });
+  }
 
   function clearCommitMessage(projectId: string): void {
     deps.localCommitMessages.delete(projectId);
@@ -108,8 +121,7 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
   }
 
   async function generateCommitMessageForProject(project: Project): Promise<void> {
-    const gs = store.getState().gitStates[project.id] || defaultGitState();
-    if (gs.generating) return;
+    if (getProjectGitState(project.id).generating) return;
 
     setGenerating(project.id, true, 'Generating...');
     try {
@@ -137,10 +149,9 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
   }
 
   async function doCommit(project: Project, push: boolean): Promise<void> {
-    const gs = store.getState().gitStates[project.id] || defaultGitState();
-    if (gs.loading) return;
+    if (getProjectGitState(project.id).loading) return;
 
-    const message = (deps.localCommitMessages.get(project.id) ?? gs.commitMessage).trim();
+    const message = (deps.localCommitMessages.get(project.id) ?? getProjectGitState(project.id).commitMessage).trim();
     if (!message) {
       deps.showNotification(project.id, 'Please enter a commit message.', 'warning');
       return;
@@ -152,22 +163,22 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       const result = await gitCommit(project.path, message);
       logger.info('git', 'Commit created', { projectId: project.id, commitId: result.commitId });
 
+      let pushFailed = '';
       if (push) {
         const pushResult = await gitPush(project.path);
-        if (!pushResult.success) {
-          updateGitState(project.id, { loading: false });
-          deps.showNotification(project.id, `Committed, but push failed: ${pushResult.message}`, 'error', 8000);
-          await refreshProject(project);
-          await fetchLog(project);
-          clearCommitMessage(project.id);
-          return;
+        if (pushResult.success) {
+          logger.info('git', 'Push completed', { projectId: project.id });
+        } else {
+          pushFailed = pushResult.message;
         }
-        logger.info('git', 'Push completed', { projectId: project.id });
       }
 
-      await refreshProject(project);
-      await fetchLog(project);
-      clearCommitMessage(project.id);
+      deps.localCommitMessages.delete(project.id);
+      await refreshAndUpdate(project, { commitMessage: '' });
+
+      if (pushFailed) {
+        deps.showNotification(project.id, `Committed, but push failed: ${pushFailed}`, 'error', 8000);
+      }
     } catch (err: unknown) {
       updateGitState(project.id, { loading: false });
       deps.showNotification(project.id, err instanceof Error ? err.message : 'Commit failed', 'error');
@@ -175,7 +186,7 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
   }
 
   async function doPush(project: Project): Promise<void> {
-    const gs = store.getState().gitStates[project.id] || defaultGitState();
+    const gs = getProjectGitState(project.id);
     if (gs.loading) return;
 
     if (gs.status?.dirty) {
@@ -186,23 +197,23 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
     updateGitState(project.id, { loading: true, error: null, notification: null });
     try {
       const pushResult = await gitPush(project.path);
-      updateGitState(project.id, { loading: false });
 
       if (!pushResult.success) {
+        updateGitState(project.id, { loading: false });
         deps.showNotification(project.id, `Push failed: ${pushResult.message}`, 'error');
         return;
       }
 
       const msg = pushResult.message.toLowerCase();
       if (msg.includes('up-to-date') || msg.includes('up to date')) {
+        updateGitState(project.id, { loading: false });
         deps.showNotification(project.id, 'Already up-to-date. Nothing to push.', 'info');
-      } else {
-        logger.info('git', 'Push completed', { projectId: project.id });
-        deps.showNotification(project.id, 'Pushed successfully.', 'info');
+        return;
       }
 
-      await refreshProject(project);
-      await fetchLog(project);
+      logger.info('git', 'Push completed', { projectId: project.id });
+      await refreshAndUpdate(project);
+      deps.showNotification(project.id, 'Pushed successfully.', 'info');
     } catch (err: unknown) {
       updateGitState(project.id, { loading: false });
       deps.showNotification(project.id, err instanceof Error ? err.message : 'Push failed', 'error');

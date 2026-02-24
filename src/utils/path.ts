@@ -1,3 +1,5 @@
+import { isWindows } from './platform';
+
 /** Extract the last segment of a path (file or folder name). */
 export function basename(path: string, fallback = 'Unknown'): string {
   return path.split(/[/\\]/).filter(Boolean).pop() || fallback;
@@ -10,7 +12,7 @@ export function normalizeFsPath(path: string): string {
   const trimmed = withForwardSlashes.length > 1
     ? withForwardSlashes.replace(/\/+$/, '')
     : withForwardSlashes;
-  return navigator.userAgent.includes('Windows') ? trimmed.toLowerCase() : trimmed;
+  return isWindows() ? trimmed.toLowerCase() : trimmed;
 }
 
 /** True when `path` is the same as, or nested under, `directory`. */

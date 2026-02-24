@@ -12,7 +12,7 @@ import {
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { setupSidebarResize } from '../utils/sidebar-resize';
 import { COMMIT_TEXTAREA_MAX_HEIGHT } from './git-sidebar/shared';
-import { renderLog, renderProject, type GitSidebarRenderHandlers } from './git-sidebar/render';
+import { renderLog, renderProject, pruneRenderState, type GitSidebarRenderHandlers } from './git-sidebar/render';
 import { createGitSidebarNotificationManager } from './git-sidebar/notification-manager';
 import { createGitSidebarOperations } from './git-sidebar/operations';
 
@@ -220,9 +220,6 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     applyVisibility,
   );
 
-  // Apply initial state (store.select only fires on changes, not at registration)
-  applyVisibility(store.getState().gitSidebar.visible);
-
   store.select(
     (s) => s.gitSidebar.width,
     (width) => {
@@ -248,6 +245,7 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     const ids = new Set(projects.map((p) => p.id));
     operations.pruneLocalCommitMessages(ids);
     notifications.pruneTimers(ids);
+    pruneRenderState(ids);
     scheduleRender();
   });
   store.select((s) => s.gitSidebar.expandedProjectIds, scheduleRender);

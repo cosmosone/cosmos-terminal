@@ -7,7 +7,6 @@ export type RenderMode = 'markdown' | 'highlighted-editor' | 'plain-editor';
 export interface FindController {
   open(): void;
   close(): void;
-  isOpen(): boolean;
   attach(contentEl: HTMLElement): void;
   detach(): void;
   refreshHighlights(): void;
@@ -390,10 +389,6 @@ export function createFindController(
       currentIndex = -1;
       countSpan.textContent = '';
       overlay.remove();
-    },
-
-    isOpen() {
-      return opened;
     },
 
     attach(el: HTMLElement) {

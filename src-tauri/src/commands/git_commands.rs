@@ -19,7 +19,9 @@ fn redact_credentials(text: &str) -> String {
         if let Some(at_pos) = after_scheme.find('@') {
             // Only redact if the '@' comes before the next '/' or whitespace
             let next_slash = after_scheme.find('/').unwrap_or(after_scheme.len());
-            let next_space = after_scheme.find(char::is_whitespace).unwrap_or(after_scheme.len());
+            let next_space = after_scheme
+                .find(char::is_whitespace)
+                .unwrap_or(after_scheme.len());
             if at_pos < next_slash && at_pos < next_space {
                 result.push_str(&remaining[..scheme_end + 3]);
                 result.push_str("***@");
@@ -101,8 +103,11 @@ fn local_and_upstream_oids(repo: &Repository) -> Option<(git2::Oid, git2::Oid)> 
     let head = repo.head().ok()?;
     let branch_name = head.shorthand()?;
     let local_oid = head.target()?;
-    let upstream_ref = format!("refs/remotes/origin/{}", branch_name);
-    let upstream_oid = repo.refname_to_id(&upstream_ref).ok()?;
+    let branch = repo
+        .find_branch(branch_name, git2::BranchType::Local)
+        .ok()?;
+    let upstream = branch.upstream().ok()?;
+    let upstream_oid = upstream.get().target()?;
     Some((local_oid, upstream_oid))
 }
 
@@ -168,9 +173,7 @@ fn git_status_from_repo(repo: &Repository) -> Result<GitStatusResult, String> {
         .recurse_untracked_dirs(true)
         .include_ignored(false);
 
-    let statuses = repo
-        .statuses(Some(&mut opts))
-        .map_err(|e| e.to_string())?;
+    let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?;
 
     let mut files = Vec::with_capacity(statuses.len());
 
@@ -228,8 +231,8 @@ fn git_log_sync(path: &str, limit: Option<usize>) -> Result<Vec<GitLogEntry>, St
         let raw_message = commit.message().unwrap_or("");
         let message = raw_message.lines().next().unwrap_or("").to_string();
         let body = raw_message
-            .splitn(2, "\n\n")
-            .nth(1)
+            .split_once("\n\n")
+            .map(|(_, rest)| rest)
             .unwrap_or("")
             .trim()
             .to_string();

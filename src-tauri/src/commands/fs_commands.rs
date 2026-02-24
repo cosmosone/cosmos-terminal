@@ -261,8 +261,13 @@ fn show_in_explorer_sync(path: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         // Quote the path so commas in directory/file names aren't misinterpreted
-        // as argument separators by explorer.exe.
-        let arg = format!("/select,\"{}\"", canonical.to_string_lossy());
+        // as argument separators by explorer.exe.  Reject paths containing `"`
+        // to prevent breaking out of the quoted region.
+        let path_str = canonical.to_string_lossy();
+        if path_str.contains('"') {
+            return Err("Path contains characters unsupported by explorer".to_string());
+        }
+        let arg = format!("/select,\"{}\"", path_str);
         std::process::Command::new("explorer.exe")
             .arg(arg)
             .spawn()

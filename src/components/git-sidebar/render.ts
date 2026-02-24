@@ -5,6 +5,15 @@ import type { Project, ProjectGitState, GitFileStatus, GitLogEntry } from '../..
 const committedFilesExpanded = new Map<string, boolean>();
 const changesExpanded = new Map<string, boolean>();
 
+export function pruneRenderState(validProjectIds: Set<string>): void {
+  for (const key of committedFilesExpanded.keys()) {
+    if (!validProjectIds.has(key)) committedFilesExpanded.delete(key);
+  }
+  for (const key of changesExpanded.keys()) {
+    if (!validProjectIds.has(key)) changesExpanded.delete(key);
+  }
+}
+
 export interface GitSidebarRenderHandlers {
   onProjectRowClick(project: Project, canExpand: boolean): void;
   onGenerateCommitMessage(project: Project): Promise<void>;
