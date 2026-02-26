@@ -34,7 +34,7 @@ pub fn normalize_shell_path(shell_path: Option<String>) -> Result<Option<String>
     let path = Path::new(shell);
     if path.is_absolute() {
         let canonical =
-            std::fs::canonicalize(path).map_err(|e| format!("Shell not found: {shell} ({e})"))?;
+            dunce::canonicalize(path).map_err(|e| format!("Shell not found: {shell} ({e})"))?;
         let meta = std::fs::metadata(&canonical).map_err(|e| format!("Invalid shell path: {e}"))?;
         if !meta.is_file() {
             return Err(format!("Shell path is not a file: {shell}"));
@@ -77,7 +77,7 @@ fn resolve_shell_in_path_with(
         for candidate_name in &candidates {
             let candidate = dir.join(candidate_name);
             if is_executable_file(&candidate) {
-                return Some(std::fs::canonicalize(&candidate).unwrap_or(candidate));
+                return Some(dunce::canonicalize(&candidate).unwrap_or(candidate));
             }
         }
     }

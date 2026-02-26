@@ -382,6 +382,7 @@ name = "cosmos-terminal"
 version = "0.1.83"
 dependencies = [
  "base64 0.22.1",
+ "dunce",
  "git2",
  "notify",
  "notify-debouncer-mini",

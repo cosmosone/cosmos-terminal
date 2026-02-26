@@ -3,7 +3,7 @@ use std::path::{Component, Path, PathBuf};
 /// Canonicalize an existing filesystem path after basic input validation.
 pub fn canonicalize_existing_path(path: &str) -> Result<PathBuf, String> {
     validate_raw_path(path)?;
-    std::fs::canonicalize(path).map_err(|e| format!("Invalid path: {e}"))
+    dunce::canonicalize(path).map_err(|e| format!("Invalid path: {e}"))
 }
 
 /// Canonicalize an existing directory path.
@@ -35,13 +35,13 @@ pub fn canonicalize_write_target(path: &str) -> Result<PathBuf, String> {
     reject_parent_components(p)?;
 
     let canonical = if p.exists() {
-        std::fs::canonicalize(p).map_err(|e| format!("Invalid path: {e}"))?
+        dunce::canonicalize(p).map_err(|e| format!("Invalid path: {e}"))?
     } else {
         let parent = p
             .parent()
             .ok_or_else(|| "Path must include a parent directory".to_string())?;
         let canonical_parent =
-            std::fs::canonicalize(parent).map_err(|e| format!("Invalid path: {e}"))?;
+            dunce::canonicalize(parent).map_err(|e| format!("Invalid path: {e}"))?;
         let file_name = p
             .file_name()
             .ok_or_else(|| "Path must reference a file or directory name".to_string())?;

@@ -29,6 +29,7 @@ base64 = "0.22"
 tokio = { version = "1", features = ["rt"] }
 notify = "7"
 notify-debouncer-mini = "0.5"
+dunce = "1"
 
 [profile.release]
 panic = "abort"
