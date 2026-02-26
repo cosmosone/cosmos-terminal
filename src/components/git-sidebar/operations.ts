@@ -49,7 +49,7 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       getGitStatus(project.path),
       getGitLog(project.path, 50),
     ]);
-    updateGitState(project.id, { loading: false, status, log, ...extra });
+    updateGitState(project.id, { loading: false, loadingLabel: undefined, status, log, ...extra });
   }
 
   function clearCommitMessage(projectId: string): void {
@@ -155,15 +155,16 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
   }
 
   async function doCommit(project: Project, push: boolean): Promise<void> {
-    if (getProjectGitState(project.id).loading) return;
+    const gs = getProjectGitState(project.id);
+    if (gs.loading) return;
 
-    const message = (deps.localCommitMessages.get(project.id) ?? getProjectGitState(project.id).commitMessage).trim();
+    const message = (deps.localCommitMessages.get(project.id) ?? gs.commitMessage).trim();
     if (!message) {
       deps.showNotification(project.id, 'Please enter a commit message.', 'warning');
       return;
     }
 
-    const actionLabel = push ? 'Pushing...' : 'Committing...';
+    const actionLabel = push ? 'Committing & Pushing...' : 'Committing...';
     updateGitState(project.id, { loading: true, loadingLabel: actionLabel, error: null, notification: null });
     try {
       await gitStageAll(project.path);
@@ -187,7 +188,7 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
         deps.showNotification(project.id, `Committed, but push failed: ${pushFailed}`, 'error', 8000);
       }
     } catch (err: unknown) {
-      updateGitState(project.id, { loading: false });
+      updateGitState(project.id, { loading: false, loadingLabel: undefined });
       const errorMsg = err instanceof Error ? err.message : String(err);
 
       if (isLockFileError(errorMsg)) {
@@ -233,14 +234,14 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       const pushResult = await gitPush(project.path);
 
       if (!pushResult.success) {
-        updateGitState(project.id, { loading: false });
+        updateGitState(project.id, { loading: false, loadingLabel: undefined });
         deps.showNotification(project.id, `Push failed: ${pushResult.message}`, 'error');
         return;
       }
 
       const msg = pushResult.message.toLowerCase();
       if (msg.includes('up-to-date') || msg.includes('up to date')) {
-        updateGitState(project.id, { loading: false });
+        updateGitState(project.id, { loading: false, loadingLabel: undefined });
         deps.showNotification(project.id, 'Already up-to-date. Nothing to push.', 'info');
         return;
       }
@@ -249,7 +250,7 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       await refreshAndUpdate(project);
       deps.showNotification(project.id, 'Pushed successfully.', 'info');
     } catch (err: unknown) {
-      updateGitState(project.id, { loading: false });
+      updateGitState(project.id, { loading: false, loadingLabel: undefined });
       deps.showNotification(project.id, err instanceof Error ? err.message : 'Push failed', 'error');
     }
   }

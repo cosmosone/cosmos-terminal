@@ -175,7 +175,7 @@ function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjec
   addButton('Push', 'Pushing...', () => {
     void deps.handlers.onPush(project);
   });
-  addButton('Commit & Push', 'Pushing...', () => {
+  addButton('Commit & Push', 'Committing & Pushing...', () => {
     void deps.handlers.onCommit(project, true);
   });
 
