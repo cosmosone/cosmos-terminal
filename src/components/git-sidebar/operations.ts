@@ -164,8 +164,8 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       return;
     }
 
-    const actionLabel = push ? 'Committing & Pushing...' : 'Committing...';
-    updateGitState(project.id, { loading: true, loadingLabel: actionLabel, error: null, notification: null });
+    const loadingLabel = push ? 'Commit & Push' : 'Commit';
+    updateGitState(project.id, { loading: true, loadingLabel, error: null, notification: null });
     try {
       await gitStageAll(project.path);
       const result = await gitCommit(project.path, message);
@@ -229,7 +229,7 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       return;
     }
 
-    updateGitState(project.id, { loading: true, loadingLabel: 'Pushing...', error: null, notification: null });
+    updateGitState(project.id, { loading: true, loadingLabel: 'Push', error: null, notification: null });
     try {
       const pushResult = await gitPush(project.path);
 

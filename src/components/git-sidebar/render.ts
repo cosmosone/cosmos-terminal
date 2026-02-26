@@ -161,21 +161,21 @@ function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjec
   });
   buttons.appendChild(generateBtn);
 
-  function addButton(label: string, activeLabel: string, handler: () => void): void {
+  function addButton(label: string, handler: () => void): void {
     const btn = createElement('button', { className: 'git-commit-btn secondary' });
-    btn.textContent = gs.loading && gs.loadingLabel === activeLabel ? activeLabel : label;
+    btn.textContent = gs.loading && gs.loadingLabel === label ? 'Working...' : label;
     btn.disabled = gs.loading || gs.generating;
     btn.addEventListener('click', handler);
     buttons.appendChild(btn);
   }
 
-  addButton('Commit', 'Committing...', () => {
+  addButton('Commit', () => {
     void deps.handlers.onCommit(project, false);
   });
-  addButton('Push', 'Pushing...', () => {
+  addButton('Push', () => {
     void deps.handlers.onPush(project);
   });
-  addButton('Commit & Push', 'Committing & Pushing...', () => {
+  addButton('Commit & Push', () => {
     void deps.handlers.onCommit(project, true);
   });
 
