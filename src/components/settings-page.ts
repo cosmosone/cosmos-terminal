@@ -165,6 +165,7 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       ['closeProjectTab', 'Close Project Tab'],
       ['scrollToBottom', 'Scroll to Bottom'],
       ['findInDocument', 'Find in Document'],
+      ['renameTab', 'Rename Tab'],
     ];
 
     // Build conflict map: combo -> list of labels that use it

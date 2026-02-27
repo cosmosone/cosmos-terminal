@@ -66,6 +66,7 @@ export interface KeybindingConfig {
   closeProjectTab: string;
   scrollToBottom: string;
   findInDocument: string;
+  renameTab: string;
 }
 
 export interface AppSettings {

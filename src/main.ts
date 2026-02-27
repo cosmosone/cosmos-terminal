@@ -76,7 +76,7 @@ async function main(): Promise<void> {
   const refresh = () => splitContainer.render();
 
   initProjectTabBar(refresh);
-  initSessionTabBar(refresh);
+  const sessionTabBar = initSessionTabBar(refresh);
   initSettingsPage(() => { splitContainer.applySettings(); applyFontSettings(); });
   initStatusBar(() => splitContainer.clearAllScrollback());
   initLogViewer();
@@ -267,6 +267,8 @@ async function main(): Promise<void> {
       removeProject(project.id);
       refresh();
     });
+
+    bind(kb.renameTab, () => sessionTabBar.triggerRename());
   }
 
   store.select(

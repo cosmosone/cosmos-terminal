@@ -25,7 +25,7 @@ function sessionIcon(agentCommand: string | undefined, title: string, size?: num
   return iconFn(size);
 }
 
-export function initSessionTabBar(onTabChange: () => void): void {
+export function initSessionTabBar(onTabChange: () => void): { triggerRename: () => void } {
   const bar = $('#session-tab-bar')!;
 
   const dragManager = createTabDragManager();
@@ -78,6 +78,23 @@ export function initSessionTabBar(onTabChange: () => void): void {
     }
     removeFileTab(projectId, fileTab.id);
     onTabChange();
+  }
+
+  function beginRename(tab: HTMLElement, projectId: string, sessionId: string, sessionTitle: string): void {
+    renameActive = true;
+    pendingRender = null;
+    startInlineRename(tab, sessionTitle, (newName) => {
+      renameSession(projectId, sessionId, newName);
+    }, () => {
+      renameActive = false;
+      if (pendingRender) {
+        const deferred = pendingRender;
+        pendingRender = null;
+        render(deferred.project);
+      } else {
+        onTabChange();
+      }
+    });
   }
 
   function render(project: Project | undefined): void {
@@ -170,23 +187,7 @@ export function initSessionTabBar(onTabChange: () => void): void {
         showContextMenu(e.clientX, e.clientY, [
           {
             label: 'Rename',
-            action: () => {
-              renameActive = true;
-              pendingRender = null;
-              const onRenameDone = () => {
-                renameActive = false;
-                if (pendingRender) {
-                  const deferred = pendingRender;
-                  pendingRender = null;
-                  render(deferred.project);
-                } else {
-                  onTabChange();
-                }
-              };
-              startInlineRename(tab, session.title, (newName) => {
-                renameSession(project.id, session.id, newName);
-              }, onRenameDone);
-            },
+            action: () => beginRename(tab, project.id, session.id, session.title),
           },
           {
             label: session.locked ? 'Unlock' : 'Lock',
@@ -390,4 +391,23 @@ export function initSessionTabBar(onTabChange: () => void): void {
   render(lastProject);
 
   new ResizeObserver(() => updateScrollArrows()).observe(bar);
+
+  function triggerRename(): void {
+    const state = store.getState();
+    const project = state.projects.find((p) => p.id === state.activeProjectId);
+    if (!project) return;
+
+    const session = project.sessions.find((s) => s.id === project.activeSessionId);
+    if (!session) return;
+
+    // Only rename terminal tabs (not file tabs)
+    if (project.activeTabId !== null) return;
+
+    const activeTab = bar.querySelector('.session-tab.active:not(.file-tab)') as HTMLElement | null;
+    if (!activeTab) return;
+
+    beginRename(activeTab, project.id, session.id, session.title);
+  }
+
+  return { triggerRename };
 }

@@ -80,6 +80,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingConfig = {
   closeProjectTab: 'Ctrl+q',
   scrollToBottom: 'Alt+b',
   findInDocument: 'Ctrl+f',
+  renameTab: 'Ctrl+Shift+n',
 };
 
 function defaultSettings(): AppSettings {
