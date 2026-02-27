@@ -15,6 +15,7 @@ import { COMMIT_TEXTAREA_MAX_HEIGHT } from './git-sidebar/shared';
 import { renderLog, renderProject, pruneRenderState, type GitSidebarRenderHandlers } from './git-sidebar/render';
 import { createGitSidebarNotificationManager } from './git-sidebar/notification-manager';
 import { createGitSidebarOperations } from './git-sidebar/operations';
+import type { ProjectGitState } from '../state/types';
 
 export function initGitSidebar(onLayoutChange: () => void): void {
   const container = $('#git-sidebar-container')! as HTMLElement;
@@ -240,7 +241,63 @@ export function initGitSidebar(onLayoutChange: () => void): void {
       });
     }
   }
-  store.select((s) => s.gitStates, scheduleRender);
+  // Track gitStates to distinguish generating-only changes (which only need a
+  // lightweight button-text patch) from structural changes that require a full
+  // DOM rebuild.  This prevents the "Changes" section from flashing on every
+  // progress-label update during AI commit-message generation.
+  let lastGitStates: Record<string, ProjectGitState> = {};
+
+  // Compares all ProjectGitState fields EXCEPT `generating` and
+  // `generatingLabel`.  Keep in sync with the ProjectGitState interface.
+  function hasNonGeneratingChanges(
+    prev: Record<string, ProjectGitState>,
+    curr: Record<string, ProjectGitState>,
+  ): boolean {
+    const prevIds = Object.keys(prev);
+    const currIds = Object.keys(curr);
+    if (prevIds.length !== currIds.length) return true;
+    for (const id of currIds) {
+      const p = prev[id];
+      const c = curr[id];
+      if (!p) return true;
+      if (
+        p.isRepo !== c.isRepo ||
+        p.loading !== c.loading ||
+        p.loadingLabel !== c.loadingLabel ||
+        p.error !== c.error ||
+        p.status !== c.status ||
+        p.commitMessage !== c.commitMessage ||
+        p.notification !== c.notification ||
+        p.log !== c.log
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function patchGenerateButtons(): void {
+    const gitStates = store.getState().gitStates;
+    for (const btn of changesContent.querySelectorAll<HTMLButtonElement>('.git-generate-btn')) {
+      const projectId = btn.dataset.projectId;
+      if (!projectId) continue;
+      const gs = gitStates[projectId];
+      if (!gs) continue;
+      btn.textContent = gs.generating ? (gs.generatingLabel || 'Generating...') : 'Generate';
+      btn.disabled = gs.generating || gs.loading;
+    }
+  }
+
+  store.select(
+    (s) => s.gitStates,
+    (gitStates) => {
+      patchGenerateButtons();
+      if (hasNonGeneratingChanges(lastGitStates, gitStates)) {
+        lastGitStates = gitStates;
+        scheduleRender();
+      }
+    },
+  );
   store.select((s) => s.projects, (projects) => {
     const ids = new Set(projects.map((p) => p.id));
     operations.pruneLocalCommitMessages(ids);

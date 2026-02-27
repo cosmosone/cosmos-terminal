@@ -154,6 +154,7 @@ function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjec
   const buttons = createElement('div', { className: 'git-commit-buttons' });
 
   const generateBtn = createElement('button', { className: 'git-commit-btn secondary git-generate-btn' });
+  generateBtn.dataset.projectId = project.id;
   generateBtn.textContent = gs.generating ? (gs.generatingLabel || 'Generating...') : 'Generate';
   generateBtn.disabled = gs.generating || gs.loading;
   generateBtn.addEventListener('click', () => {
