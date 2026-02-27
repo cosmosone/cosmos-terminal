@@ -430,7 +430,7 @@
 
 .git-log-body {
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-primary);
   white-space: pre-wrap;
   padding: 4px 0 2px 8px;
   line-height: 1.4;
