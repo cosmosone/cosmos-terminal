@@ -125,6 +125,14 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       createToggleRow('Confirm Close Project Tab', settings.confirmCloseProjectTab, (v) =>
         apply({ confirmCloseProjectTab: v })),
     );
+    term.content.appendChild(
+      createToggleRow('Shift+Enter as Ctrl+Enter', settings.shiftEnterAsCtrlEnter, (v) =>
+        apply({ shiftEnterAsCtrlEnter: v })),
+    );
+    term.content.appendChild(
+      createToggleRow('Ctrl+Shift+V as Alt+V', settings.ctrlShiftVAsAltV, (v) =>
+        apply({ ctrlShiftVAsAltV: v })),
+    );
     inner.appendChild(term.wrapper);
 
     // ── 3. Shell (fundamental but set-and-forget) ──

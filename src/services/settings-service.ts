@@ -90,6 +90,8 @@ function defaultSettings(): AppSettings {
     scrollbackLines: 10000,
     copyOnSelect: false,
     rightClickPaste: false,
+    shiftEnterAsCtrlEnter: true,
+    ctrlShiftVAsAltV: true,
     confirmCloseTerminalTab: true,
     confirmCloseProjectTab: true,
     debugLogging: false,

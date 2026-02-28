@@ -81,6 +81,8 @@ export interface AppSettings {
   scrollbackLines: number;
   copyOnSelect: boolean;
   rightClickPaste: boolean;
+  shiftEnterAsCtrlEnter: boolean;
+  ctrlShiftVAsAltV: boolean;
   debugLogging: boolean;
   debugLoggingExpiry: string | null;
   confirmCloseTerminalTab: boolean;

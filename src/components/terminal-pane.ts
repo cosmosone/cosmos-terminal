@@ -120,6 +120,21 @@ function extractCwdFromTitle(title: string): string | null {
   return null;
 }
 
+interface ScrollSnapshot {
+  ts: number;
+  reason: string;
+  followOutput: boolean;
+  syncingToBottom: boolean;
+  hidden: boolean;
+  fitting: boolean;
+  writesInFlight: number;
+  viewportY: number;
+  baseY: number;
+  rows: number;
+  domScrollTop: number | null;
+  domMaxScrollTop: number | null;
+}
+
 export class TerminalPane {
   readonly element: HTMLElement;
   readonly paneId: string;
@@ -151,16 +166,28 @@ export class TerminalPane {
   private lastResizeTime = 0;
   private pendingOutput: Uint8Array[] = [];
   private outputRafId = 0;
-  /** Number of terminal.write() callbacks still pending — suppresses onScroll during async processing. */
+  /** Number of terminal.write() callbacks still pending (diagnostic only). */
   private writesInFlight = 0;
   private scrollBtn: HTMLElement;
-  /** Persistent auto-scroll intent — true when the user is following output at the bottom. */
-  private autoScroll = true;
-  private ignoreScrollTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Single source of truth for follow-mode intent. */
+  private followOutput = true;
+  /** Visibility intent from SplitContainer (independent from measured dimensions). */
+  private paneVisible = true;
+  /** True while running a programmatic scroll-to-bottom pass. */
+  private syncingToBottom = false;
+  private bottomSyncRafId = 0;
+  private bottomSyncAttempts = 0;
+  private pendingBottomSyncReason = '';
+  private scrollDiagnostics: ScrollSnapshot[] = [];
+  private lastAnomalySignature = '';
+  private lastAnomalyTs = 0;
+  private static readonly SCROLL_DIAGNOSTIC_CAPACITY = 120;
+  private static readonly BOTTOM_TOLERANCE_ROWS = 1;
+  private static readonly ANOMALY_DEDUPE_MS = 1_000;
 
-  /** Whether the terminal element is hidden (zero width). */
+  /** Whether the terminal element is hidden or collapsed. */
   private get isHidden(): boolean {
-    return this.element.offsetWidth === 0;
+    return !this.paneVisible || this.element.offsetWidth === 0 || this.element.offsetHeight === 0;
   }
 
   // Activity detection — fire onActivity at most once per rolling window
@@ -269,6 +296,8 @@ export class TerminalPane {
         return false;
       }
 
+      const { shiftEnterAsCtrlEnter, ctrlShiftVAsAltV } = store.getState().settings;
+
       // Explicit Ctrl+V paste — Tauri webview may not fire browser paste events
       // reliably for TUI applications (e.g. Claude Code).
       // preventDefault() is required to suppress the browser's native paste event,
@@ -276,6 +305,23 @@ export class TerminalPane {
       if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'v') {
         e.preventDefault();
         this.pasteFromClipboard('Ctrl+V');
+        return false;
+      }
+
+      // Ctrl+Shift+V → send the same sequence as Alt+V so that apps
+      // like Claude Code recognise it as an alternate binding.
+      if (e.ctrlKey && e.shiftKey && !e.altKey && (e.key === 'v' || e.key === 'V')
+        && ctrlShiftVAsAltV) {
+        e.preventDefault();
+        if (this.backendId) {
+          if (this.kittyFlags & 1) {
+            // Kitty protocol: CSI u with 'v' codepoint (118), Alt modifier (3 = 1 + Alt(2))
+            writeToPtySession(this.backendId, '\x1b[118;3u');
+          } else {
+            // Legacy: ESC + v (standard Alt+V escape sequence)
+            writeToPtySession(this.backendId, '\x1bv');
+          }
+        }
         return false;
       }
 
@@ -288,7 +334,8 @@ export class TerminalPane {
           let mod = csiModifier(e);
           // Treat Shift+Enter the same as Ctrl+Enter so that apps like
           // Claude Code recognise both as "insert newline".
-          if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey) {
+          if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey
+            && shiftEnterAsCtrlEnter) {
             mod = 5; // 1 + Ctrl(4)
           }
           const seq = mod > 1 ? `\x1b[${code};${mod}u` : `\x1b[${code}u`;
@@ -310,7 +357,8 @@ export class TerminalPane {
       // Ctrl+Enter and Shift+Enter.  Most TUI apps treat \n as "insert
       // newline" vs \r as "submit".  CSI u sequences are NOT understood
       // by apps that haven't negotiated Kitty protocol.
-      if (e.key === 'Enter' && (e.ctrlKey || e.shiftKey)) {
+      if (e.key === 'Enter' && (e.ctrlKey
+        || (e.shiftKey && shiftEnterAsCtrlEnter))) {
         e.preventDefault();
         if (this.backendId) {
           writeToPtySession(this.backendId, '\n');
@@ -378,52 +426,29 @@ export class TerminalPane {
       }
     });
 
-    // Detect user scroll-up independently of xterm's onScroll event.
-    // onScroll is suppressed while writesInFlight > 0 (to avoid transient
-    // state corruption), but the wheel event fires only from real user
-    // interaction, so it's safe to honour at any time.
-    this.element.addEventListener('wheel', (e) => {
-      if (e.deltaY < 0 && this.autoScroll) {
-        this.autoScroll = false;
-        this.scrollBtn.classList.add('visible');
-        logger.debug('pty', 'autoScroll disabled via wheel-up', {
-          paneId: this.paneId,
-          writesInFlight: this.writesInFlight,
-        });
+    // Let xterm own wheel handling and only infer user intent from wheel-up.
+    this.terminal.attachCustomWheelEventHandler((e: WheelEvent) => {
+      if (e.deltaY < 0 && this.followOutput && this.isAtBottom()) {
+        this.setFollowOutput(false, 'wheel-up');
       }
-    }, { passive: true });
+      this.recordScrollSnapshot('wheel');
+      return true;
+    });
 
     this.terminal.onScroll(() => {
-      // Ignore scroll events when terminal is hidden — viewport state is
-      // unreliable and scrollToBottom() is a no-op, so acting on these
-      // events would corrupt autoScroll for when the pane becomes visible.
       if (this.isHidden) return;
-      // Ignore during fit() — terminal.resize() temporarily disrupts
-      // viewport position; the fit() method restores scroll state itself.
       if (this.fitting) return;
-      // Ignore during async terminal.write() processing — xterm yields
-      // across frames for large writes, causing transient viewportY < baseY
-      // that would incorrectly flip autoScroll to false.
-      if (this.writesInFlight > 0) return;
-      // Ignore during syncScrollToBottom() to prevent stale DOM scroll events
-      // from falsely disabling auto-scroll.
-      if (this.ignoreScrollTimer) return;
+      if (this.syncingToBottom) return;
+      this.updateFollowFromBuffer('onScroll');
+    });
 
-      const buf = this.terminal.buffer.active;
-      // Allow 1-row tolerance — mouse-wheel scroll granularity may not
-      // align with cell height, leaving viewportY one row short of baseY.
-      const isAtBottom = buf.viewportY >= buf.baseY - 1;
-      if (this.autoScroll !== isAtBottom) {
-        logger.debug('pty', 'autoScroll changed', {
-          paneId: this.paneId,
-          autoScroll: isAtBottom,
-          viewportY: buf.viewportY,
-          baseY: buf.baseY,
-          rows: this.terminal.rows,
-        });
+    // Reconcile to bottom after parsing instead of write callback races.
+    this.terminal.onWriteParsed(() => {
+      if (this.disposed || this.isHidden) return;
+      this.recordScrollSnapshot('onWriteParsed');
+      if (this.followOutput) {
+        this.scheduleSyncToBottom('onWriteParsed');
       }
-      this.autoScroll = isAtBottom;
-      this.scrollBtn.classList.toggle('visible', !isAtBottom);
     });
 
     this.terminal.onTitleChange((title) => {
@@ -781,8 +806,8 @@ export class TerminalPane {
     }
 
     if (data.length > 0) {
-      if (!this.autoScroll) {
-        logger.debug('pty', 'flushOutput: writing without auto-scroll', {
+      if (!this.followOutput) {
+        logger.debug('pty', 'flushOutput: writing without followOutput', {
           paneId: this.paneId,
           bytes: data.length,
         });
@@ -791,11 +816,7 @@ export class TerminalPane {
       this.terminal.write(data, () => {
         this.writesInFlight = Math.max(0, this.writesInFlight - 1);
         if (this.disposed) return;
-        // Wait for ALL concurrent writes to complete so baseY has stabilised,
-        // then scroll only if the user hasn't opted out via wheel-up.
-        if (this.autoScroll && this.writesInFlight === 0) {
-          this.syncScrollToBottom();
-        }
+        this.recordScrollSnapshot('write-callback');
       });
     }
   }
@@ -804,11 +825,9 @@ export class TerminalPane {
 
   fit(): void {
     if (this.disposed || this.isHidden) return;
-    // Snapshot scroll intent before resize.  fitAddon.fit() calls
-    // terminal.resize() which fires onScroll synchronously — during resize
-    // the viewport position is temporarily inconsistent (viewportY < baseY),
-    // causing the onScroll handler to incorrectly flip autoScroll to false.
-    const wasAutoScroll = this.autoScroll;
+    // Snapshot follow intent before resize. fit() may transiently shift
+    // viewport coordinates while rows/cols settle.
+    const wasFollowingOutput = this.followOutput;
     const prevRows = this.terminal.rows;
     const prevCols = this.terminal.cols;
     this.fitting = true;
@@ -855,8 +874,8 @@ export class TerminalPane {
         to: `${newCols}x${newRows}`,
         viewportY: buf.viewportY,
         baseY: buf.baseY,
-        wasAutoScroll,
-        autoScrollAfterResize: this.autoScroll,
+        wasFollowingOutput,
+        followOutputAfterResize: this.followOutput,
       });
     } else {
       // Dimensions unchanged (e.g. returning from hidden state with the
@@ -870,8 +889,10 @@ export class TerminalPane {
     // This also recovers from the hidden-pane case: scrollToBottom() calls
     // in write callbacks are no-ops while the terminal has display:none,
     // so the viewport can be stuck when the pane becomes visible again.
-    if (wasAutoScroll) {
-      this.syncScrollToBottom();
+    if (wasFollowingOutput) {
+      this.scheduleSyncToBottom('fit');
+    } else {
+      this.updateFollowFromBuffer('fit-no-follow');
     }
   }
 
@@ -930,74 +951,198 @@ export class TerminalPane {
     this.terminal.clear();
   }
 
-  private ignoreScrollEvents(): void {
-    if (this.ignoreScrollTimer) clearTimeout(this.ignoreScrollTimer);
-    this.ignoreScrollTimer = setTimeout(() => {
-      this.ignoreScrollTimer = null;
-      if (!this.disposed && !this.isHidden) {
-        const buf = this.terminal.buffer.active;
-        const isAtBottom = buf.viewportY >= buf.baseY - 1;
-        if (this.autoScroll !== isAtBottom) {
-          logger.debug('pty', 'autoScroll changed after ignore timeout', {
-            paneId: this.paneId,
-            autoScroll: isAtBottom,
-            viewportY: buf.viewportY,
-            baseY: buf.baseY,
-            rows: this.terminal.rows,
-          });
-          this.autoScroll = isAtBottom;
-          this.scrollBtn.classList.toggle('visible', !isAtBottom);
-        }
+  setVisible(visible: boolean): void {
+    if (this.paneVisible === visible) return;
+
+    this.paneVisible = visible;
+    this.element.style.display = visible ? '' : 'none';
+    this.recordScrollSnapshot(visible ? 'visible' : 'hidden');
+
+    if (!visible) {
+      this.resetBottomSyncState();
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      if (this.disposed || this.isHidden) return;
+      this.fit();
+      this.terminal.refresh(0, this.terminal.rows - 1);
+      if (this.followOutput) {
+        this.scheduleSyncToBottom('visible');
+      } else {
+        this.updateFollowFromBuffer('visible-no-follow');
       }
-    }, 150);
+    });
   }
 
-  /** Restore auto-scroll intent, scroll to bottom, and hide the scroll button.
-   *  After a display:none → visible transition the viewport may not have
-   *  reflowed yet, so scrollToBottom() can silently fail.  When that happens,
-   *  retry across up to two animation frames to catch deferred layout updates
-   *  (WebView2 can batch reflows across frames).
-   */
-  private syncScrollToBottom(): void {
-    this.autoScroll = true;
-    this.scrollBtn.classList.remove('visible');
+  private setFollowOutput(followOutput: boolean, reason: string): void {
+    if (this.followOutput === followOutput) {
+      this.scrollBtn.classList.toggle('visible', !this.followOutput);
+      return;
+    }
 
-    this.ignoreScrollEvents();
-    this.terminal.scrollToBottom();
+    const previous = this.followOutput;
+    this.followOutput = followOutput;
+    this.scrollBtn.classList.toggle('visible', !this.followOutput);
+    logger.debug('pty', 'followOutput changed', {
+      paneId: this.paneId,
+      previous,
+      followOutput,
+      reason,
+      viewportY: this.terminal.buffer.active.viewportY,
+      baseY: this.terminal.buffer.active.baseY,
+      rows: this.terminal.rows,
+    });
+    this.recordScrollSnapshot(`follow-change:${reason}`);
+  }
 
+  private isAtBottom(): boolean {
     const buf = this.terminal.buffer.active;
-    if (buf.viewportY < buf.baseY && !this.isHidden) {
-      logger.debug('pty', 'syncScrollToBottom: initial scroll incomplete, retrying', {
-        paneId: this.paneId,
-        viewportY: buf.viewportY,
-        baseY: buf.baseY,
-      });
-      // xterm defers viewport DOM updates via its internal _refresh() RAF.
-      // Force a reflow before each retry to commit pending layout changes.
-      requestAnimationFrame(() => {
-        if (this.disposed || !this.autoScroll) return;
-        this.ignoreScrollEvents();
-        void this.element.offsetHeight;
-        this.terminal.scrollToBottom();
-        const buf2 = this.terminal.buffer.active;
-        if (buf2.viewportY < buf2.baseY && !this.isHidden) {
-          logger.debug('pty', 'syncScrollToBottom: second retry needed', {
-            paneId: this.paneId,
-            viewportY: buf2.viewportY,
-            baseY: buf2.baseY,
-          });
-          requestAnimationFrame(() => {
-            if (this.disposed || !this.autoScroll) return;
-            this.ignoreScrollEvents();
-            void this.element.offsetHeight;
-            this.terminal.scrollToBottom();
-            // Final fallback: force DOM scrollTop directly if xterm's
-            // deferred viewport sync still hasn't caught up.
-            this.forceViewportScroll();
-          });
-        }
+    return buf.viewportY >= buf.baseY - TerminalPane.BOTTOM_TOLERANCE_ROWS;
+  }
+
+  private updateFollowFromBuffer(reason: string): void {
+    const atBottom = this.isAtBottom();
+    this.setFollowOutput(atBottom, reason);
+
+    const viewport = this.getViewportMetrics();
+    if (atBottom && viewport && viewport.scrollTop < viewport.maxScrollTop - 1) {
+      this.reportScrollAnomaly('buffer-dom-mismatch', {
+        reason,
+        domScrollTop: viewport.scrollTop,
+        domMaxScrollTop: viewport.maxScrollTop,
       });
     }
+  }
+
+  private scheduleSyncToBottom(reason: string): void {
+    if (this.disposed || this.isHidden || !this.followOutput) return;
+    this.pendingBottomSyncReason = reason;
+    this.syncingToBottom = true;
+    if (this.bottomSyncRafId) return;
+    this.bottomSyncRafId = requestAnimationFrame(() => {
+      this.bottomSyncRafId = 0;
+      this.runBottomSyncAttempt();
+    });
+  }
+
+  private runBottomSyncAttempt(): void {
+    if (this.disposed || this.isHidden || !this.followOutput) {
+      this.resetBottomSyncState();
+      return;
+    }
+
+    const reason = this.pendingBottomSyncReason || 'unspecified';
+    this.syncingToBottom = true;
+    this.terminal.scrollToBottom();
+    this.recordScrollSnapshot(`sync-attempt-${this.bottomSyncAttempts + 1}:${reason}`);
+
+    if (this.isAtBottom()) {
+      this.resetBottomSyncState();
+      this.updateFollowFromBuffer(`sync-success:${reason}`);
+      return;
+    }
+
+    if (this.bottomSyncAttempts === 0) {
+      this.bottomSyncAttempts = 1;
+      this.bottomSyncRafId = requestAnimationFrame(() => {
+        this.bottomSyncRafId = 0;
+        this.runBottomSyncAttempt();
+      });
+      return;
+    }
+
+    // Final fallback: force DOM scrollTop directly if xterm's viewport sync
+    // still has not caught up.
+    this.forceViewportScroll();
+    this.recordScrollSnapshot(`sync-dom-force:${reason}`);
+
+    if (!this.isAtBottom()) {
+      const viewport = this.getViewportMetrics();
+      this.reportScrollAnomaly('sync-stuck', {
+        reason,
+        viewportY: this.terminal.buffer.active.viewportY,
+        baseY: this.terminal.buffer.active.baseY,
+        domScrollTop: viewport?.scrollTop ?? null,
+        domMaxScrollTop: viewport?.maxScrollTop ?? null,
+      });
+    }
+
+    this.resetBottomSyncState();
+    this.updateFollowFromBuffer(`sync-end:${reason}`);
+  }
+
+  private resetBottomSyncState(): void {
+    if (this.bottomSyncRafId) {
+      cancelAnimationFrame(this.bottomSyncRafId);
+      this.bottomSyncRafId = 0;
+    }
+    this.bottomSyncAttempts = 0;
+    this.pendingBottomSyncReason = '';
+    this.syncingToBottom = false;
+  }
+
+  private getViewportElement(): HTMLElement | null {
+    const selectors = [
+      '.xterm-viewport',
+      '.xterm-scrollable-element',
+      '.xterm .monaco-scrollable-element',
+    ];
+    for (const selector of selectors) {
+      const el = this.element.querySelector(selector) as HTMLElement | null;
+      if (el) return el;
+    }
+    return null;
+  }
+
+  private getViewportMetrics(): { scrollTop: number; maxScrollTop: number } | null {
+    const viewport = this.getViewportElement();
+    if (!viewport) return null;
+    const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    return {
+      scrollTop: viewport.scrollTop,
+      maxScrollTop,
+    };
+  }
+
+  private recordScrollSnapshot(reason: string): void {
+    const metrics = this.getViewportMetrics();
+    const buf = this.terminal.buffer.active;
+    const snapshot: ScrollSnapshot = {
+      ts: Date.now(),
+      reason,
+      followOutput: this.followOutput,
+      syncingToBottom: this.syncingToBottom,
+      hidden: this.isHidden,
+      fitting: this.fitting,
+      writesInFlight: this.writesInFlight,
+      viewportY: buf.viewportY,
+      baseY: buf.baseY,
+      rows: this.terminal.rows,
+      domScrollTop: metrics?.scrollTop ?? null,
+      domMaxScrollTop: metrics?.maxScrollTop ?? null,
+    };
+    this.scrollDiagnostics.push(snapshot);
+    if (this.scrollDiagnostics.length > TerminalPane.SCROLL_DIAGNOSTIC_CAPACITY) {
+      this.scrollDiagnostics.shift();
+    }
+  }
+
+  private reportScrollAnomaly(kind: string, details: Record<string, unknown>): void {
+    const signature = `${kind}:${JSON.stringify(details)}`;
+    const now = Date.now();
+    if (signature === this.lastAnomalySignature
+      && now - this.lastAnomalyTs < TerminalPane.ANOMALY_DEDUPE_MS) {
+      return;
+    }
+    this.lastAnomalySignature = signature;
+    this.lastAnomalyTs = now;
+
+    logger.warn('pty', `Scroll anomaly: ${kind}`, {
+      paneId: this.paneId,
+      ...details,
+      recentSnapshots: this.scrollDiagnostics.slice(-8),
+    });
   }
 
   /**
@@ -1006,7 +1151,7 @@ export class TerminalPane {
    * (xtermjs/xterm.js#494, #3311).
    */
   private forceViewportScroll(): void {
-    const viewport = this.element.querySelector('.xterm-viewport') as HTMLElement | null;
+    const viewport = this.getViewportElement();
     if (!viewport) return;
     void viewport.offsetHeight; // commit pending layout
     if (viewport.scrollTop < viewport.scrollHeight - viewport.offsetHeight - 1) {
@@ -1028,7 +1173,8 @@ export class TerminalPane {
       baseY: buf.baseY,
       rows: this.terminal.rows,
     });
-    this.syncScrollToBottom();
+    this.setFollowOutput(true, 'manual-scroll-button');
+    this.scheduleSyncToBottom('manual-scroll-button');
   }
 
   async dispose(): Promise<void> {
@@ -1037,7 +1183,7 @@ export class TerminalPane {
     if (this.outputRafId) cancelAnimationFrame(this.outputRafId);
     if (this.resizeRafId) cancelAnimationFrame(this.resizeRafId);
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
-    if (this.ignoreScrollTimer) clearTimeout(this.ignoreScrollTimer);
+    this.resetBottomSyncState();
     this.pendingOutput = [];
     // Clean up OSC busy state so tracking Sets stay consistent
     this.setOscIdle('Pane disposed while busy');

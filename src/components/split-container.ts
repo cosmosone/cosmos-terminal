@@ -83,7 +83,7 @@ export class SplitContainer {
 
     // Hide all terminals, then show active session's terminals
     for (const [paneId, tp] of this.terminals) {
-      tp.element.style.display = activePaneIds.has(paneId) ? '' : 'none';
+      tp.setVisible(activePaneIds.has(paneId));
     }
 
     // Compute layout before mounting so new panes have correct dimensions

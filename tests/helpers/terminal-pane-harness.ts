@@ -24,12 +24,20 @@ export class FakeTerminal {
 
   private textDecoder = new TextDecoder();
   private scrollHandlers: Array<() => void> = [];
+  private writeParsedHandlers: Array<() => void> = [];
+  private wheelHandler: ((event: WheelEvent) => boolean) | null = null;
 
   loadAddon(_addon: unknown): void {}
   open(_el: HTMLElement): void {}
   attachCustomKeyEventHandler(_handler: (e: KeyboardEvent) => boolean): void {}
+  attachCustomWheelEventHandler(handler: (event: WheelEvent) => boolean): void {
+    this.wheelHandler = handler;
+  }
   onData(_handler: (data: string) => void): void {}
   onBell(_handler: () => void): void {}
+  onWriteParsed(handler: () => void): void {
+    this.writeParsedHandlers.push(handler);
+  }
   onSelectionChange(_handler: () => void): void {}
   onTitleChange(_handler: (title: string) => void): void {}
   focus(): void {}
@@ -50,6 +58,7 @@ export class FakeTerminal {
     const lineDelta = Math.max(1, newlineCount + wrappedLines);
     this.buffer.active.baseY += lineDelta;
     callback?.();
+    this.emitWriteParsed();
     this.emitScroll();
   }
 
@@ -58,8 +67,24 @@ export class FakeTerminal {
     this.emitScroll();
   }
 
+  scrollLines(amount: number): void {
+    const next = this.buffer.active.viewportY + amount;
+    this.buffer.active.viewportY = Math.max(0, Math.min(this.buffer.active.baseY, next));
+    this.emitScroll();
+  }
+
   private emitScroll(): void {
     for (const handler of this.scrollHandlers) handler();
+  }
+
+  dispatchWheel(deltaY: number): boolean {
+    if (!this.wheelHandler) return true;
+    const event = new WheelEvent('wheel', { deltaY });
+    return this.wheelHandler(event);
+  }
+
+  private emitWriteParsed(): void {
+    for (const handler of this.writeParsedHandlers) handler();
   }
 }
 
