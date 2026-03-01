@@ -120,7 +120,10 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
     pollInFlight = true;
     const projects = store.getState().projects;
     try {
-      await Promise.all(projects.map((p) => refreshProject(p, silent)));
+      await Promise.all(projects.map((p) => {
+        if (silent && getProjectGitState(p.id).loading) return;
+        return refreshProject(p, silent);
+      }));
     } finally {
       pollInFlight = false;
     }
