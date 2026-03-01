@@ -27,6 +27,17 @@
   box-sizing: border-box;
 }
 
+/* Override xterm.js default viewport background (#000) to match theme,
+   preventing visible black seams at pane edges. */
+.terminal-pane .xterm .xterm-viewport {
+  background-color: var(--bg-terminal) !important;
+}
+
+/* Hide xterm.js scroll shadow overlays that produce dark lines at edges. */
+.terminal-pane .xterm .xterm-scrollable-element > .shadow {
+  display: none !important;
+}
+
 /* Subpixel (ClearType) rendering hints for the xterm canvas */
 .terminal-pane .xterm canvas {
   image-rendering: auto;
