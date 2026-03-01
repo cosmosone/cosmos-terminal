@@ -234,12 +234,8 @@ def build_release() -> None:
 
     # --- Publish -------------------------------------------------------------
     if bumped:
-        publish_choice = input(
-            f"{YELLOW}Tag, push, and create GitHub release for v{version}? [Y/n] {RESET}"
-        ).strip().lower()
-        if publish_choice in ("", "y", "yes"):
-            commit_and_tag(version)
-            create_release(version)
+        commit_and_tag(version)
+        create_release(version)
 
     # --- Copy exe ------------------------------------------------------------
     copy_exe_prompt()
