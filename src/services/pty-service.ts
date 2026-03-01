@@ -12,7 +12,7 @@ function decodeBase64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
-export interface CreateSessionOptions {
+interface CreateSessionOptions {
   projectPath: string;
   shellPath?: string;
   rows: number;

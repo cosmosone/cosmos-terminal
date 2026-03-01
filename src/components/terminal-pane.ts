@@ -179,6 +179,7 @@ export class TerminalPane {
   private bottomSyncAttempts = 0;
   private pendingBottomSyncReason = '';
   private scrollDiagnostics: ScrollSnapshot[] = [];
+  private scrollDiagIdx = 0;
   private lastAnomalySignature = '';
   private lastAnomalyTs = 0;
   private static readonly SCROLL_DIAGNOSTIC_CAPACITY = 120;
@@ -1122,10 +1123,23 @@ export class TerminalPane {
       domScrollTop: metrics?.scrollTop ?? null,
       domMaxScrollTop: metrics?.maxScrollTop ?? null,
     };
-    this.scrollDiagnostics.push(snapshot);
-    if (this.scrollDiagnostics.length > TerminalPane.SCROLL_DIAGNOSTIC_CAPACITY) {
-      this.scrollDiagnostics.shift();
+    if (this.scrollDiagnostics.length < TerminalPane.SCROLL_DIAGNOSTIC_CAPACITY) {
+      this.scrollDiagnostics.push(snapshot);
+    } else {
+      this.scrollDiagnostics[this.scrollDiagIdx] = snapshot;
     }
+    this.scrollDiagIdx = (this.scrollDiagIdx + 1) % TerminalPane.SCROLL_DIAGNOSTIC_CAPACITY;
+  }
+
+  private recentSnapshots(count: number): ScrollSnapshot[] {
+    const len = this.scrollDiagnostics.length;
+    if (len === 0) return [];
+    const n = Math.min(count, len);
+    const result: ScrollSnapshot[] = [];
+    for (let i = n; i > 0; i--) {
+      result.push(this.scrollDiagnostics[(this.scrollDiagIdx - i + len) % len]);
+    }
+    return result;
   }
 
   private reportScrollAnomaly(kind: string, details: Record<string, unknown>): void {
@@ -1141,7 +1155,7 @@ export class TerminalPane {
     logger.warn('pty', `Scroll anomaly: ${kind}`, {
       paneId: this.paneId,
       ...details,
-      recentSnapshots: this.scrollDiagnostics.slice(-8),
+      recentSnapshots: this.recentSnapshots(8),
     });
   }
 

@@ -4,7 +4,7 @@ use git2::{Repository, Sort, StatusOptions};
 
 use crate::commands::task::spawn_blocking_result;
 use crate::models::{GitCommitResult, GitFileStatus, GitLogEntry, GitPushResult, GitStatusResult};
-use crate::security::path_guard::canonicalize_existing_path;
+use crate::security::path_guard::{canonicalize_existing_path, canonicalize_write_target};
 
 const DEFAULT_GIT_LOG_LIMIT: usize = 50;
 const MAX_GIT_LOG_LIMIT: usize = 500;
@@ -359,10 +359,12 @@ pub async fn git_remove_lock_file(path: String) -> Result<(), String> {
     spawn_blocking_result(move || {
         let repo = open_repo(&path)?;
         let lock_file = repo.path().join("index.lock");
-        if !lock_file.exists() {
+        let canonical_lock = canonicalize_write_target(lock_file.to_string_lossy().as_ref())?;
+        if !canonical_lock.exists() {
             return Err("No lock file found".to_string());
         }
-        std::fs::remove_file(&lock_file).map_err(|e| format!("Failed to remove lock file: {e}"))
+        std::fs::remove_file(&canonical_lock)
+            .map_err(|e| format!("Failed to remove lock file: {e}"))
     })
     .await
 }

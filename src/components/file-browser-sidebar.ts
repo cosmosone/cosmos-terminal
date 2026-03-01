@@ -209,10 +209,10 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
 
     const entries = await fetchDir(project.path);
     if (gen !== renderGeneration) return; // stale render — a newer one has started
-    const expandedPaths = state.fileBrowserSidebar.expandedPaths;
+    const expandedSet = new Set(state.fileBrowserSidebar.expandedPaths);
 
     for (const entry of entries) {
-      body.appendChild(renderNode(entry, 0, expandedPaths, project.id));
+      body.appendChild(renderNode(entry, 0, expandedSet, project.id));
     }
     applySelection();
   }
@@ -334,7 +334,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     });
   }
 
-  function renderNode(entry: DirEntry, depth: number, expandedPaths: string[], projectId: string): HTMLElement {
+  function renderNode(entry: DirEntry, depth: number, expandedSet: Set<string>, projectId: string): HTMLElement {
     const wrap = createElement('div', { className: 'fb-tree-node-wrap' });
     const row = createElement('div', { className: 'fb-tree-node' });
     row.dataset.path = entry.path;
@@ -342,7 +342,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     entryByPath.set(entry.path, entry);
 
     if (entry.isDir) {
-      const expanded = expandedPaths.includes(entry.path);
+      const expanded = expandedSet.has(entry.path);
       const arrow = createElement('span', { className: `fb-tree-arrow${expanded ? ' expanded' : ''}` });
       arrow.textContent = '\u25B6';
       row.appendChild(arrow);
@@ -353,7 +353,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
         handleSelectionClick(e, entry.path);
         if (!e.shiftKey) {
           toggleFileBrowserPath(entry.path);
-          if (!expandedPaths.includes(entry.path)) {
+          if (!expandedSet.has(entry.path)) {
             dirCache.delete(normalizeFsPath(entry.path));
           }
         }
@@ -365,9 +365,11 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
       if (expanded) {
         const childContainer = createElement('div', { className: 'fb-tree-children' });
         fetchDir(entry.path).then((children) => {
+          const frag = document.createDocumentFragment();
           for (const child of children) {
-            childContainer.appendChild(renderNode(child, depth + 1, expandedPaths, projectId));
+            frag.appendChild(renderNode(child, depth + 1, expandedSet, projectId));
           }
+          childContainer.appendChild(frag);
         });
         wrap.appendChild(childContainer);
       }

@@ -3,7 +3,7 @@ import { createStoreLazy } from './store-loader';
 
 const getStore = createStoreLazy('workspace.json');
 
-export interface SavedWorkspace {
+interface SavedWorkspace {
   projects: Project[];
   activeProjectId: string | null;
   gitSidebar: GitSidebarState;

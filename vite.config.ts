@@ -27,13 +27,22 @@ export default defineConfig(async () => ({
     rollupOptions: {
       output: {
         manualChunks: {
-          xterm: [
-            "@xterm/xterm",
+          xterm: ["@xterm/xterm"],
+          "xterm-addons": [
             "@xterm/addon-fit",
             "@xterm/addon-image",
             "@xterm/addon-unicode11",
             "@xterm/addon-web-links",
             "@xterm/addon-webgl",
+          ],
+          markdown: [
+            "unified",
+            "remark-parse",
+            "remark-gfm",
+            "remark-rehype",
+            "rehype-sanitize",
+            "rehype-stringify",
+            "unist-util-visit",
           ],
         },
       },

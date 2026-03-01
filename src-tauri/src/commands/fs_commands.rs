@@ -9,12 +9,6 @@ use crate::security::path_guard::{
 };
 use crate::IGNORED_DIRS;
 
-/// Reject paths that attempt to escape via symlink traversal or target
-/// well-known system-critical locations.
-fn validate_write_path(path: &str) -> Result<std::path::PathBuf, String> {
-    canonicalize_write_target(path)
-}
-
 /// Build a `DirEntry` from a `std::fs::DirEntry` and its pre-fetched metadata.
 fn dir_entry_from(entry: &std::fs::DirEntry, metadata: &std::fs::Metadata) -> DirEntry {
     let name = entry.file_name().to_string_lossy().to_string();
@@ -87,7 +81,7 @@ fn list_directory_sync(path: &str) -> Result<DirectoryListing, String> {
     entries.append(&mut files);
 
     Ok(DirectoryListing {
-        path: path.to_string(),
+        path: canonical_dir.to_string_lossy().to_string(),
         entries,
     })
 }
@@ -250,7 +244,7 @@ fn show_in_explorer_sync(path: &str) -> Result<(), String> {
 #[tauri::command]
 pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
     spawn_blocking_result(move || {
-        let canonical = validate_write_path(&path)?;
+        let canonical = canonicalize_write_target(&path)?;
         std::fs::write(&canonical, content).map_err(|e| format!("Failed to write file: {e}"))
     })
     .await
@@ -273,7 +267,7 @@ pub async fn write_text_file_if_unmodified(
     expected_mtime: u64,
 ) -> Result<FileWriteResult, String> {
     spawn_blocking_result(move || {
-        let canonical = validate_write_path(&path)?;
+        let canonical = canonicalize_write_target(&path)?;
         let current_mtime = get_file_mtime_millis(&canonical)?;
         if current_mtime != expected_mtime {
             return Ok(FileWriteResult {
@@ -295,7 +289,7 @@ pub async fn write_text_file_if_unmodified(
 #[tauri::command]
 pub async fn delete_path(path: String) -> Result<(), String> {
     spawn_blocking_result(move || {
-        let canonical = validate_write_path(&path)?;
+        let canonical = canonicalize_write_target(&path)?;
         if canonical.is_dir() {
             // Guard: refuse to recursively delete through a symlink, which
             // would destroy the *target* directory's contents.
@@ -335,32 +329,32 @@ mod tests {
         std::fs::create_dir_all(&base).unwrap();
         let path = base.join("file.txt");
 
-        assert!(validate_write_path(path.to_string_lossy().as_ref()).is_ok());
+        assert!(canonicalize_write_target(path.to_string_lossy().as_ref()).is_ok());
 
         let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
     fn validate_write_path_rejects_parent_traversal() {
-        assert!(validate_write_path("/home/user/../etc/passwd").is_err());
-        assert!(validate_write_path("../outside").is_err());
+        assert!(canonicalize_write_target("/home/user/../etc/passwd").is_err());
+        assert!(canonicalize_write_target("../outside").is_err());
     }
 
     #[cfg(target_os = "windows")]
     #[test]
     fn validate_write_path_rejects_windows_system_dirs() {
-        assert!(validate_write_path("C:\\Windows\\System32\\cmd.exe").is_err());
-        assert!(validate_write_path("c:/windows/system32").is_err());
-        assert!(validate_write_path("C:\\Program Files\\app").is_err());
+        assert!(canonicalize_write_target("C:\\Windows\\System32\\cmd.exe").is_err());
+        assert!(canonicalize_write_target("c:/windows/system32").is_err());
+        assert!(canonicalize_write_target("C:\\Program Files\\app").is_err());
     }
 
     #[cfg(not(target_os = "windows"))]
     #[test]
     fn validate_write_path_rejects_unix_system_dirs() {
-        assert!(validate_write_path("/bin/sh").is_err());
-        assert!(validate_write_path("/usr/local/bin/app").is_err());
-        assert!(validate_write_path("/etc/passwd").is_err());
-        assert!(validate_write_path("/proc/1/status").is_err());
+        assert!(canonicalize_write_target("/bin/sh").is_err());
+        assert!(canonicalize_write_target("/usr/local/bin/app").is_err());
+        assert!(canonicalize_write_target("/etc/passwd").is_err());
+        assert!(canonicalize_write_target("/proc/1/status").is_err());
     }
 
     // ── list_directory_sync ──
@@ -371,7 +365,9 @@ mod tests {
         let result = list_directory_sync(dir.to_str().unwrap());
         assert!(result.is_ok());
         let listing = result.unwrap();
-        assert_eq!(listing.path, dir.to_str().unwrap());
+        // Returned path should be the canonicalised form (via dunce, no UNC prefix).
+        let canonical = dunce::canonicalize(&dir).unwrap();
+        assert_eq!(listing.path, canonical.to_string_lossy().as_ref());
     }
 
     #[test]

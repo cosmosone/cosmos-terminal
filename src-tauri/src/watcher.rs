@@ -19,7 +19,13 @@ impl Inner {
     fn shutdown(self) {
         // Drop watcher first to close the sender side and unblock recv().
         drop(self.watcher);
-        let _ = self.thread.join();
+        // Join on a detached thread to avoid blocking the caller (which may
+        // be the Tokio async executor).  The watcher thread will exit
+        // promptly once it drains pending events after the channel closes.
+        let handle = self.thread;
+        std::thread::spawn(move || {
+            let _ = handle.join();
+        });
     }
 }
 

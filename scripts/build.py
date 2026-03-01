@@ -72,7 +72,15 @@ def update_version(new_version: str) -> None:
 # --- Git + release -----------------------------------------------------------
 
 
+def clear_git_lock() -> None:
+    lock = ROOT / ".git" / "index.lock"
+    if lock.exists():
+        lock.unlink()
+        print(f"{YELLOW}Removed stale .git/index.lock from a previous failed run{RESET}")
+
+
 def commit_and_tag(version: str) -> None:
+    clear_git_lock()
     tag = f"v{version}"
     subprocess.run(
         ["git", "add", "package.json", "src-tauri/Cargo.toml",

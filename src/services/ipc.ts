@@ -27,7 +27,7 @@ export const IPC_COMMANDS = {
   UNWATCH_DIRECTORY: 'unwatch_directory',
 } as const;
 
-export type IpcCommand = (typeof IPC_COMMANDS)[keyof typeof IPC_COMMANDS];
+type IpcCommand = (typeof IPC_COMMANDS)[keyof typeof IPC_COMMANDS];
 
 export function invokeIpc<T>(command: IpcCommand, args?: Record<string, unknown>): Promise<T> {
   return invoke<T>(command, args);
