@@ -41,6 +41,7 @@ export function initFileTabContent(): FileTabContentApi {
   let loadVersion = 0;
   let lastMtime = 0;
   let externalCheckInFlight = false;
+  const scrollPositions = new Map<string, number>();
 
   const findController = createFindController(
     () => currentContent,
@@ -365,6 +366,15 @@ export function initFileTabContent(): FileTabContentApi {
     container.appendChild(content);
     findController.attach(content);
 
+    // Track scroll position so it can be restored across tab switches
+    content.addEventListener('scroll', () => {
+      scrollPositions.set(tab.id, content.scrollTop);
+    });
+
+    // Restore saved scroll position
+    const saved = scrollPositions.get(tab.id);
+    if (saved !== undefined) content.scrollTop = saved;
+
     // Auto-focus textarea when entering edit mode
     if (tab.editing) {
       const textarea = content.querySelector('textarea') as HTMLTextAreaElement | null;
@@ -417,6 +427,12 @@ export function initFileTabContent(): FileTabContentApi {
       const version = ++loadVersion;
 
       if (tab.filePath !== lastFilePath || tab.id !== lastTabId) {
+        // Prune scroll positions for tabs that no longer exist
+        const tabIds = new Set(project.tabs.map((t) => t.id));
+        for (const id of scrollPositions.keys()) {
+          if (!tabIds.has(id)) scrollPositions.delete(id);
+        }
+
         try {
           const result = await readTextFile(tab.filePath);
           if (version !== loadVersion) return;
@@ -437,6 +453,7 @@ export function initFileTabContent(): FileTabContentApi {
       }
 
       if (version !== loadVersion) return;
+
       lastTabId = tab.id;
       lastFilePath = tab.filePath;
       activeTabId = tab.id;

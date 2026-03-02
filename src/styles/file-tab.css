@@ -138,6 +138,8 @@
   font-size: var(--viewer-font-size, 12.5px);
   line-height: 1.6;
   color: var(--text-primary);
+  user-select: text;
+  cursor: text;
 }
 
 .file-tab-markdown p {
