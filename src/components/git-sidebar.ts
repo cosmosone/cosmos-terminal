@@ -15,7 +15,7 @@ import { COMMIT_TEXTAREA_MAX_HEIGHT } from './git-sidebar/shared';
 import { renderLog, renderProject, pruneRenderState, type GitSidebarRenderHandlers } from './git-sidebar/render';
 import { createGitSidebarNotificationManager } from './git-sidebar/notification-manager';
 import { createGitSidebarOperations } from './git-sidebar/operations';
-import type { ProjectGitState } from '../state/types';
+import type { ProjectGitState, GitLogEntry } from '../state/types';
 
 export function initGitSidebar(onLayoutChange: () => void): void {
   const container = $('#git-sidebar-container')! as HTMLElement;
@@ -131,45 +131,145 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     handlers: renderHandlers,
   };
 
+  // Track rendered project sections for incremental DOM updates.
+  // Only projects whose state actually changed get their DOM rebuilt.
+  const renderedProjects = new Map<string, {
+    element: HTMLElement;
+    gs: ProjectGitState;
+    expanded: boolean;
+    projectName: string;
+  }>();
+
+  let lastGraphActiveId: string | undefined;
+  let lastGraphExpanded = false;
+  let lastGraphLog: GitLogEntry[] = [];
+  let lastGraphActiveProjectName: string | undefined;
+
+  // Compares all ProjectGitState fields that affect project-section rendering.
+  // Excludes generating/generatingLabel (handled by patchGenerateButtons)
+  // and log (rendered in graph section, not project sections).
+  function gitStateRenderFieldsChanged(p: ProjectGitState, c: ProjectGitState): boolean {
+    return (
+      p.isRepo !== c.isRepo ||
+      p.loading !== c.loading ||
+      p.loadingLabel !== c.loadingLabel ||
+      p.error !== c.error ||
+      p.status !== c.status ||
+      p.commitMessage !== c.commitMessage ||
+      p.notification !== c.notification
+    );
+  }
+
+  function projectNeedsRerender(
+    rp: { gs: ProjectGitState; expanded: boolean; projectName: string },
+    gs: ProjectGitState,
+    expanded: boolean,
+    projectName: string,
+  ): boolean {
+    if (rp.expanded !== expanded || rp.projectName !== projectName) return true;
+    return gitStateRenderFieldsChanged(rp.gs, gs);
+  }
+
   // --- Render ---
   function render(): void {
     const state = store.getState();
     const { projects, gitSidebar, gitStates } = state;
 
-    // --- Changes panel ---
-    clearChildren(changesContent);
-
+    // --- Changes panel: incremental DOM update ---
     const gitProjects = projects.filter((p) => {
       const gs = gitStates[p.id];
       return !gs || gs.isRepo !== false;
     });
 
+    const visibleIds = new Set(gitProjects.map((p) => p.id));
+    const expandedIds = new Set(gitSidebar.expandedProjectIds);
+
+    // Remove stale project elements
+    for (const [id, rp] of renderedProjects) {
+      if (!visibleIds.has(id)) {
+        rp.element.remove();
+        renderedProjects.delete(id);
+      }
+    }
+
+    // Update only projects whose state actually changed
     for (const project of gitProjects) {
       const gs = gitStates[project.id] || defaultGitState();
-      const expanded = gitSidebar.expandedProjectIds.includes(project.id);
-      changesContent.appendChild(renderProject(project, gs, expanded, projectRenderDeps));
+      const expanded = expandedIds.has(project.id);
+      const existing = renderedProjects.get(project.id);
+
+      if (existing && !projectNeedsRerender(existing, gs, expanded, project.name)) {
+        continue;
+      }
+
+      const newElement = renderProject(project, gs, expanded, projectRenderDeps);
+
+      if (existing) {
+        existing.element.replaceWith(newElement);
+        existing.element = newElement;
+        existing.gs = gs;
+        existing.expanded = expanded;
+        existing.projectName = project.name;
+      } else {
+        renderedProjects.set(project.id, { element: newElement, gs, expanded, projectName: project.name });
+      }
     }
 
-    // --- Graph header ---
-    clearChildren(graphHeaderEl);
-    const graphArrow = createElement('span', { className: `git-section-arrow${gitSidebar.graphExpanded ? ' expanded' : ''}` });
-    graphArrow.textContent = '\u25B6';
-    const graphLabel = createElement('span');
+    // Reconcile DOM order — appendChild moves existing nodes without recreating.
+    // Only needed when the child list doesn't match the expected project order.
+    const children = changesContent.children;
+    let orderCorrect = children.length === gitProjects.length;
+    if (orderCorrect) {
+      for (let i = 0; i < gitProjects.length; i++) {
+        if (children[i] !== renderedProjects.get(gitProjects[i].id)!.element) {
+          orderCorrect = false;
+          break;
+        }
+      }
+    }
+    if (!orderCorrect) {
+      for (const project of gitProjects) {
+        changesContent.appendChild(renderedProjects.get(project.id)!.element);
+      }
+    }
+
+    // --- Graph section ---
     const activeId = gitSidebar.activeProjectId || gitProjects[0]?.id;
     const activeProject = activeId ? projects.find((p) => p.id === activeId) : null;
-    graphLabel.textContent = activeProject
-      ? `Commit History [${activeProject.name}]`
-      : 'Commit History';
-    graphHeaderEl.appendChild(graphArrow);
-    graphHeaderEl.appendChild(graphLabel);
-    graphHeaderEl.onclick = toggleGraphExpanded;
+    const activeProjectName = activeProject?.name;
+    const graphExpanded = gitSidebar.graphExpanded;
+    const activeLog = activeId ? (gitStates[activeId] || defaultGitState()).log : [];
 
-    // --- Graph content ---
-    clearChildren(graphContent);
-    if (gitSidebar.graphExpanded && activeId) {
-      const gs = gitStates[activeId] || defaultGitState();
-      graphContent.appendChild(renderLog(gs));
+    const graphHeaderChanged =
+      activeId !== lastGraphActiveId ||
+      graphExpanded !== lastGraphExpanded ||
+      activeProjectName !== lastGraphActiveProjectName;
+
+    if (graphHeaderChanged) {
+      clearChildren(graphHeaderEl);
+      const graphArrow = createElement('span', { className: `git-section-arrow${graphExpanded ? ' expanded' : ''}` });
+      graphArrow.textContent = '\u25B6';
+      const graphLabel = createElement('span');
+      graphLabel.textContent = activeProject
+        ? `Commit History [${activeProject.name}]`
+        : 'Commit History';
+      graphHeaderEl.appendChild(graphArrow);
+      graphHeaderEl.appendChild(graphLabel);
+      graphHeaderEl.onclick = toggleGraphExpanded;
     }
+
+    if (graphHeaderChanged || (graphExpanded && activeLog !== lastGraphLog)) {
+      clearChildren(graphContent);
+      if (graphExpanded && activeId) {
+        const gs = gitStates[activeId] || defaultGitState();
+        graphContent.appendChild(renderLog(gs));
+      }
+    }
+
+    lastGraphActiveId = activeId;
+    lastGraphExpanded = graphExpanded;
+    lastGraphLog = activeLog;
+    lastGraphActiveProjectName = activeProjectName;
 
     applyGraphHeight();
   }
@@ -247,8 +347,6 @@ export function initGitSidebar(onLayoutChange: () => void): void {
   // progress-label update during AI commit-message generation.
   let lastGitStates: Record<string, ProjectGitState> = {};
 
-  // Compares all ProjectGitState fields EXCEPT `generating` and
-  // `generatingLabel`.  Keep in sync with the ProjectGitState interface.
   function hasNonGeneratingChanges(
     prev: Record<string, ProjectGitState>,
     curr: Record<string, ProjectGitState>,
@@ -260,18 +358,7 @@ export function initGitSidebar(onLayoutChange: () => void): void {
       const p = prev[id];
       const c = curr[id];
       if (!p) return true;
-      if (
-        p.isRepo !== c.isRepo ||
-        p.loading !== c.loading ||
-        p.loadingLabel !== c.loadingLabel ||
-        p.error !== c.error ||
-        p.status !== c.status ||
-        p.commitMessage !== c.commitMessage ||
-        p.notification !== c.notification ||
-        p.log !== c.log
-      ) {
-        return true;
-      }
+      if (gitStateRenderFieldsChanged(p, c) || p.log !== c.log) return true;
     }
     return false;
   }
