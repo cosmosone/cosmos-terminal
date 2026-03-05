@@ -212,23 +212,6 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
 
     inner.appendChild(kb.wrapper);
 
-    // ── 6. Logging & Debugging (rarely needed) ──
-    const log = createCollapsibleSection('Logging & Debugging');
-    const viewerRow = createElement('div', { className: 'settings-row' });
-    const viewerLabel = createElement('label');
-    viewerLabel.textContent = 'Log Viewer';
-    const viewerBtn = createElement('button', { className: 'settings-btn' });
-    viewerBtn.textContent = 'Open Log Viewer';
-    viewerBtn.addEventListener('click', () => {
-      const viewer = document.getElementById('log-viewer-container');
-      if (viewer) viewer.classList.remove('hidden');
-    });
-    viewerRow.appendChild(viewerLabel);
-    viewerRow.appendChild(viewerBtn);
-    log.content.appendChild(viewerRow);
-
-    inner.appendChild(log.wrapper);
-
     // ── Version footer ──
     const versionFooter = createElement('div', { className: 'settings-version' });
     getVersion().then((v) => { versionFooter.textContent = `v${v}`; });
