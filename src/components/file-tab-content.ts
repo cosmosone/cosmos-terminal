@@ -137,6 +137,12 @@ export function initFileTabContent(): FileTabContentApi {
     try {
       const result = await readTextFile(tab.filePath);
       if (tab.id !== activeTabId) return false;
+      logger.debug('fs', 'FileTab: reloadFileContent (will re-render)', {
+        tabId: tab.id,
+        newMtime: mtime,
+        prevMtime: lastMtime,
+        contentLen: result.content.length,
+      });
       isBinary = result.binary;
       currentContent = result.content;
       editBuffer = result.content;
@@ -157,7 +163,13 @@ export function initFileTabContent(): FileTabContentApi {
     try {
       if (!found || isBinary) return;
       const { project, tab } = found;
-      if (tab.id !== activeTabId) return;
+      if (tab.id !== activeTabId) {
+        logger.debug('fs', 'FileTab: checkExternal skipped (tab mismatch)', {
+          tabId: tab.id,
+          activeTabId,
+        });
+        return;
+      }
 
       let currentMtime: number;
       try {
@@ -169,7 +181,19 @@ export function initFileTabContent(): FileTabContentApi {
         return;
       }
 
-      if (currentMtime <= lastMtime) return;
+      if (currentMtime <= lastMtime) {
+        logger.debug('fs', 'FileTab: checkExternal no change', {
+          currentMtime,
+          lastMtime,
+        });
+        return;
+      }
+
+      logger.debug('fs', 'FileTab: checkExternal detected change', {
+        currentMtime,
+        lastMtime,
+        dirty: tab.dirty,
+      });
 
       if (!tab.dirty) {
         await reloadFileContent(project.id, tab, currentMtime);
@@ -243,6 +267,16 @@ export function initFileTabContent(): FileTabContentApi {
   });
 
   function render(projectId: string, tab: FileTab): void {
+    logger.debug('fs', 'FileTab: render', {
+      tabId: tab.id,
+      filePath: tab.filePath,
+      fileType: tab.fileType,
+      editing: tab.editing,
+      dirty: tab.dirty,
+      lastMtime,
+      contentLen: currentContent.length,
+      prevMode: currentMode,
+    });
     findController.detach();
     clearChildren(container);
 
@@ -412,10 +446,14 @@ export function initFileTabContent(): FileTabContentApi {
     },
     async (key) => {
       if (!key) {
+        logger.debug('fs', 'FileTab: identity null (tab deactivated)', {
+          prevTabId: lastTabId,
+          prevActiveTabId: activeTabId,
+          lastMtime,
+        });
         container.classList.add('hidden');
         activeTabId = null;
         lastIdentityKey = null;
-        lastMtime = 0;
         return;
       }
       container.classList.remove('hidden');
@@ -424,9 +462,27 @@ export function initFileTabContent(): FileTabContentApi {
       if (!found) return;
       const { project, tab } = found;
 
+      const isTabSwitch = lastTabId !== null && tab.id !== lastTabId;
+      const isSameTab = tab.filePath === lastFilePath && tab.id === lastTabId;
+      logger.debug('fs', 'FileTab: identity changed', {
+        tabId: tab.id,
+        lastTabId,
+        isTabSwitch,
+        isSameTab,
+        activeTabId,
+        lastMtime,
+        fileType: tab.fileType,
+      });
+
+      // Close the find dialog when switching to a different file tab.
+      // The dialog belongs to the tab that opened it.
+      if (isTabSwitch) {
+        findController.close();
+      }
+
       const version = ++loadVersion;
 
-      if (tab.filePath !== lastFilePath || tab.id !== lastTabId) {
+      if (!isSameTab) {
         // Prune scroll positions for tabs that no longer exist
         const tabIds = new Set(project.tabs.map((t) => t.id));
         for (const id of scrollPositions.keys()) {

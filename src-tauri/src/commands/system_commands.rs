@@ -1,7 +1,8 @@
 use parking_lot::Mutex;
 use sysinfo::{ProcessesToUpdate, System};
-use tauri::State;
+use tauri::{AppHandle, Manager};
 
+use crate::commands::task::spawn_blocking_result;
 use crate::models::SystemStats;
 
 pub struct SystemMonitor {
@@ -25,26 +26,30 @@ impl Default for SystemMonitor {
 }
 
 #[tauri::command]
-pub fn get_system_stats(monitor: State<'_, SystemMonitor>) -> SystemStats {
-    let mut sys = monitor.sys.lock();
+pub async fn get_system_stats(app: AppHandle) -> Result<SystemStats, String> {
+    spawn_blocking_result(move || {
+        let monitor = app.state::<SystemMonitor>();
+        let mut sys = monitor.sys.lock();
 
-    // Only refresh our own process — skip system-wide refresh_memory/refresh_cpu_usage
-    let (memory_mb, cpu_percent) = sysinfo::get_current_pid()
-        .ok()
-        .and_then(|pid| {
-            sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
-            sys.process(pid)
-        })
-        .map(|process| {
-            (
-                process.memory() as f64 / 1_048_576.0,
-                process.cpu_usage() as f64,
-            )
-        })
-        .unwrap_or((0.0, 0.0));
+        // Only refresh our own process — skip system-wide refresh_memory/refresh_cpu_usage
+        let (memory_mb, cpu_percent) = sysinfo::get_current_pid()
+            .ok()
+            .and_then(|pid| {
+                sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
+                sys.process(pid)
+            })
+            .map(|process| {
+                (
+                    process.memory() as f64 / 1_048_576.0,
+                    process.cpu_usage() as f64,
+                )
+            })
+            .unwrap_or((0.0, 0.0));
 
-    SystemStats {
-        memory_mb,
-        cpu_percent,
-    }
+        Ok(SystemStats {
+            memory_mb,
+            cpu_percent,
+        })
+    })
+    .await
 }

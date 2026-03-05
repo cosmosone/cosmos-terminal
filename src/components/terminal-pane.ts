@@ -164,8 +164,6 @@ export class TerminalPane {
   private lastSentCols = 0;
   private resizeTimer: ReturnType<typeof setTimeout> | null = null;
   private lastResizeTime = 0;
-  private pendingOutput: Uint8Array[] = [];
-  private outputRafId = 0;
   /** Number of terminal.write() callbacks still pending (diagnostic only). */
   private writesInFlight = 0;
   private scrollBtn: HTMLElement;
@@ -188,7 +186,10 @@ export class TerminalPane {
 
   /** Whether the terminal element is hidden or collapsed. */
   private get isHidden(): boolean {
-    return !this.paneVisible || this.element.offsetWidth === 0 || this.element.offsetHeight === 0;
+    if (!this.paneVisible) return true;
+    const w = this.element.style.width;
+    const h = this.element.style.height;
+    return w === '0px' || h === '0px';
   }
 
   // Activity detection — fire onActivity at most once per rolling window
@@ -488,10 +489,7 @@ export class TerminalPane {
         },
         (data) => {
           if (!this.disposed) {
-            this.pendingOutput.push(data);
-            if (!this.outputRafId) {
-              this.outputRafId = requestAnimationFrame(() => this.flushOutput());
-            }
+            this.processAndWrite(data);
             this.trackActivity(data.length);
           }
         },
@@ -773,25 +771,8 @@ export class TerminalPane {
     return stripRanges(data, ranges);
   }
 
-  private flushOutput(): void {
-    this.outputRafId = 0;
-    if (this.disposed || this.pendingOutput.length === 0) return;
-
-    let data: Uint8Array;
-    if (this.pendingOutput.length === 1) {
-      data = this.pendingOutput[0];
-    } else {
-      // Concatenate all pending chunks into a single write
-      let totalLen = 0;
-      for (const chunk of this.pendingOutput) totalLen += chunk.length;
-      data = new Uint8Array(totalLen);
-      let offset = 0;
-      for (const chunk of this.pendingOutput) {
-        data.set(chunk, offset);
-        offset += chunk.length;
-      }
-    }
-    this.pendingOutput = [];
+  private processAndWrite(data: Uint8Array): void {
+    if (this.disposed || data.length === 0) return;
 
     // Parse ESC-sequence state with a single decode when possible.
     if (data.includes(0x1b)) {
@@ -808,7 +789,7 @@ export class TerminalPane {
 
     if (data.length > 0) {
       if (!this.followOutput) {
-        logger.debug('pty', 'flushOutput: writing without followOutput', {
+        logger.debug('pty', 'processAndWrite: writing without followOutput', {
           paneId: this.paneId,
           bytes: data.length,
         });
@@ -1005,15 +986,6 @@ export class TerminalPane {
   private updateFollowFromBuffer(reason: string): void {
     const atBottom = this.isAtBottom();
     this.setFollowOutput(atBottom, reason);
-
-    const viewport = this.getViewportMetrics();
-    if (atBottom && viewport && viewport.scrollTop < viewport.maxScrollTop - 1) {
-      this.reportScrollAnomaly('buffer-dom-mismatch', {
-        reason,
-        domScrollTop: viewport.scrollTop,
-        domMaxScrollTop: viewport.maxScrollTop,
-      });
-    }
   }
 
   private scheduleSyncToBottom(reason: string): void {
@@ -1059,13 +1031,10 @@ export class TerminalPane {
     this.recordScrollSnapshot(`sync-dom-force:${reason}`);
 
     if (!this.isAtBottom()) {
-      const viewport = this.getViewportMetrics();
       this.reportScrollAnomaly('sync-stuck', {
         reason,
         viewportY: this.terminal.buffer.active.viewportY,
         baseY: this.terminal.buffer.active.baseY,
-        domScrollTop: viewport?.scrollTop ?? null,
-        domMaxScrollTop: viewport?.maxScrollTop ?? null,
       });
     }
 
@@ -1096,18 +1065,7 @@ export class TerminalPane {
     return null;
   }
 
-  private getViewportMetrics(): { scrollTop: number; maxScrollTop: number } | null {
-    const viewport = this.getViewportElement();
-    if (!viewport) return null;
-    const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-    return {
-      scrollTop: viewport.scrollTop,
-      maxScrollTop,
-    };
-  }
-
   private recordScrollSnapshot(reason: string): void {
-    const metrics = this.getViewportMetrics();
     const buf = this.terminal.buffer.active;
     const snapshot: ScrollSnapshot = {
       ts: Date.now(),
@@ -1120,8 +1078,8 @@ export class TerminalPane {
       viewportY: buf.viewportY,
       baseY: buf.baseY,
       rows: this.terminal.rows,
-      domScrollTop: metrics?.scrollTop ?? null,
-      domMaxScrollTop: metrics?.maxScrollTop ?? null,
+      domScrollTop: null,
+      domMaxScrollTop: null,
     };
     if (this.scrollDiagnostics.length < TerminalPane.SCROLL_DIAGNOSTIC_CAPACITY) {
       this.scrollDiagnostics.push(snapshot);
@@ -1167,16 +1125,8 @@ export class TerminalPane {
   private forceViewportScroll(): void {
     const viewport = this.getViewportElement();
     if (!viewport) return;
-    void viewport.offsetHeight; // commit pending layout
-    if (viewport.scrollTop < viewport.scrollHeight - viewport.offsetHeight - 1) {
-      logger.debug('pty', 'forceViewportScroll: DOM scrollTop behind, forcing', {
-        paneId: this.paneId,
-        scrollTop: viewport.scrollTop,
-        scrollHeight: viewport.scrollHeight,
-        offsetHeight: viewport.offsetHeight,
-      });
-      viewport.scrollTop = viewport.scrollHeight;
-    }
+    // Write-only approach to avoid layout thrashing
+    viewport.scrollTop = 9999999;
   }
 
   scrollToBottom(): void {
@@ -1194,11 +1144,9 @@ export class TerminalPane {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.outputRafId) cancelAnimationFrame(this.outputRafId);
     if (this.resizeRafId) cancelAnimationFrame(this.resizeRafId);
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
     this.resetBottomSyncState();
-    this.pendingOutput = [];
     // Clean up OSC busy state so tracking Sets stay consistent
     this.setOscIdle('Pane disposed while busy');
     logger.info('pty', 'Disposing terminal pane', {

@@ -1,6 +1,6 @@
 import { getVersion } from '@tauri-apps/api/app';
 import { store } from '../state/store';
-import { toggleDebugLogging, updateSettings, toggleSettingsView } from '../state/actions';
+import { updateSettings, toggleSettingsView } from '../state/actions';
 import { saveSettings, TERMINAL_FONT_PRESETS, UI_FONT_PRESETS, DEFAULT_KEYBINDINGS, DEFAULT_FONT_SETTINGS } from '../services/settings-service';
 import { logger } from '../services/logger';
 import type { AppSettings, KeybindingConfig } from '../state/types';
@@ -214,22 +214,6 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
 
     // ── 6. Logging & Debugging (rarely needed) ──
     const log = createCollapsibleSection('Logging & Debugging');
-    log.content.appendChild(
-      createToggleRow('Enable Debug Logging', settings.debugLogging, () => {
-        toggleDebugLogging();
-        onSettingsChanged();
-      }),
-    );
-
-    const timerRow = createElement('div', { className: 'settings-row' });
-    const timerLabel = createElement('label');
-    timerLabel.textContent = 'Auto-Disable Timer';
-    const timerValue = createElement('span', { className: 'settings-timer' });
-    timerValue.textContent = formatExpiry(settings.debugLoggingExpiry);
-    timerRow.appendChild(timerLabel);
-    timerRow.appendChild(timerValue);
-    log.content.appendChild(timerRow);
-
     const viewerRow = createElement('div', { className: 'settings-row' });
     const viewerLabel = createElement('label');
     viewerLabel.textContent = 'Log Viewer';
@@ -265,15 +249,6 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     if (savedScrollTop) {
       inner.scrollTop = savedScrollTop;
     }
-  }
-
-  function formatExpiry(expiry: string | null): string {
-    if (!expiry) return 'Disabled';
-    const remaining = new Date(expiry).getTime() - Date.now();
-    if (remaining <= 0) return 'Expired';
-    const hours = Math.floor(remaining / (60 * 60 * 1000));
-    const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
-    return `${hours}h ${minutes}m remaining`;
   }
 
   function apply(partial: Partial<AppSettings>): void {

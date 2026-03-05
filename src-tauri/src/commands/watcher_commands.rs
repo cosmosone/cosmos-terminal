@@ -1,13 +1,23 @@
-use tauri::State;
+use tauri::{AppHandle, Manager};
 
+use crate::commands::task::spawn_blocking_result;
 use crate::watcher::FsWatcher;
 
 #[tauri::command]
-pub fn watch_directory(watcher: State<'_, FsWatcher>, path: String) -> Result<(), String> {
-    watcher.watch(&path)
+pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String> {
+    spawn_blocking_result(move || {
+        let watcher = app.state::<FsWatcher>();
+        watcher.watch(&path)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn unwatch_directory(watcher: State<'_, FsWatcher>) {
-    watcher.unwatch();
+pub async fn unwatch_directory(app: AppHandle) -> Result<(), String> {
+    spawn_blocking_result(move || {
+        let watcher = app.state::<FsWatcher>();
+        watcher.unwatch();
+        Ok(())
+    })
+    .await
 }

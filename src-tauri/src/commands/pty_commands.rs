@@ -1,6 +1,7 @@
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, Manager};
 
+use crate::commands::task::spawn_blocking_result;
 use crate::models::PtySessionInfo;
 use crate::pty::manager::SessionManager;
 use crate::pty::shell::normalize_shell_path;
@@ -16,8 +17,8 @@ fn validate_dimensions(rows: u16, cols: u16) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn create_session(
-    session_manager: State<'_, SessionManager>,
+pub async fn create_session(
+    app: AppHandle,
     project_path: String,
     shell_path: Option<String>,
     rows: u16,
@@ -26,8 +27,12 @@ pub fn create_session(
     on_exit: Channel<bool>,
 ) -> Result<PtySessionInfo, String> {
     validate_dimensions(rows, cols)?;
-    let shell_path = normalize_shell_path(shell_path)?;
-    session_manager.create_session(shell_path, project_path, rows, cols, on_output, on_exit)
+    spawn_blocking_result(move || {
+        let shell_path = normalize_shell_path(shell_path)?;
+        let session_manager = app.state::<SessionManager>();
+        session_manager.create_session(shell_path, project_path, rows, cols, on_output, on_exit)
+    })
+    .await
 }
 
 fn validate_session_id(session_id: &str) -> Result<(), String> {
@@ -55,34 +60,46 @@ fn validate_session_id(session_id: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn write_to_session(
-    session_manager: State<'_, SessionManager>,
+pub async fn write_to_session(
+    app: AppHandle,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
     validate_session_id(&session_id)?;
-    session_manager.write_to_session(&session_id, data.as_bytes())
+    spawn_blocking_result(move || {
+        let session_manager = app.state::<SessionManager>();
+        session_manager.write_to_session(&session_id, data.as_bytes())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn resize_session(
-    session_manager: State<'_, SessionManager>,
+pub async fn resize_session(
+    app: AppHandle,
     session_id: String,
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
     validate_dimensions(rows, cols)?;
     validate_session_id(&session_id)?;
-    session_manager.resize_session(&session_id, rows, cols)
+    spawn_blocking_result(move || {
+        let session_manager = app.state::<SessionManager>();
+        session_manager.resize_session(&session_id, rows, cols)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn kill_session(
-    session_manager: State<'_, SessionManager>,
+pub async fn kill_session(
+    app: AppHandle,
     session_id: String,
 ) -> Result<(), String> {
     validate_session_id(&session_id)?;
-    session_manager.kill_session(&session_id)
+    spawn_blocking_result(move || {
+        let session_manager = app.state::<SessionManager>();
+        session_manager.kill_session(&session_id)
+    })
+    .await
 }
 
 #[cfg(test)]

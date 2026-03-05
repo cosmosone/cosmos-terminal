@@ -45,3 +45,36 @@
   --transition-fast: 100ms ease;
   --transition-normal: 150ms ease;
 }
+
+/* Shared small toggle switch (28×14, used in status bar and log viewer) */
+.toggle-switch-sm {
+  position: relative;
+  width: 28px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  cursor: pointer;
+  transition: background var(--transition-normal);
+  flex-shrink: 0;
+}
+
+.toggle-switch-sm.active {
+  background: var(--accent-dim);
+}
+
+.toggle-switch-sm::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: transform var(--transition-normal);
+}
+
+.toggle-switch-sm.active::after {
+  background: var(--text-secondary);
+  transform: translateX(14px);
+}

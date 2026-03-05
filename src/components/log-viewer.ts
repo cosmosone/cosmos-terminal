@@ -1,6 +1,4 @@
 import { logger, type LogLevel, type LogEntry } from '../services/logger';
-import { store } from '../state/store';
-import { toggleDebugLogging } from '../state/actions';
 import { createElement, clearChildren } from '../utils/dom';
 
 const LEVEL_COLORS: Record<LogLevel, string> = {
@@ -24,22 +22,6 @@ export function initLogViewer(): void {
   const title = createElement('span', { className: 'log-viewer-title' });
   title.textContent = 'Debug Logs';
   titleGroup.appendChild(title);
-
-  const { debugLogging } = store.getState().settings;
-  const toggle = createElement('div', {
-    className: `log-debug-toggle${debugLogging ? ' active' : ''}`,
-  });
-  toggle.title = debugLogging ? 'Disable debug logging' : 'Enable debug logging';
-  toggle.addEventListener('click', toggleDebugLogging);
-  titleGroup.appendChild(toggle);
-
-  store.select(
-    (s) => s.settings.debugLogging,
-    (enabled) => {
-      toggle.classList.toggle('active', enabled);
-      toggle.title = enabled ? 'Disable debug logging' : 'Enable debug logging';
-    },
-  );
 
   header.appendChild(titleGroup);
 

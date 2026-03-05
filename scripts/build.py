@@ -166,7 +166,7 @@ def run_cargo_build(env_overrides: dict[str, str] | None = None,
 
     print(f"{CYAN}Running: {cmd}{RESET}")
     print("-" * 40)
-    result = subprocess.run(cmd, shell=True, env=env)
+    result = subprocess.run(cmd, shell=True, env=env, cwd=ROOT)
 
     if result.returncode != 0:
         print(f"{RED}Build failed{RESET}")

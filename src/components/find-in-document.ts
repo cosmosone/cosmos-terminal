@@ -1,6 +1,7 @@
 import { escapeHtml } from '../highlight/tokenizer';
 import { createElement } from '../utils/dom';
 import { debounce } from '../utils/debounce';
+import { logger } from '../services/logger';
 
 export type RenderMode = 'markdown' | 'highlighted-editor' | 'plain-editor';
 
@@ -118,6 +119,22 @@ export function createFindController(
       textNodes.push({ node, start: offset, end: offset + len });
       offset += len;
     }
+
+    logger.debug('fs', 'Find: applyDomHighlights', {
+      rootTag: root.tagName,
+      rootClass: root.className,
+      textNodeCount: textNodes.length,
+      totalTextLen: offset,
+      textContentLen: root.textContent?.length ?? -1,
+      textContentMatch: offset === (root.textContent?.length ?? -1),
+      firstTextNodes: textNodes.slice(0, 6).map((tn) => ({
+        start: tn.start,
+        end: tn.end,
+        parentTag: tn.node.parentElement?.tagName,
+        snippet: (tn.node.textContent ?? '').slice(0, 40),
+      })),
+      ranges: ranges.slice(0, 8).map((r) => ({ start: r.start, len: r.length })),
+    });
 
     // Apply marks in reverse order to preserve positions
     for (let i = ranges.length - 1; i >= 0; i--) {
@@ -317,8 +334,20 @@ export function createFindController(
   }
 
   function runSearch(): void {
-    matches = findMatches(getSearchableText(), input.value);
+    const mode = getMode();
+    const searchText = getSearchableText();
+    matches = findMatches(searchText, input.value);
     currentIndex = matches.length > 0 ? 0 : -1;
+    logger.debug('fs', 'Find: runSearch', {
+      query: input.value,
+      mode,
+      searchTextLen: searchText.length,
+      searchTextFirst120: searchText.slice(0, 120),
+      matchCount: matches.length,
+      matchPositions: matches.slice(0, 8).map((m) => m.start),
+      hasContentEl: !!contentEl,
+      highlightTarget: getHighlightTarget()?.tagName ?? null,
+    });
     applyHighlights();
     updateCount();
     scrollToCurrentMatch();
@@ -373,6 +402,7 @@ export function createFindController(
         return;
       }
       opened = true;
+      logger.debug('fs', 'Find: open', { hasContentEl: !!contentEl, hasQuery: !!input.value });
       appendOverlayToParent(contentEl?.parentElement ?? null);
       input.focus();
       if (input.value) {
@@ -384,6 +414,7 @@ export function createFindController(
     close() {
       if (!opened) return;
       opened = false;
+      logger.debug('fs', 'Find: close');
       clearAllHighlights();
       matches = [];
       currentIndex = -1;
@@ -393,6 +424,12 @@ export function createFindController(
 
     attach(el: HTMLElement) {
       contentEl = el;
+      logger.debug('fs', 'Find: attach', {
+        opened,
+        hasQuery: !!input.value,
+        query: input.value || null,
+        mode: getMode(),
+      });
       if (opened) {
         appendOverlayToParent(el.parentElement);
         if (input.value) runSearch();
@@ -401,6 +438,7 @@ export function createFindController(
 
     detach() {
       if (!contentEl) return;
+      logger.debug('fs', 'Find: detach', { opened, mode: getMode() });
       clearAllHighlights();
       overlay.remove();
       contentEl = null;

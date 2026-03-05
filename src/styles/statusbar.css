@@ -17,25 +17,10 @@
   gap: 6px;
 }
 
-.status-log-btn {
-  cursor: pointer;
-  padding: 2px;
-  border-radius: 3px;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: auto;
-}
-
-.status-log-btn:hover {
-  color: var(--accent);
-  background: var(--bg-hover);
-}
-
 .status-badge {
   display: flex;
   align-items: center;
+  margin-left: auto;
   gap: 5px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
@@ -78,6 +63,33 @@
 
 .status-badge-refresh.sweeping svg {
   animation: spin 0.6s ease-in-out;
+}
+
+.status-debug-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-debug-label {
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.status-debug-label:hover {
+  color: var(--text-secondary);
+}
+
+/* Toggle uses shared .toggle-switch-sm from theme.css */
+
+.status-debug-timer {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.status-debug-timer:empty {
+  display: none;
 }
 
 @keyframes spin {
