@@ -1,6 +1,6 @@
 [package]
 name = "cosmos-terminal"
-version = "0.1.98"
+version = "0.1.99"
 description = "A high-performance terminal emulator"
 authors = ["Cosmos"]
 license = "MIT"
@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["image-png"] }
+tauri = { version = "2", features = ["image-png", "unstable"] }
 tauri-plugin-store = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
@@ -30,6 +30,7 @@ tokio = { version = "1", features = ["rt"] }
 notify = "7"
 notify-debouncer-mini = "0.5"
 dunce = "1"
+url = "2"
 
 [profile.release]
 panic = "abort"
