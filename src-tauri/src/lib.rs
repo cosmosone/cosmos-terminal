@@ -186,6 +186,7 @@ pub fn run() {
             browser_commands::browser_go_forward,
             browser_commands::browser_webview_is_alive,
             browser_commands::capture_browser_screenshot,
+            browser_commands::set_browser_pool_size,
         ])
         .setup(|app| {
             let fs_watcher = FsWatcher::new(app.handle().clone());

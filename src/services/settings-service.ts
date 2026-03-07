@@ -98,6 +98,7 @@ function defaultSettings(): AppSettings {
     debugLoggingExpiry: null,
     openaiApiKey: '',
     browserHomePage: 'https://www.google.com.au',
+    browserPoolSize: 10,
     keybindings: { ...DEFAULT_KEYBINDINGS },
   };
 }

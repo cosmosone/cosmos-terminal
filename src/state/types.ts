@@ -30,6 +30,7 @@ export interface Session {
   hasActivity: boolean;
   activityCompleted: boolean;
   locked: boolean;
+  muted: boolean;
 }
 
 export type PaneNode = PaneLeaf | PaneBranch;
@@ -92,6 +93,7 @@ export interface AppSettings {
   keybindings: KeybindingConfig;
   openaiApiKey: string;
   browserHomePage: string;
+  browserPoolSize: number;
 }
 
 export interface PtySessionInfo {

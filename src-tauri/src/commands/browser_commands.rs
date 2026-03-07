@@ -219,6 +219,12 @@ pub async fn browser_webview_is_alive(app: AppHandle, tab_id: String) -> Result<
     Ok(manager.is_alive(&tab_id))
 }
 
+#[tauri::command]
+pub fn set_browser_pool_size(app: AppHandle, size: usize) {
+    let manager = app.state::<BrowserManager>();
+    manager.set_pool_size(size.max(1));
+}
+
 /// Capture the browser webview content as a base64-encoded JPEG screenshot.
 /// Uses WebView2's CapturePreview API via `with_webview` (requires `unstable` feature).
 #[tauri::command]

@@ -28,6 +28,7 @@ export function addProject(name: string, path: string): Project {
       hasActivity: false,
       activityCompleted: false,
       locked: false,
+      muted: false,
     }],
     activeSessionId: sessionId,
     tabs: [],
@@ -140,6 +141,7 @@ export function addSession(projectId: string, opts?: { title?: string; agentComm
     hasActivity: false,
     activityCompleted: false,
     locked: false,
+    muted: false,
   };
   updateProject(projectId, (p) => ({
     ...p,
@@ -283,6 +285,9 @@ export function markSessionActivity(projectId: string, sessionId: string, paneId
   const session = findSession(projectId, sessionId);
   if (!session) return;
 
+  // Muted sessions never show activity
+  if (session.muted) return;
+
   // If this pane has OSC support, skip the volume heuristic -- OSC signals drive state
   if (paneId && oscCapablePanes.has(paneId)) return;
 
@@ -324,7 +329,8 @@ export function markPaneOscBusy(projectId: string, sessionId: string, paneId: st
   if (isVisibleSession(projectId, sessionId)) return;
 
   const session = findSession(projectId, sessionId);
-  if (session && !session.hasActivity) {
+  if (!session || session.muted) return;
+  if (!session.hasActivity) {
     updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true, activityCompleted: false }));
   }
 }
@@ -793,6 +799,15 @@ export function closeOtherTabs(projectId: string, keepTabId: string, keepType: '
 
 export function toggleSessionLocked(projectId: string, sessionId: string): void {
   updateSession(projectId, sessionId, (s) => ({ ...s, locked: !s.locked }));
+}
+
+export function toggleSessionMuted(projectId: string, sessionId: string): void {
+  updateSession(projectId, sessionId, (s) => s.muted
+    ? { ...s, muted: false }
+    : { ...s, muted: true, hasActivity: false, activityCompleted: false },
+  );
+  // When muting, cancel any pending idle timer so it doesn't fire a stale completion
+  clearActivityTimer(sessionKey(projectId, sessionId));
 }
 
 export function toggleFileTabLocked(projectId: string, tabId: string): void {

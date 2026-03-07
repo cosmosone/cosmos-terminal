@@ -1,5 +1,5 @@
 import { store } from '../state/store';
-import { addSession, removeSession, removeProject, setActiveSession, setActiveTab, removeFileTab, closeOtherTabs, splitPane, renameSession, setFileTabEditing, toggleSessionLocked, toggleFileTabLocked, toggleFileBrowserSidebar, toggleGitSidebar, reorderSession, reorderFileTab, addBrowserTab, removeBrowserTab, setActiveBrowserTab, toggleBrowserTabLocked, reorderBrowserTab, closeOtherBrowserTabs } from '../state/actions';
+import { addSession, removeSession, removeProject, setActiveSession, setActiveTab, removeFileTab, closeOtherTabs, splitPane, renameSession, setFileTabEditing, toggleSessionLocked, toggleSessionMuted, toggleFileTabLocked, toggleFileBrowserSidebar, toggleGitSidebar, reorderSession, reorderFileTab, addBrowserTab, removeBrowserTab, setActiveBrowserTab, toggleBrowserTabLocked, reorderBrowserTab, closeOtherBrowserTabs } from '../state/actions';
 import { AGENT_DEFINITIONS } from '../services/agent-definitions';
 import type { AgentDef } from '../services/agent-definitions';
 import { setInitialCommand } from '../services/initial-command';
@@ -11,7 +11,7 @@ import type { MenuItem } from './context-menu';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { PaneLeaf, Project } from '../state/types';
-import { chevronLeftIcon, chevronRightIcon, fileIcon, folderIcon, gitBranchIcon, globeIcon, lockIcon, terminalIcon } from '../utils/icons';
+import { bellOffIcon, chevronLeftIcon, chevronRightIcon, fileIcon, folderIcon, gitBranchIcon, globeIcon, lockIcon, terminalIcon } from '../utils/icons';
 import { setupScrollArrows } from '../utils/scroll-arrows';
 import { createTabDragManager } from '../utils/tab-drag';
 
@@ -107,9 +107,6 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     // If a drag is in progress when re-render fires, abort it cleanly
     dragManager.cleanupDrag();
 
-    const oldTabList = bar.querySelector('.tab-list') as HTMLElement | null;
-    if (oldTabList) savedScrollLeft = oldTabList.scrollLeft;
-
     clearChildren(bar);
     if (!project) {
       savedScrollLeft = 0;
@@ -117,6 +114,7 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     }
 
     const tabList = createElement('div', { className: 'tab-list' });
+    tabList.addEventListener('scroll', () => { savedScrollLeft = tabList.scrollLeft; });
 
     // Drop indicator element (lives inside tabList for positioning)
     const indicator = createElement('div', { className: 'tab-drop-indicator' });
@@ -161,6 +159,18 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
         appendActivityIndicator(tab, session.hasActivity, session.activityCompleted);
       }
 
+      if (session.muted) {
+        const muteEl = createElement('span', { className: 'tab-mute' });
+        muteEl.innerHTML = bellOffIcon(10);
+        muteEl.title = 'Unmute activity';
+        muteEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleSessionMuted(project.id, session.id);
+          onTabChange();
+        });
+        tab.appendChild(muteEl);
+      }
+
       appendLockOrClose(
         tab,
         session.locked,
@@ -201,6 +211,13 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
             label: session.locked ? 'Unlock' : 'Lock',
             action: () => {
               toggleSessionLocked(project.id, session.id);
+              onTabChange();
+            },
+          },
+          {
+            label: session.muted ? 'Unmute' : 'Mute',
+            action: () => {
+              toggleSessionMuted(project.id, session.id);
               onTabChange();
             },
           },
@@ -339,9 +356,11 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
         iconEl.innerHTML = globeIcon(11);
         tab.appendChild(iconEl);
 
+        const fullTitle = browserTab.title || 'New Tab';
         const tabLabel = createElement('span', { className: 'tab-label' });
-        tabLabel.textContent = browserTab.title || 'New Tab';
+        tabLabel.textContent = fullTitle;
         tab.appendChild(tabLabel);
+        tab.title = fullTitle;
 
         appendLockOrClose(
           tab,
@@ -454,15 +473,13 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     bar.appendChild(sidebarActions);
 
     requestAnimationFrame(() => {
-      // Restore previous scroll position so switching to an already-visible
-      // tab doesn't jump the scroll back to 0.
       tabList.scrollLeft = savedScrollLeft;
-      // Set arrow visibility first so the tabList has its final width
-      // before we calculate whether the active tab needs scrolling.
       updateScrollArrows();
       const activeTab = tabList.querySelector('.session-tab.active') as HTMLElement | null;
       activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
       updateScrollArrows();
+      // Capture the settled position so rapid successive renders don't clobber it
+      savedScrollLeft = tabList.scrollLeft;
     });
   }
 

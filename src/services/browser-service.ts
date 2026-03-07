@@ -39,3 +39,7 @@ export function browserGoForward(tabId: string): Promise<void> {
 export function captureBrowserScreenshot(tabId: string): Promise<string> {
   return invokeIpcLogged('browser', IPC_COMMANDS.CAPTURE_BROWSER_SCREENSHOT, { tabId });
 }
+
+export function setBrowserPoolSize(size: number): Promise<void> {
+  return invokeIpcLogged('browser', IPC_COMMANDS.SET_BROWSER_POOL_SIZE, { size });
+}

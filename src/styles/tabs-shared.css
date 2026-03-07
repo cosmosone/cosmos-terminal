@@ -39,18 +39,22 @@
   background: var(--bg-hover);
 }
 
-/* Lock icon — always visible when tab is locked */
-.tab-lock {
+/* Inline tab action icons (lock, mute, etc.) */
+.tab-lock,
+.tab-mute {
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 3px;
-  color: var(--text-primary);
   cursor: pointer;
   transition: color var(--transition-fast);
 }
 
-.tab-lock:hover {
+.tab-lock { color: var(--text-primary); }
+.tab-mute { color: var(--text-secondary); }
+
+.tab-lock:hover,
+.tab-mute:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
 }

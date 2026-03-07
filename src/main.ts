@@ -16,6 +16,7 @@ import { initGitSidebar } from './components/git-sidebar';
 import { initFileBrowserSidebar } from './components/file-browser-sidebar';
 import { initFileTabContent } from './components/file-tab-content';
 import { initBrowserTabContent } from './components/browser-tab-content';
+import { setBrowserPoolSize } from './services/browser-service';
 import { watchDirectory, unwatchDirectory } from './services/fs-service';
 import { keybindings, parseKeybinding } from './utils/keybindings';
 import { confirmCloseTerminalTab, confirmCloseProject } from './components/confirm-dialog';
@@ -42,7 +43,7 @@ async function main(): Promise<void> {
   logger.info('app', 'App starting', { settingsLoaded: true });
 
   // Workspace migration: older saved data may lack newer fields
-  type SavedSession = Omit<Session, 'locked'> & { locked?: boolean };
+  type SavedSession = Omit<Session, 'locked' | 'muted'> & { locked?: boolean; muted?: boolean };
   type SavedFileTab = Omit<FileTab, 'locked'> & { locked?: boolean };
   type SavedBrowserTab = Omit<BrowserTab, 'locked'> & { locked?: boolean };
   type SavedProject = any;
@@ -50,7 +51,7 @@ async function main(): Promise<void> {
   initStore({
     projects: (saved?.projects ?? []).map((p: SavedProject) => ({
       ...p,
-      sessions: (p.sessions ?? []).map((s: SavedSession) => ({ ...s, locked: s.locked ?? false })),
+      sessions: (p.sessions ?? []).map((s: SavedSession) => ({ ...s, locked: s.locked ?? false, muted: s.muted ?? false })),
       tabs: (p.tabs ?? []).map((t: SavedFileTab) => ({ ...t, locked: t.locked ?? false })),
       browserTabs: ((p.browserTabs ?? []) as SavedBrowserTab[]).map((t) => ({ ...t, locked: t.locked ?? false })),
       activeTabId: p.activeTabId ?? null,
@@ -89,6 +90,13 @@ async function main(): Promise<void> {
   const fileBrowser = initFileBrowserSidebar(() => splitContainer.reLayout());
   const fileTabContent = initFileTabContent();
   initBrowserTabContent();
+
+  // Sync browser pool size to Rust backend on startup and on change
+  void setBrowserPoolSize(settings.browserPoolSize);
+  store.select(
+    (s) => s.settings.browserPoolSize,
+    (size) => { void setBrowserPoolSize(size); },
+  );
 
   let watchedProjectPath: string | null = null;
   let watcherSyncVersion = 0;

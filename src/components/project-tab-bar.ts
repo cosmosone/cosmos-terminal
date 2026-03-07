@@ -60,15 +60,13 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     // R5: Close any open dropdown before rebuilding the bar
     closeDropdown();
 
-    const oldTabList = bar.querySelector('.tab-list') as HTMLElement | null;
-    if (oldTabList) savedScrollLeft = oldTabList.scrollLeft;
-
     clearChildren(bar);
 
     const leftArrow = createElement('button', { className: 'scroll-arrow left' });
     leftArrow.innerHTML = chevronLeftIcon(16);
 
     const tabList = createElement('div', { className: 'tab-list' });
+    tabList.addEventListener('scroll', () => { savedScrollLeft = tabList.scrollLeft; });
 
     // Drop indicator element (lives inside tabList for positioning)
     const indicator = createElement('div', { className: 'tab-drop-indicator' });
@@ -262,15 +260,13 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     bar.appendChild(actions);
 
     requestAnimationFrame(() => {
-      // Restore previous scroll position so switching to an already-visible
-      // tab doesn't jump the scroll back to 0.
       tabList.scrollLeft = savedScrollLeft;
-      // Set arrow visibility first so the tabList has its final width
-      // before we calculate whether the active tab needs scrolling.
       updateScrollArrows();
       const activeTab = tabList.querySelector('.project-tab.active') as HTMLElement | null;
       activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
       updateScrollArrows();
+      // Capture the settled position so rapid successive renders don't clobber it
+      savedScrollLeft = tabList.scrollLeft;
     });
   }
 

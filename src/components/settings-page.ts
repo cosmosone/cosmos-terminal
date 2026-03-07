@@ -143,19 +143,24 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     );
     inner.appendChild(shell.wrapper);
 
-    // ── 4. AI Integration ──
+    // ── 4. Browser ──
+    const browser = createCollapsibleSection('Browser');
+    browser.content.appendChild(
+      createTextRow('Home Page', settings.browserHomePage, (v) => apply({ browserHomePage: v })),
+    );
+    browser.content.appendChild(
+      createNumberRow('Webview Pool Size', settings.browserPoolSize, 1, 50, (v) =>
+        apply({ browserPoolSize: v }),
+      ),
+    );
+    inner.appendChild(browser.wrapper);
+
+    // ── 5. AI Integration ──
     const ai = createCollapsibleSection('AI Integration');
     ai.content.appendChild(
       createApiKeyRow(settings.openaiApiKey, (v) => apply({ openaiApiKey: v })),
     );
     inner.appendChild(ai.wrapper);
-
-    // ── 5. Browser ──
-    const browser = createCollapsibleSection('Browser');
-    browser.content.appendChild(
-      createTextRow('Home Page', settings.browserHomePage, (v) => apply({ browserHomePage: v })),
-    );
-    inner.appendChild(browser.wrapper);
 
     // ── 6. Keybindings ──
     const kb = createCollapsibleSection('Keybindings');

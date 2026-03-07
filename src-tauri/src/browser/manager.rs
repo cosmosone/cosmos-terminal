@@ -1,9 +1,10 @@
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-/// Maximum number of live WebView2 instances.
-const MAX_LIVE_WEBVIEWS: usize = 10;
+/// Default maximum number of live WebView2 instances.
+const DEFAULT_POOL_SIZE: usize = 10;
 
 struct WebviewHandle {
     label: String,
@@ -16,13 +17,20 @@ struct WebviewHandle {
 /// a pool limit to keep memory usage bounded.
 pub struct BrowserManager {
     tabs: Mutex<HashMap<String, WebviewHandle>>,
+    pool_size: AtomicUsize,
 }
 
 impl BrowserManager {
     pub fn new() -> Self {
         Self {
             tabs: Mutex::new(HashMap::new()),
+            pool_size: AtomicUsize::new(DEFAULT_POOL_SIZE),
         }
+    }
+
+    /// Update the maximum pool size at runtime.
+    pub fn set_pool_size(&self, size: usize) {
+        self.pool_size.store(size, Ordering::Relaxed);
     }
 
     /// Register a live webview for the given tab.
@@ -67,7 +75,7 @@ impl BrowserManager {
     /// webview so the caller can close it.
     pub fn evict_if_needed(&self, exclude_tab_id: &str) -> Option<String> {
         let mut tabs = self.tabs.lock();
-        if tabs.len() < MAX_LIVE_WEBVIEWS {
+        if tabs.len() < self.pool_size.load(Ordering::Relaxed) {
             return None;
         }
 
