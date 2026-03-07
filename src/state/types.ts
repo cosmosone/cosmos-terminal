@@ -16,6 +16,8 @@ export interface Project {
   activeSessionId: string | null;
   tabs: FileTab[];
   activeTabId: string | null;
+  browserTabs: BrowserTab[];
+  activeBrowserTabId: string | null;
   tabActivationSeq?: number;
 }
 
@@ -89,6 +91,7 @@ export interface AppSettings {
   confirmCloseProjectTab: boolean;
   keybindings: KeybindingConfig;
   openaiApiKey: string;
+  browserHomePage: string;
 }
 
 export interface PtySessionInfo {
@@ -169,6 +172,13 @@ export interface FileTab {
   fileType: string;
   editing: boolean;
   dirty: boolean;
+  locked: boolean;
+}
+
+export interface BrowserTab {
+  id: string;
+  url: string;
+  title: string;
   locked: boolean;
 }
 

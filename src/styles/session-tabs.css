@@ -124,7 +124,8 @@
 
 /* ===== Tab type icons ===== */
 .session-tab-icon,
-.file-tab-icon {
+.file-tab-icon,
+.browser-tab-icon {
   display: inline-flex;
   align-items: center;
   color: var(--text-primary);

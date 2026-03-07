@@ -149,7 +149,14 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     );
     inner.appendChild(ai.wrapper);
 
-    // ── 5. Keybindings ──
+    // ── 5. Browser ──
+    const browser = createCollapsibleSection('Browser');
+    browser.content.appendChild(
+      createTextRow('Home Page', settings.browserHomePage, (v) => apply({ browserHomePage: v })),
+    );
+    inner.appendChild(browser.wrapper);
+
+    // ── 6. Keybindings ──
     const kb = createCollapsibleSection('Keybindings');
     const kbLabels: [keyof KeybindingConfig, string][] = [
       ['newSession', 'New Session'],

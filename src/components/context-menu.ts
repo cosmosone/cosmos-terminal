@@ -1,4 +1,5 @@
 import { createElement } from '../utils/dom';
+import { suppressBrowserWebview, restoreBrowserWebview } from './browser-tab-content';
 
 export function startInlineRename(
   tabElement: HTMLElement,
@@ -64,6 +65,7 @@ function closeMenu(): void {
   if (activeMenu) {
     activeMenu.remove();
     activeMenu = null;
+    restoreBrowserWebview();
   }
   window.removeEventListener('click', closeMenu);
   window.removeEventListener('contextmenu', closeMenu);
@@ -71,6 +73,7 @@ function closeMenu(): void {
 
 export function showContextMenu(x: number, y: number, items: MenuItem[]): void {
   closeMenu();
+  suppressBrowserWebview();
 
   const menu = createElement('div', { className: 'context-menu' });
 

@@ -3,6 +3,7 @@ import { updateSettings } from '../state/actions';
 import { saveSettings } from '../services/settings-service';
 import { createElement } from '../utils/dom';
 import { keybindings } from '../utils/keybindings';
+import { suppressBrowserWebview, restoreBrowserWebview } from './browser-tab-content';
 
 export interface ConfirmOptions {
   title: string;
@@ -32,6 +33,7 @@ export function showConfirmDialog(options: ConfirmOptions): Promise<ConfirmResul
 
   return new Promise<ConfirmResult>((resolve) => {
     keybindings.setActive(false);
+    suppressBrowserWebview();
 
     const backdrop = createElement('div', { className: 'confirm-backdrop' });
     const dialog = createElement('div', { className: 'confirm-dialog' });
@@ -77,6 +79,7 @@ export function showConfirmDialog(options: ConfirmOptions): Promise<ConfirmResul
       window.removeEventListener('keydown', onKeydown, true);
       backdrop.remove();
       keybindings.setActive(true);
+      restoreBrowserWebview();
       resolve(result);
     }
 

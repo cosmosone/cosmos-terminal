@@ -62,6 +62,18 @@ export function geminiIcon(size = 14): string {
   return `<svg ${filledSvgAttrs(size, '0 0 65 65')}><path d="M32.5 0C32.5 17.955 17.955 32.5 0 32.5 17.955 32.5 32.5 47.045 32.5 65 32.5 47.045 47.045 32.5 65 32.5 47.045 32.5 32.5 17.955 32.5 0Z"/></svg>`;
 }
 
+export function globeIcon(size = 14): string {
+  return `<svg ${svgAttrs(size)}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
+}
+
+export function arrowLeftIcon(size = 14): string {
+  return `<svg ${svgAttrs(size)}><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>`;
+}
+
+export function arrowRightIcon(size = 14): string {
+  return `<svg ${svgAttrs(size)}><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`;
+}
+
 export function clineIcon(size = 14): string {
   return `<svg ${filledSvgAttrs(size, '0 0 24 24')}><path d="M17.035 3.991c2.75 0 4.98 2.24 4.98 5.003v1.667l1.45 2.896a1.01 1.01 0 01-.002.909l-1.448 2.864v1.668c0 2.762-2.23 5.002-4.98 5.002H7.074c-2.751 0-4.98-2.24-4.98-5.002V17.33l-1.48-2.855a1.01 1.01 0 01-.003-.927l1.482-2.887V8.994c0-2.763 2.23-5.003 4.98-5.003h9.962zM8.265 9.6a2.274 2.274 0 00-2.274 2.274v4.042a2.274 2.274 0 004.547 0v-4.042A2.274 2.274 0 008.265 9.6zm7.326 0a2.274 2.274 0 00-2.274 2.274v4.042a2.274 2.274 0 104.548 0v-4.042A2.274 2.274 0 0015.59 9.6z"/><path d="M12.054 5.558a2.779 2.779 0 100-5.558 2.779 2.779 0 000 5.558z"/></svg>`;
 }

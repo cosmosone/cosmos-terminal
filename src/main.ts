@@ -4,7 +4,7 @@ import { addProject, addSession, getActiveProject, getActiveSession, removeProje
 import { loadSettings, saveSettings, buildUiFont } from './services/settings-service';
 import { loadWorkspace, saveWorkspace } from './services/workspace-service';
 import { findLeafPaneIds } from './layout/pane-tree';
-import type { AppState, KeybindingConfig, Session, FileTab } from './state/types';
+import type { AppState, BrowserTab, KeybindingConfig, Session, FileTab } from './state/types';
 import { logger } from './services/logger';
 import { initProjectTabBar } from './components/project-tab-bar';
 import { initSessionTabBar } from './components/session-tab-bar';
@@ -15,6 +15,7 @@ import { initLogViewer } from './components/log-viewer';
 import { initGitSidebar } from './components/git-sidebar';
 import { initFileBrowserSidebar } from './components/file-browser-sidebar';
 import { initFileTabContent } from './components/file-tab-content';
+import { initBrowserTabContent } from './components/browser-tab-content';
 import { watchDirectory, unwatchDirectory } from './services/fs-service';
 import { keybindings, parseKeybinding } from './utils/keybindings';
 import { confirmCloseTerminalTab, confirmCloseProject } from './components/confirm-dialog';
@@ -40,16 +41,20 @@ async function main(): Promise<void> {
 
   logger.info('app', 'App starting', { settingsLoaded: true });
 
-  // Workspace migration: older saved data may lack the `locked` field
+  // Workspace migration: older saved data may lack newer fields
   type SavedSession = Omit<Session, 'locked'> & { locked?: boolean };
   type SavedFileTab = Omit<FileTab, 'locked'> & { locked?: boolean };
+  type SavedBrowserTab = Omit<BrowserTab, 'locked'> & { locked?: boolean };
+  type SavedProject = any;
 
   initStore({
-    projects: (saved?.projects ?? []).map((p) => ({
+    projects: (saved?.projects ?? []).map((p: SavedProject) => ({
       ...p,
       sessions: (p.sessions ?? []).map((s: SavedSession) => ({ ...s, locked: s.locked ?? false })),
       tabs: (p.tabs ?? []).map((t: SavedFileTab) => ({ ...t, locked: t.locked ?? false })),
+      browserTabs: ((p.browserTabs ?? []) as SavedBrowserTab[]).map((t) => ({ ...t, locked: t.locked ?? false })),
       activeTabId: p.activeTabId ?? null,
+      activeBrowserTabId: p.activeBrowserTabId ?? null,
       tabActivationSeq: p.tabActivationSeq ?? 0,
     })),
     activeProjectId: saved?.activeProjectId ?? null,
@@ -83,6 +88,7 @@ async function main(): Promise<void> {
   initGitSidebar(() => splitContainer.reLayout());
   const fileBrowser = initFileBrowserSidebar(() => splitContainer.reLayout());
   const fileTabContent = initFileTabContent();
+  initBrowserTabContent();
 
   let watchedProjectPath: string | null = null;
   let watcherSyncVersion = 0;
@@ -107,21 +113,23 @@ async function main(): Promise<void> {
     }
   }
 
-  // Visibility management: hide terminal when file tab is active, show when terminal session is active
+  // Visibility management: show exactly one content area at a time
   const fileTabContainer = $('#file-tab-container') as HTMLElement | null;
+  const browserTabContainer = $('#browser-tab-container') as HTMLElement | null;
 
   store.select(
     (s) => {
-      const project = s.projects.find((p) => p.id === s.activeProjectId);
-      return project?.activeSessionId != null && project?.activeTabId == null;
+      const p = s.projects.find((p) => p.id === s.activeProjectId);
+      if (p?.activeBrowserTabId) return 'browser';
+      if (p?.activeTabId) return 'file';
+      return 'terminal';
     },
-    (showTerminal) => {
-      terminalContainer.classList.toggle('hidden', !showTerminal);
-
-      if (showTerminal) {
-        fileTabContainer?.classList.add('hidden');
-        splitContainer.reLayout();
-      }
+    (view) => {
+      logger.debug('browser', 'View mode changed', { view });
+      terminalContainer.classList.toggle('hidden', view !== 'terminal');
+      fileTabContainer?.classList.toggle('hidden', view !== 'file');
+      browserTabContainer?.classList.toggle('hidden', view !== 'browser');
+      if (view === 'terminal') splitContainer.reLayout();
     },
   );
 
@@ -179,7 +187,7 @@ async function main(): Promise<void> {
     const project = getActiveProject();
     if (!project?.activeSessionId) return;
 
-    if (project.sessions.length <= 1) {
+    if (project.sessions.length <= 1 && project.tabs.length === 0 && project.browserTabs.length === 0) {
       if (!await confirmCloseProject(project.name)) return;
       removeProject(project.id);
       refresh();

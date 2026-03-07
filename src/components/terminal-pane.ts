@@ -8,6 +8,7 @@ import { open } from '@tauri-apps/plugin-shell';
 import { createPtySession, writeToPtySession, resizePtySession, killPtySession } from '../services/pty-service';
 import { consumeInitialCommand } from '../services/initial-command';
 import { store } from '../state/store';
+import { addBrowserTab, getActiveProject } from '../state/actions';
 import { logger } from '../services/logger';
 import { keybindings } from '../utils/keybindings';
 import type { AppSettings } from '../state/types';
@@ -576,6 +577,15 @@ export class TerminalPane {
         protocol: parsed.protocol,
       });
       return;
+    }
+
+    // Open http/https links in a browser tab; others (mailto:) via system
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      const project = getActiveProject();
+      if (project) {
+        addBrowserTab(project.id, uri);
+        return;
+      }
     }
 
     void open(uri).catch((err) => {

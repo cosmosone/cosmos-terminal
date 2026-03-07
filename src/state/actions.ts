@@ -1,9 +1,10 @@
 import { store } from './store';
 import { logger } from '../services/logger';
 import { saveSettings } from '../services/settings-service';
+import { closeBrowserWebview } from '../services/browser-service';
 import { findLeafPaneIds } from '../layout/pane-tree';
 import { basename } from '../utils/path';
-import type { AppSettings, FileTab, FileBrowserSidebarState, GitSidebarState, PaneNode, Project, ProjectGitState, Session } from './types';
+import type { AppSettings, BrowserTab, FileTab, FileBrowserSidebarState, GitSidebarState, PaneNode, Project, ProjectGitState, Session } from './types';
 
 function genId(): string {
   return crypto.randomUUID();
@@ -31,6 +32,8 @@ export function addProject(name: string, path: string): Project {
     activeSessionId: sessionId,
     tabs: [],
     activeTabId: null,
+    browserTabs: [],
+    activeBrowserTabId: null,
     tabActivationSeq: 0,
   };
   store.setState((s) => ({
@@ -44,11 +47,14 @@ export function addProject(name: string, path: string): Project {
 export function removeProject(projectId: string): void {
   logger.info('project', 'removeProject', { projectId });
 
-  // Clean up activity timers and OSC tracking for all sessions in this project
+  // Clean up activity timers, OSC tracking, and browser webviews for this project
   const project = store.getState().projects.find((p) => p.id === projectId);
   if (project) {
     for (const session of project.sessions) {
       cleanupSessionTracking(projectId, session);
+    }
+    for (const bt of project.browserTabs) {
+      void closeBrowserWebview(bt.id);
     }
   }
 
@@ -140,6 +146,7 @@ export function addSession(projectId: string, opts?: { title?: string; agentComm
     sessions: [...p.sessions, session],
     activeSessionId: session.id,
     activeTabId: null,
+    activeBrowserTabId: null,
   }));
   return session;
 }
@@ -157,17 +164,21 @@ export function removeSession(projectId: string, sessionId: string): void {
     const sessions = p.sessions.filter((s) => s.id !== sessionId);
     let activeSessionId = p.activeSessionId;
     let activeTabId = p.activeTabId;
+    let activeBrowserTabId = p.activeBrowserTabId;
     if (activeSessionId === sessionId) {
       if (sessions.length > 0) {
         activeSessionId = sessions[sessions.length - 1].id;
       } else if (p.tabs.length > 0) {
         activeSessionId = null;
         activeTabId = p.tabs[p.tabs.length - 1].id;
+      } else if (p.browserTabs.length > 0) {
+        activeSessionId = null;
+        activeBrowserTabId = p.browserTabs[p.browserTabs.length - 1].id;
       } else {
         activeSessionId = null;
       }
     }
-    return { ...p, sessions, activeSessionId, activeTabId };
+    return { ...p, sessions, activeSessionId, activeTabId, activeBrowserTabId };
   });
 }
 
@@ -184,6 +195,7 @@ export function setActiveSession(projectId: string, sessionId: string): void {
     ...p,
     activeSessionId: sessionId,
     activeTabId: null,
+    activeBrowserTabId: null,
   }));
 }
 
@@ -712,6 +724,7 @@ export function addFileTab(projectId: string, filePath: string, fileType: string
     tabs: [...p.tabs, tab],
     activeTabId: tab.id,
     activeSessionId: null,
+    activeBrowserTabId: null,
     tabActivationSeq: (p.tabActivationSeq ?? 0) + 1,
   }));
 }
@@ -725,13 +738,13 @@ export function removeFileTab(projectId: string, tabId: string): void {
         activeTabId = tabs[tabs.length - 1].id;
       } else {
         activeTabId = null;
-        // Fall back to last terminal session
-        return {
-          ...p,
-          tabs,
-          activeTabId: null,
-          activeSessionId: p.sessions.length > 0 ? p.sessions[p.sessions.length - 1].id : null,
-        };
+        if (p.sessions.length > 0) {
+          return { ...p, tabs, activeTabId: null, activeSessionId: p.sessions[p.sessions.length - 1].id };
+        }
+        if (p.browserTabs.length > 0) {
+          return { ...p, tabs, activeTabId: null, activeBrowserTabId: p.browserTabs[p.browserTabs.length - 1].id };
+        }
+        return { ...p, tabs, activeTabId: null };
       }
     }
     return { ...p, tabs, activeTabId };
@@ -743,6 +756,7 @@ export function setActiveTab(projectId: string, tabId: string): void {
     ...p,
     activeTabId: tabId,
     activeSessionId: null,
+    activeBrowserTabId: null,
     tabActivationSeq: (p.tabActivationSeq ?? 0) + 1,
   }));
 }
@@ -756,27 +770,23 @@ export function setFileTabDirty(projectId: string, tabId: string, dirty: boolean
 }
 
 export function closeOtherTabs(projectId: string, keepTabId: string, keepType: 'session' | 'file'): void {
+  // Close native browser webviews for unlocked tabs being removed
+  const project = store.getState().projects.find((p) => p.id === projectId);
+  if (project) {
+    for (const bt of project.browserTabs) {
+      if (!bt.locked) void closeBrowserWebview(bt.id);
+    }
+  }
   updateProject(projectId, (p) => {
+    const browserTabs = p.browserTabs.filter((t) => t.locked);
     if (keepType === 'session') {
       const sessions = p.sessions.filter((s) => s.id === keepTabId || s.locked);
       const tabs = p.tabs.filter((t) => t.locked);
-      return {
-        ...p,
-        sessions,
-        activeSessionId: keepTabId,
-        tabs,
-        activeTabId: null,
-      };
+      return { ...p, sessions, activeSessionId: keepTabId, tabs, activeTabId: null, browserTabs, activeBrowserTabId: null };
     } else {
       const sessions = p.sessions.filter((s) => s.locked);
       const tabs = p.tabs.filter((t) => t.id === keepTabId || t.locked);
-      return {
-        ...p,
-        sessions,
-        activeSessionId: sessions.length > 0 ? sessions[0].id : null,
-        tabs,
-        activeTabId: keepTabId,
-      };
+      return { ...p, sessions, activeSessionId: sessions.length > 0 ? sessions[0].id : null, tabs, activeTabId: keepTabId, browserTabs, activeBrowserTabId: null };
     }
   });
 }
@@ -787,4 +797,110 @@ export function toggleSessionLocked(projectId: string, sessionId: string): void 
 
 export function toggleFileTabLocked(projectId: string, tabId: string): void {
   updateFileTab(projectId, tabId, (t) => ({ ...t, locked: !t.locked }));
+}
+
+// --- Browser tab actions ---
+
+function updateBrowserTab(projectId: string, tabId: string, updater: (t: BrowserTab) => BrowserTab): void {
+  updateProject(projectId, (p) => {
+    const browserTabs = p.browserTabs.map((t) => (t.id === tabId ? updater(t) : t));
+    // Skip state update if the updater was a no-op (same reference)
+    if (browserTabs.every((t, i) => t === p.browserTabs[i])) return p;
+    return { ...p, browserTabs };
+  });
+}
+
+export function addBrowserTab(projectId: string, url?: string): BrowserTab {
+  const resolvedUrl = url ?? store.getState().settings.browserHomePage;
+  const tab: BrowserTab = {
+    id: genId(),
+    url: resolvedUrl,
+    title: 'New Tab',
+    locked: false,
+  };
+  logger.info('browser', 'addBrowserTab', { projectId, url: resolvedUrl });
+  updateProject(projectId, (p) => ({
+    ...p,
+    browserTabs: [...p.browserTabs, tab],
+    activeBrowserTabId: tab.id,
+    activeSessionId: null,
+    activeTabId: null,
+    tabActivationSeq: (p.tabActivationSeq ?? 0) + 1,
+  }));
+  return tab;
+}
+
+export function removeBrowserTab(projectId: string, tabId: string): void {
+  logger.info('browser', 'removeBrowserTab', { projectId, tabId });
+  void closeBrowserWebview(tabId);
+  updateProject(projectId, (p) => {
+    const browserTabs = p.browserTabs.filter((t) => t.id !== tabId);
+    let activeBrowserTabId = p.activeBrowserTabId;
+    if (activeBrowserTabId === tabId) {
+      if (browserTabs.length > 0) {
+        activeBrowserTabId = browserTabs[browserTabs.length - 1].id;
+      } else {
+        activeBrowserTabId = null;
+        if (p.sessions.length > 0) {
+          return { ...p, browserTabs, activeBrowserTabId: null, activeSessionId: p.sessions[p.sessions.length - 1].id };
+        }
+        if (p.tabs.length > 0) {
+          return { ...p, browserTabs, activeBrowserTabId: null, activeTabId: p.tabs[p.tabs.length - 1].id };
+        }
+        return { ...p, browserTabs, activeBrowserTabId: null };
+      }
+    }
+    return { ...p, browserTabs, activeBrowserTabId };
+  });
+}
+
+export function setActiveBrowserTab(projectId: string, tabId: string): void {
+  logger.debug('browser', 'setActiveBrowserTab', { projectId, tabId });
+  updateProject(projectId, (p) => ({
+    ...p,
+    activeBrowserTabId: tabId,
+    activeSessionId: null,
+    activeTabId: null,
+    tabActivationSeq: (p.tabActivationSeq ?? 0) + 1,
+  }));
+}
+
+export function setBrowserTabUrl(projectId: string, tabId: string, url: string): void {
+  updateBrowserTab(projectId, tabId, (t) => t.url === url ? t : { ...t, url });
+}
+
+export function setBrowserTabTitle(projectId: string, tabId: string, title: string, url?: string): void {
+  updateBrowserTab(projectId, tabId, (t) => {
+    if (t.title === title && (url == null || t.url === url)) return t;
+    return { ...t, title, ...(url != null ? { url } : {}) };
+  });
+}
+
+export function toggleBrowserTabLocked(projectId: string, tabId: string): void {
+  logger.debug('browser', 'toggleBrowserTabLocked', { projectId, tabId });
+  updateBrowserTab(projectId, tabId, (t) => ({ ...t, locked: !t.locked }));
+}
+
+export function reorderBrowserTab(projectId: string, tabId: string, newIndex: number): void {
+  logger.debug('browser', 'reorderBrowserTab', { projectId, tabId, newIndex });
+  updateProject(projectId, (p) => {
+    const oldIndex = p.browserTabs.findIndex((t) => t.id === tabId);
+    if (oldIndex === -1 || oldIndex === newIndex) return p;
+    return { ...p, browserTabs: moveItem(p.browserTabs, oldIndex, newIndex) };
+  });
+}
+
+export function closeOtherBrowserTabs(projectId: string, keepTabId: string): void {
+  logger.debug('browser', 'closeOtherBrowserTabs', { projectId, keepTabId });
+  const project = store.getState().projects.find((p) => p.id === projectId);
+  if (project) {
+    for (const bt of project.browserTabs) {
+      if (bt.id !== keepTabId && !bt.locked) void closeBrowserWebview(bt.id);
+    }
+  }
+  updateProject(projectId, (p) => ({
+    ...p,
+    browserTabs: p.browserTabs.filter((t) => t.id === keepTabId || t.locked),
+    activeBrowserTabId: keepTabId,
+  }));
 }

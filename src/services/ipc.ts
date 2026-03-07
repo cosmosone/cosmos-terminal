@@ -25,6 +25,15 @@ export const IPC_COMMANDS = {
   GET_FILE_MTIME: 'get_file_mtime',
   WATCH_DIRECTORY: 'watch_directory',
   UNWATCH_DIRECTORY: 'unwatch_directory',
+  CREATE_BROWSER_WEBVIEW: 'create_browser_webview',
+  SHOW_BROWSER_WEBVIEW: 'show_browser_webview',
+  HIDE_BROWSER_WEBVIEW: 'hide_browser_webview',
+  NAVIGATE_BROWSER: 'navigate_browser',
+  RESIZE_BROWSER_WEBVIEW: 'resize_browser_webview',
+  CLOSE_BROWSER_WEBVIEW: 'close_browser_webview',
+  BROWSER_GO_BACK: 'browser_go_back',
+  BROWSER_GO_FORWARD: 'browser_go_forward',
+  BROWSER_WEBVIEW_IS_ALIVE: 'browser_webview_is_alive',
 } as const;
 
 type IpcCommand = (typeof IPC_COMMANDS)[keyof typeof IPC_COMMANDS];

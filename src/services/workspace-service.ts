@@ -33,6 +33,7 @@ export async function saveWorkspace(
     ...p,
     sessions: p.sessions.map((s) => ({ ...s, hasActivity: false, activityCompleted: false })),
     tabs: p.tabs.map((t) => ({ ...t, dirty: false, editing: false })),
+    browserTabs: p.browserTabs ?? [],
   }));
   const s = await getStore();
   await s.set('workspace', { projects: cleaned, activeProjectId, gitSidebar, fileBrowserSidebar } satisfies SavedWorkspace);

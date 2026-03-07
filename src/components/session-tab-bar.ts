@@ -1,5 +1,5 @@
 import { store } from '../state/store';
-import { addSession, removeSession, removeProject, setActiveSession, setActiveTab, removeFileTab, closeOtherTabs, splitPane, renameSession, setFileTabEditing, toggleSessionLocked, toggleFileTabLocked, toggleFileBrowserSidebar, toggleGitSidebar, reorderSession, reorderFileTab } from '../state/actions';
+import { addSession, removeSession, removeProject, setActiveSession, setActiveTab, removeFileTab, closeOtherTabs, splitPane, renameSession, setFileTabEditing, toggleSessionLocked, toggleFileTabLocked, toggleFileBrowserSidebar, toggleGitSidebar, reorderSession, reorderFileTab, addBrowserTab, removeBrowserTab, setActiveBrowserTab, toggleBrowserTabLocked, reorderBrowserTab, closeOtherBrowserTabs } from '../state/actions';
 import { AGENT_DEFINITIONS } from '../services/agent-definitions';
 import type { AgentDef } from '../services/agent-definitions';
 import { setInitialCommand } from '../services/initial-command';
@@ -11,7 +11,7 @@ import type { MenuItem } from './context-menu';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { PaneLeaf, Project } from '../state/types';
-import { chevronLeftIcon, chevronRightIcon, fileIcon, folderIcon, gitBranchIcon, lockIcon, terminalIcon } from '../utils/icons';
+import { chevronLeftIcon, chevronRightIcon, fileIcon, folderIcon, gitBranchIcon, globeIcon, lockIcon, terminalIcon } from '../utils/icons';
 import { setupScrollArrows } from '../utils/scroll-arrows';
 import { createTabDragManager } from '../utils/tab-drag';
 
@@ -53,7 +53,7 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
   }
 
   async function closeSessionTab(project: Project, sessionId: string, sessionTitle: string): Promise<void> {
-    if (project.sessions.length <= 1 && project.tabs.length === 0) {
+    if (project.sessions.length <= 1 && project.tabs.length === 0 && project.browserTabs.length === 0) {
       if (!await confirmCloseProject(project.name)) return;
       logger.info('project', 'Remove project via last session tab close', { projectId: project.id, name: project.name });
       removeProject(project.id);
@@ -161,7 +161,7 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
       );
 
       tab.addEventListener('mousedown', (e: MouseEvent) => {
-        dragManager.startDrag(e, tab, tabList, indicator, session.id, si, '.session-tab:not(.file-tab)', project.sessions, (itemId, _origin, adjustedIndex) => {
+        dragManager.startDrag(e, tab, tabList, indicator, session.id, si, '.session-tab:not(.file-tab):not(.browser-tab)', project.sessions, (itemId, _origin, adjustedIndex) => {
           reorderSession(project.id, itemId, adjustedIndex);
           onTabChange();
         });
@@ -313,6 +313,81 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
       }
     }
 
+    // --- Browser tabs ---
+    if (project.browserTabs.length > 0) {
+      const bSeparator = createElement('span', { className: 'session-tab-separator' });
+      tabList.appendChild(bSeparator);
+
+      for (let bi = 0; bi < project.browserTabs.length; bi++) {
+        const browserTab = project.browserTabs[bi];
+        const isActive = browserTab.id === project.activeBrowserTabId;
+        const tab = createElement('button', {
+          className: `session-tab browser-tab${isActive ? ' active' : ''}`,
+        });
+
+        const iconEl = createElement('span', { className: 'browser-tab-icon' });
+        iconEl.innerHTML = globeIcon(11);
+        tab.appendChild(iconEl);
+
+        const tabLabel = createElement('span', { className: 'tab-label' });
+        tabLabel.textContent = browserTab.title || 'New Tab';
+        tab.appendChild(tabLabel);
+
+        appendLockOrClose(
+          tab,
+          browserTab.locked,
+          () => { toggleBrowserTabLocked(project.id, browserTab.id); onTabChange(); },
+          async () => {
+            removeBrowserTab(project.id, browserTab.id);
+            onTabChange();
+          },
+        );
+
+        tab.addEventListener('mousedown', (e: MouseEvent) => {
+          dragManager.startDrag(e, tab, tabList, indicator, browserTab.id, bi, '.browser-tab', project.browserTabs, (itemId, _origin, adjustedIndex) => {
+            reorderBrowserTab(project.id, itemId, adjustedIndex);
+            onTabChange();
+          });
+        });
+
+        tab.addEventListener('click', () => {
+          if (dragManager.suppressClick) return;
+          setActiveBrowserTab(project.id, browserTab.id);
+          onTabChange();
+        });
+
+        tab.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          showContextMenu(e.clientX, e.clientY, [
+            {
+              label: browserTab.locked ? 'Unlock' : 'Lock',
+              action: () => {
+                toggleBrowserTabLocked(project.id, browserTab.id);
+                onTabChange();
+              },
+            },
+            {
+              label: 'Close',
+              separator: true,
+              action: async () => {
+                removeBrowserTab(project.id, browserTab.id);
+                onTabChange();
+              },
+            },
+            {
+              label: 'Close Others',
+              action: () => {
+                closeOtherBrowserTabs(project.id, browserTab.id);
+                onTabChange();
+              },
+            },
+          ]);
+        });
+
+        tabList.appendChild(tab);
+      }
+    }
+
     // Scroll arrows
     const leftArrow = createElement('button', { className: 'scroll-arrow left' });
     leftArrow.innerHTML = chevronLeftIcon(16);
@@ -352,6 +427,16 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     for (const agent of AGENT_DEFINITIONS) {
       bar.appendChild(createAgentButton(project, agent));
     }
+
+    const browserAddBtn = createElement('button', { className: 'session-tab-add' });
+    browserAddBtn.innerHTML = globeIcon(12);
+    browserAddBtn.title = 'New browser tab';
+    browserAddBtn.addEventListener('click', () => {
+      logger.info('browser', 'Add browser tab via tab bar', { projectId: project.id });
+      addBrowserTab(project.id);
+      onTabChange();
+    });
+    bar.appendChild(browserAddBtn);
 
     const divider = createElement('span', { className: 'session-tab-divider' });
     bar.appendChild(divider);
@@ -400,8 +485,8 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     const session = project.sessions.find((s) => s.id === project.activeSessionId);
     if (!session) return;
 
-    // Only rename terminal tabs (not file tabs)
-    if (project.activeTabId !== null) return;
+    // Only rename terminal tabs (not file or browser tabs)
+    if (project.activeTabId !== null || project.activeBrowserTabId !== null) return;
 
     const activeTab = bar.querySelector('.session-tab.active:not(.file-tab)') as HTMLElement | null;
     if (!activeTab) return;

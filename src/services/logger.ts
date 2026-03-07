@@ -8,7 +8,8 @@ export type LogCategory =
   | 'project'
   | 'session'
   | 'git'
-  | 'fs';
+  | 'fs'
+  | 'browser';
 
 export interface LogEntry {
   timestamp: number;

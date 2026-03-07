@@ -62,6 +62,15 @@ pub struct GitPushResult {
     pub message: String,
 }
 
+// --- Browser models ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserNavEvent {
+    pub tab_id: String,
+    pub url: String,
+}
+
 // --- Filesystem models ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,9 +1,12 @@
+mod browser;
 mod commands;
 mod models;
 mod pty;
 mod security;
 mod watcher;
 
+use browser::manager::BrowserManager;
+use commands::browser_commands;
 use commands::fs_commands;
 use commands::git_commands;
 use commands::pty_commands;
@@ -140,6 +143,7 @@ pub fn run() {
 
     let session_manager = SessionManager::new();
     let system_monitor = SystemMonitor::new();
+    let browser_manager = BrowserManager::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -147,6 +151,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(session_manager)
         .manage(system_monitor)
+        .manage(browser_manager)
         .invoke_handler(tauri::generate_handler![
             pty_commands::create_session,
             pty_commands::write_to_session,
@@ -171,6 +176,15 @@ pub fn run() {
             fs_commands::get_file_mtime,
             watcher_commands::watch_directory,
             watcher_commands::unwatch_directory,
+            browser_commands::create_browser_webview,
+            browser_commands::show_browser_webview,
+            browser_commands::hide_browser_webview,
+            browser_commands::navigate_browser,
+            browser_commands::resize_browser_webview,
+            browser_commands::close_browser_webview,
+            browser_commands::browser_go_back,
+            browser_commands::browser_go_forward,
+            browser_commands::browser_webview_is_alive,
         ])
         .setup(|app| {
             let fs_watcher = FsWatcher::new(app.handle().clone());
@@ -188,6 +202,12 @@ pub fn run() {
                 sm.kill_all();
                 let watcher = window.state::<FsWatcher>();
                 watcher.unwatch();
+                let bm = window.state::<BrowserManager>();
+                for label in bm.remove_all() {
+                    if let Some(wv) = window.app_handle().get_webview(&label) {
+                        let _ = wv.close();
+                    }
+                }
             }
         })
         .run(tauri::generate_context!())

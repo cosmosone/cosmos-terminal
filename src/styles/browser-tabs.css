@@ -1,0 +1,78 @@
+/* ── Browser tab container ── */
+
+#browser-tab-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Browser chrome (address bar + nav) ── */
+
+.browser-chrome {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  height: 36px;
+  box-sizing: border-box;
+}
+
+.browser-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.browser-nav-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.browser-nav-btn:active {
+  opacity: 0.7;
+}
+
+.browser-address-bar {
+  flex: 1;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-ui-size);
+  outline: none;
+  min-width: 0;
+}
+
+.browser-address-bar:focus {
+  border-color: var(--accent-dim);
+}
+
+.browser-address-bar::placeholder {
+  color: var(--text-secondary);
+}
+
+/* ── Webview placeholder area ── */
+
+.browser-webview-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
