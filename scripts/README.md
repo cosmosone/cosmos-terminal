@@ -2,17 +2,15 @@
 
 All scripts are run from the repository root.
 
-## `local.py` — Development
+## `build.py` — Build
 
-Starts the full dev environment (frontend + Rust backend) with hot reload.
+### Development (hot reload)
 
 ```bash
-python scripts/local.py
+python scripts/build.py --local
 ```
 
-Auto-runs `npm install` if `node_modules` is missing. Equivalent to `cargo tauri dev`.
-
-## `build.py` — Build
+Starts the full dev environment (frontend + Rust backend) with hot reload. Auto-runs `npm install` if `node_modules` is missing. Equivalent to `cargo tauri dev`.
 
 ### Production release (interactive)
 

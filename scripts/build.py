@@ -3,6 +3,7 @@
 Usage:
     python scripts/build.py          # Production release build (interactive)
     python scripts/build.py --dev    # Fast local build (no bundling)
+    python scripts/build.py --local  # Dev server with hot reload (cargo tauri dev)
 """
 
 import argparse
@@ -192,6 +193,18 @@ def copy_exe_prompt() -> None:
 # --- Mode handlers -----------------------------------------------------------
 
 
+def build_local() -> None:
+    print(f"{CYAN}Starting local dev server (cargo tauri dev){RESET}")
+    print("-" * 40)
+    ensure_node_modules()
+    try:
+        result = subprocess.run("cargo tauri dev", shell=True, cwd=ROOT)
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        print(f"\n{YELLOW}Stopped.{RESET}")
+        sys.exit(0)
+
+
 def build_dev() -> None:
     print(f"{YELLOW}Local build (fast profile){RESET}")
     print("  LTO: thin | codegen-units: 8 | opt-level: 2 | incremental: on")
@@ -258,15 +271,23 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Examples:\n"
                "  python scripts/build.py          # Production release build\n"
-               "  python scripts/build.py --dev    # Fast local build",
+               "  python scripts/build.py --dev    # Fast local build\n"
+               "  python scripts/build.py --local  # Dev server with hot reload",
     )
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "--dev", action="store_true",
         help="Fast local build (thin LTO, no bundling, incremental)",
     )
+    group.add_argument(
+        "--local", action="store_true",
+        help="Dev server with hot reload (cargo tauri dev)",
+    )
     args = parser.parse_args()
 
-    if args.dev:
+    if args.local:
+        build_local()
+    elif args.dev:
         build_dev()
     else:
         build_release()

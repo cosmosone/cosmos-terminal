@@ -69,7 +69,19 @@ export async function suppressBrowserWebview(): Promise<void> {
       const area = getWebviewArea();
       if (area) {
         // Use data URL directly — blob: URLs are blocked by the Tauri CSP
-        area.style.backgroundImage = `url(data:image/jpeg;base64,${base64})`;
+        const dataUrl = `data:image/jpeg;base64,${base64}`;
+        // Preload: force the browser to decode the JPEG before displaying it
+        // so the screenshot is ready on the first frame after the webview hides
+        const img = new Image();
+        await new Promise<void>((resolve) => {
+          const done = () => { img.onload = null; img.onerror = null; resolve(); };
+          img.onload = done;
+          img.onerror = done;
+          setTimeout(done, 500);
+          img.src = dataUrl;
+        });
+        if ((suppressCount as number) === 0 || activeTabId !== captureTabId) return;
+        area.style.backgroundImage = `url(${dataUrl})`;
         area.style.backgroundSize = '100% 100%';
         area.style.backgroundRepeat = 'no-repeat';
       }
