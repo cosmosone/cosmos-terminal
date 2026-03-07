@@ -32,6 +32,7 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
 
   // Reassigned each render so the ResizeObserver always calls the latest version
   let updateScrollArrows: () => boolean = () => false;
+  let savedScrollLeft = 0;
 
   // While an inline rename is in progress we must defer re-renders so the
   // input field is not destroyed.  `pendingRender` stores the latest project
@@ -105,8 +106,15 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     }
     // If a drag is in progress when re-render fires, abort it cleanly
     dragManager.cleanupDrag();
+
+    const oldTabList = bar.querySelector('.tab-list') as HTMLElement | null;
+    if (oldTabList) savedScrollLeft = oldTabList.scrollLeft;
+
     clearChildren(bar);
-    if (!project) return;
+    if (!project) {
+      savedScrollLeft = 0;
+      return;
+    }
 
     const tabList = createElement('div', { className: 'tab-list' });
 
@@ -325,7 +333,9 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
           className: `session-tab browser-tab${isActive ? ' active' : ''}`,
         });
 
-        const iconEl = createElement('span', { className: 'browser-tab-icon' });
+        const iconEl = createElement('span', {
+          className: `browser-tab-icon${browserTab.loading ? ' browser-tab-loading' : ''}`,
+        });
         iconEl.innerHTML = globeIcon(11);
         tab.appendChild(iconEl);
 
@@ -428,6 +438,8 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
       bar.appendChild(createAgentButton(project, agent));
     }
 
+    bar.appendChild(createElement('span', { className: 'session-tab-divider' }));
+
     const browserAddBtn = createElement('button', { className: 'session-tab-add' });
     browserAddBtn.innerHTML = globeIcon(12);
     browserAddBtn.title = 'New browser tab';
@@ -438,18 +450,19 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     });
     bar.appendChild(browserAddBtn);
 
-    const divider = createElement('span', { className: 'session-tab-divider' });
-    bar.appendChild(divider);
+    bar.appendChild(createElement('span', { className: 'session-tab-divider' }));
     bar.appendChild(sidebarActions);
 
     requestAnimationFrame(() => {
+      // Restore previous scroll position so switching to an already-visible
+      // tab doesn't jump the scroll back to 0.
+      tabList.scrollLeft = savedScrollLeft;
+      // Set arrow visibility first so the tabList has its final width
+      // before we calculate whether the active tab needs scrolling.
+      updateScrollArrows();
       const activeTab = tabList.querySelector('.session-tab.active') as HTMLElement | null;
       activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
-      // Re-scroll only if arrows changed visibility and shifted layout.
-      if (updateScrollArrows()) {
-        activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
-        updateScrollArrows();
-      }
+      updateScrollArrows();
     });
   }
 

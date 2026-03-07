@@ -1,43 +1,102 @@
-# Browser Tab Feature — Implementation
+# Browser Tab Robustness Improvements — Phase 2
 
-## Phase 1: Types, State & Settings
-- [ ] 1.1 Add `BrowserTab` interface to `state/types.ts`
-- [ ] 1.2 Extend `Project` with `browserTabs` + `activeBrowserTabId`
-- [ ] 1.3 Add `browserHomePage` to `AppSettings`
-- [ ] 1.4 Add default in `settings-service.ts`
-- [ ] 1.5 Add "Browser" section in `settings-page.ts`
-- [ ] 1.6 Add browser tab actions in `actions.ts`
+## Previously Completed (Phase 1)
 
-## Phase 2: Rust Backend — Webview Management
-- [ ] 2.1 Create `browser/mod.rs` + `browser/manager.rs`
-- [ ] 2.2 Create `commands/browser_commands.rs`
-- [ ] 2.3 Add `BrowserNavEvent` model
-- [ ] 2.4 Register module, state, commands in `lib.rs`
-- [ ] 2.5 Update capabilities if needed
+H1 IStream read loop, H2 suppress race condition, M1 skip resize when suppressed,
+M2 background color, L1 scoped getWebviewArea, S1 color match, S2 catch-up resize,
+S3 dropdown flicker fix — all done and tested.
 
-## Phase 3: Frontend — Browser Service
-- [ ] 3.1 Create `services/browser-service.ts`
+## Phase 2: Remaining Opportunities
 
-## Phase 4: Frontend — UI Components
-- [ ] 4.1 Add `globeIcon` to `utils/icons.ts`
-- [ ] 4.2 Add browser button + browser tabs to `session-tab-bar.ts`
-- [ ] 4.3 Add `#browser-tab-container` to `index.html` + stylesheet link
-- [ ] 4.4 Create `styles/browser-tabs.css`
-- [ ] 4.5 Create `components/browser-tab-content.ts`
-- [ ] 4.6 Update visibility logic in `main.ts`
+### R1. suppressCount desync protection (`browser-tab-content.ts`)
 
-## Phase 5: URL Click → Browser Tab
-- [ ] 5.1 Modify `terminal-pane.ts` `openExternalUri`
+**Problem**: If a caller suppresses but never restores (error path, component destroyed,
+re-render), suppressCount gets stuck > 0 and the webview is permanently hidden.
+The log-viewer close button calls `restoreBrowserWebview()` from a different file
+than the matching suppress (in status-bar), making the pairing fragile.
 
-## Phase 6: Persistence
-- [ ] 6.1 Update `workspace-service.ts` save cleanup
-- [ ] 6.2 Update `main.ts` restore/migration
+**Fix**:
+- Reset `suppressCount` to 0 when the browser tab deactivates (activeTabId → null).
+  At that point no webview is visible anyway, so the count is meaningless.
+- Also reset when a new tab activates — fresh context, fresh count.
+- Clean up the screenshot background (and revoke any object URL) during reset.
+- Log a warning if suppressCount exceeds 3 (indicates likely leak).
 
-## Phase 7: Z-Order & Overlay Handling
-- [ ] 7.1 Export suppress/restore in `browser-tab-content.ts`
-- [ ] 7.2 Wire into `context-menu.ts` and `confirm-dialog.ts`
+**Files**: `src/components/browser-tab-content.ts`
 
-## Verification
-- [ ] `npx tsc --noEmit` passes
-- [ ] `cd src-tauri && cargo clippy --all-targets` passes
-- [ ] `python scripts/test.py` passes
+---
+
+### R2. Base64 data URL → Blob + createObjectURL (`browser-tab-content.ts`)
+
+**Problem**: The screenshot is embedded as an inline `data:image/jpeg;base64,...`
+CSS background-image. For large screenshots (4K displays), this creates a multi-MB
+string in the DOM style attribute, causing GC pressure and unnecessary memory use.
+
+**Fix**:
+- Decode the base64 string to a `Uint8Array`, create a `Blob`, then use
+  `URL.createObjectURL(blob)` for the background-image URL.
+- Store the object URL at module scope so `restoreBrowserWebview()` can call
+  `URL.revokeObjectURL()` during cleanup.
+
+**Files**: `src/components/browser-tab-content.ts`
+
+---
+
+### R3. Async suppress pattern — SKIP (no change needed)
+
+**Rationale**: The async pattern is intentional. Callers `await suppress` so the
+screenshot is ready before the overlay appears. Making it synchronous would
+reintroduce the flickering bug that was fixed in Phase 1 (S3). This is a deliberate
+design choice, not a leaked implementation detail.
+
+---
+
+### R4. Cross-language event name constant (`browser_commands.rs`)
+
+**Problem**: Rust emits `"browser-navigated"` as a raw string literal. TypeScript
+defines `BROWSER_NAVIGATED_EVENT = 'browser-navigated'` as a constant. If either
+side changes the string, the contract silently breaks with no compile-time error.
+
+**Fix**:
+- Add `const BROWSER_NAVIGATED_EVENT: &str = "browser-navigated"` in
+  `browser_commands.rs` (or a shared constants location) and use it in the
+  `emit_to` call.
+- This doesn't create cross-language safety, but it gives the Rust side a single
+  source of truth and makes the coupling visible via a searchable symbol name.
+
+**Files**: `src-tauri/src/commands/browser_commands.rs`
+
+---
+
+### R5. Project dropdown re-render race (`project-tab-bar.ts`)
+
+**Problem**: The dropdown state (`dropdownPanel`, `closeDropdown`, outside-click
+handler) is defined inside `render()`. If `render()` fires while the dropdown is
+open (e.g., a new project is added), the old dropdown panel (appended to
+`document.body`) and its outside-click handler are orphaned. The old panel stays
+visible with stale data until the user clicks somewhere. The suppress count from
+the orphaned dropdown is stuck until that click.
+
+**Fix**:
+- Move `dropdownPanel`, `closeDropdown`, and `onDropdownOutsideClick` out of
+  `render()` to the `initProjectTabBar` scope.
+- Call `closeDropdown()` at the top of `render()` to clean up any open dropdown
+  before rebuilding the bar.
+- The dropdown item creation helpers (`createDropdownItem`, `positionDropdownPanel`)
+  stay inside render since they depend on the current `projects`/`activeId` snapshot.
+
+**Files**: `src/components/project-tab-bar.ts`
+
+## Checklist
+
+- [x] R1. suppressCount desync protection
+- [x] R2. Base64 → Blob + createObjectURL
+- [x] R4. Cross-language event name constant
+- [x] R5. Project dropdown re-render race
+
+## Simplify Review
+
+- **Fixed**: Extracted `decodeBase64ToBytes` to `src/utils/base64.ts` (was duplicated in `pty-service.ts` and inline in `browser-tab-content.ts`)
+- **Fixed**: Un-exported `resetSuppression()` — only used internally, exposing it would let external callers corrupt suppress count
+- **Noted** (out of scope): `'fs-change'` raw string on both Rust/TS sides should get the same constant treatment as `browser-navigated`
+- **Clean**: No memory leaks, no event listener leaks, no redundant work, no hot-path bloat

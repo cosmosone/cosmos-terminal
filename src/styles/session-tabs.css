@@ -132,6 +132,10 @@
   flex-shrink: 0;
 }
 
+.browser-tab-loading svg {
+  animation: spin 1s linear infinite;
+}
+
 /* ===== File tab extras ===== */
 .session-tab-separator {
   display: inline-block;

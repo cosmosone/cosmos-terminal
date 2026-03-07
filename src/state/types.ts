@@ -180,6 +180,30 @@ export interface BrowserTab {
   url: string;
   title: string;
   locked: boolean;
+  /** Runtime-only loading indicator (not persisted). */
+  loading?: boolean;
+}
+
+/** Event name emitted by the Rust backend on webview navigation. */
+export const BROWSER_NAVIGATED_EVENT = 'browser-navigated';
+
+/** Event name emitted by the Rust backend when a page title is available. */
+export const BROWSER_TITLE_CHANGED_EVENT = 'browser-title-changed';
+
+/** Event name emitted by the Rust backend on filesystem changes. */
+export const FS_CHANGE_EVENT = 'fs-change';
+
+/** Payload shape for `browser-navigated` events (mirrors Rust `BrowserNavEvent`). */
+export interface BrowserNavEvent {
+  tabId: string;
+  url: string;
+  loading: boolean;
+}
+
+/** Payload shape for `browser-title-changed` events (mirrors Rust `BrowserTitleEvent`). */
+export interface BrowserTitleEvent {
+  tabId: string;
+  title: string;
 }
 
 export interface FileBrowserSidebarState {

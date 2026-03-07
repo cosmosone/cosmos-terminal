@@ -6,6 +6,7 @@ import { logger } from '../services/logger';
 import type { AppSettings, KeybindingConfig } from '../state/types';
 import { keybindings } from '../utils/keybindings';
 import { createElement, clearChildren, $ } from '../utils/dom';
+import { suppressBrowserWebview, restoreBrowserWebview } from './browser-tab-content';
 
 export function initSettingsPage(onSettingsChanged: () => void): void {
   const container = $('#settings-container')!;
@@ -559,8 +560,15 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
 
   store.select(
     (s) => s.view,
-    (view) => {
-      container.classList.toggle('hidden', view !== 'settings');
+    async (view) => {
+      const isSettings = view === 'settings';
+      if (isSettings) {
+        await suppressBrowserWebview();
+      }
+      container.classList.toggle('hidden', !isSettings);
+      if (!isSettings) {
+        restoreBrowserWebview();
+      }
     },
   );
 

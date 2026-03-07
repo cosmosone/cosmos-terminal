@@ -16,7 +16,7 @@
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: var(--bg-secondary);
+  background: var(--bg-terminal);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   height: 36px;

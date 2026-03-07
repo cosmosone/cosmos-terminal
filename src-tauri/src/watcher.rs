@@ -10,6 +10,9 @@ use tauri::{AppHandle, Emitter};
 use crate::security::path_guard::canonicalize_existing_dir;
 use crate::IGNORED_DIRS;
 
+/// Event name for filesystem change notifications (must match TypeScript `FS_CHANGE_EVENT`).
+const FS_CHANGE_EVENT: &str = "fs-change";
+
 struct Inner {
     watcher: notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>,
     thread: std::thread::JoinHandle<()>,
@@ -90,10 +93,10 @@ impl FsWatcher {
 
                 if affected_dirs.len() > MAX_EMIT_DIRS {
                     // Too many dirs changed — emit the watched root for a full refresh
-                    let _ = app.emit("fs-change", &root.to_string_lossy().to_string());
+                    let _ = app.emit(FS_CHANGE_EVENT, &root.to_string_lossy().to_string());
                 } else {
                     for dir in affected_dirs {
-                        let _ = app.emit("fs-change", &dir);
+                        let _ = app.emit(FS_CHANGE_EVENT, &dir);
                     }
                 }
             }

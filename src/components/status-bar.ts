@@ -3,6 +3,7 @@ import { logger } from '../services/logger';
 import { store } from '../state/store';
 import { toggleDebugLogging } from '../state/actions';
 import { $ } from '../utils/dom';
+import { suppressBrowserWebview, restoreBrowserWebview } from './browser-tab-content';
 
 const POLL_INTERVAL_MS = 5000;
 const TIMER_INTERVAL_MS = 60_000;
@@ -40,9 +41,17 @@ export function initStatusBar(onCleanup?: () => void): void {
   `;
 
   const logToggle = $('#status-log-toggle')!;
-  logToggle.addEventListener('click', () => {
-    const viewer = $('#log-viewer-container');
-    if (viewer) viewer.classList.toggle('hidden');
+  logToggle.addEventListener('click', async () => {
+    const viewer = $('#log-viewer-container') as HTMLElement | null;
+    if (!viewer) return;
+    const willShow = viewer.classList.contains('hidden');
+    if (willShow) {
+      await suppressBrowserWebview();
+      viewer.classList.remove('hidden');
+    } else {
+      viewer.classList.add('hidden');
+      restoreBrowserWebview();
+    }
   });
 
   // Debug logging toggle + timer

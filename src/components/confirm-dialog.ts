@@ -20,7 +20,7 @@ export interface ConfirmResult {
   checkboxChecked: boolean;
 }
 
-export function showConfirmDialog(options: ConfirmOptions): Promise<ConfirmResult> {
+export async function showConfirmDialog(options: ConfirmOptions): Promise<ConfirmResult> {
   const {
     title,
     message,
@@ -31,9 +31,10 @@ export function showConfirmDialog(options: ConfirmOptions): Promise<ConfirmResul
     danger = false,
   } = options;
 
+  keybindings.setActive(false);
+  await suppressBrowserWebview();
+
   return new Promise<ConfirmResult>((resolve) => {
-    keybindings.setActive(false);
-    suppressBrowserWebview();
 
     const backdrop = createElement('div', { className: 'confirm-backdrop' });
     const dialog = createElement('div', { className: 'confirm-dialog' });

@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { IPC_COMMANDS, invokeIpcLogged } from './ipc';
+import { FS_CHANGE_EVENT } from '../state/types';
 
 export interface DirEntry {
   name: string;
@@ -77,7 +78,7 @@ export async function unwatchDirectory(): Promise<void> {
 }
 
 export function onFsChange(callback: (affectedDir: string) => void): Promise<UnlistenFn> {
-  return listen<string>('fs-change', (event) => {
+  return listen<string>(FS_CHANGE_EVENT, (event) => {
     callback(event.payload);
   });
 }

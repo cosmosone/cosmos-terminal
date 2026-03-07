@@ -71,9 +71,11 @@ function closeMenu(): void {
   window.removeEventListener('contextmenu', closeMenu);
 }
 
-export function showContextMenu(x: number, y: number, items: MenuItem[]): void {
+export async function showContextMenu(x: number, y: number, items: MenuItem[]): Promise<void> {
   closeMenu();
-  suppressBrowserWebview();
+
+  // Freeze the browser webview as a screenshot so the menu renders on top of page content
+  await suppressBrowserWebview();
 
   const menu = createElement('div', { className: 'context-menu' });
 

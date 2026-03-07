@@ -7,6 +7,7 @@ import { showContextMenu, startInlineRename } from './context-menu';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { Project } from '../state/types';
+import { suppressBrowserWebview, restoreBrowserWebview } from './browser-tab-content';
 import { basename } from '../utils/path';
 import { chevronDownIcon, chevronLeftIcon, chevronRightIcon, folderIcon, settingsIcon } from '../utils/icons';
 import { setupScrollArrows } from '../utils/scroll-arrows';
@@ -19,12 +20,34 @@ export function initProjectTabBar(onProjectChange: () => void): void {
 
   // Reassigned each render so the ResizeObserver always calls the latest version
   let updateScrollArrows: () => boolean = () => false;
+  let savedScrollLeft = 0;
 
   // While an inline rename is in progress we must defer re-renders so the
   // input field is not destroyed.  `pendingRender` stores the latest args
   // that arrived while the rename was active.
   let renameActive = false;
   let pendingRender: { projects: Project[]; activeId: string | null } | null = null;
+
+  // R5: Dropdown state lives outside render() so re-renders can clean up any open dropdown
+  let dropdownPanel: HTMLElement | null = null;
+
+  function onDropdownOutsideClick(e: MouseEvent): void {
+    const target = e.target as Node;
+    // dropdownBtn may have been rebuilt by a render; only check if panel contains target
+    if (dropdownPanel?.contains(target)) return;
+    // Also check if click is on any dropdown button (class-based, survives re-render)
+    if ((target as Element).closest?.('.project-tab-dropdown')) return;
+    closeDropdown();
+  }
+
+  function closeDropdown(): void {
+    if (dropdownPanel) {
+      dropdownPanel.remove();
+      dropdownPanel = null;
+      restoreBrowserWebview();
+    }
+    window.removeEventListener('mousedown', onDropdownOutsideClick);
+  }
 
   function render(projects: Project[], activeId: string | null): void {
     // Defer re-render while an inline rename is active
@@ -34,6 +57,11 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     }
     // If a drag is in progress when re-render fires, abort it cleanly
     dragManager.cleanupDrag();
+    // R5: Close any open dropdown before rebuilding the bar
+    closeDropdown();
+
+    const oldTabList = bar.querySelector('.tab-list') as HTMLElement | null;
+    if (oldTabList) savedScrollLeft = oldTabList.scrollLeft;
 
     clearChildren(bar);
 
@@ -157,22 +185,6 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     });
     dropdownBtn.innerHTML = chevronDownIcon(14);
 
-    let dropdownPanel: HTMLElement | null = null;
-
-    function onDropdownOutsideClick(e: MouseEvent): void {
-      const target = e.target as Node;
-      if (dropdownPanel?.contains(target) || dropdownBtn.contains(target)) return;
-      closeDropdown();
-    }
-
-    function closeDropdown(): void {
-      if (dropdownPanel) {
-        dropdownPanel.remove();
-        dropdownPanel = null;
-      }
-      window.removeEventListener('mousedown', onDropdownOutsideClick);
-    }
-
     function createDropdownItem(project: Project, isActive: boolean): HTMLElement {
       const row = createElement('div', {
         className: `project-tab-dropdown-item${isActive ? ' active' : ''}`,
@@ -213,11 +225,14 @@ export function initProjectTabBar(onProjectChange: () => void): void {
       }
     }
 
-    dropdownBtn.addEventListener('click', () => {
+    dropdownBtn.addEventListener('click', async () => {
       if (dropdownPanel) {
         closeDropdown();
         return;
       }
+
+      // Freeze the browser webview before showing the dropdown so it renders on top of page content
+      await suppressBrowserWebview();
 
       dropdownPanel = createElement('div', { className: 'project-tab-dropdown-panel' });
 
@@ -247,13 +262,15 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     bar.appendChild(actions);
 
     requestAnimationFrame(() => {
+      // Restore previous scroll position so switching to an already-visible
+      // tab doesn't jump the scroll back to 0.
+      tabList.scrollLeft = savedScrollLeft;
+      // Set arrow visibility first so the tabList has its final width
+      // before we calculate whether the active tab needs scrolling.
+      updateScrollArrows();
       const activeTab = tabList.querySelector('.project-tab.active') as HTMLElement | null;
       activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
-      // Re-scroll only if arrows changed visibility and shifted layout.
-      if (updateScrollArrows()) {
-        activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
-        updateScrollArrows();
-      }
+      updateScrollArrows();
     });
   }
 

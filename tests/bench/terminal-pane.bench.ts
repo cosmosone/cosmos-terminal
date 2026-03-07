@@ -30,13 +30,10 @@ describe('TerminalPane frontend benchmarks', async () => {
   (pane as unknown as { backendId: string | null }).backendId = 'bench-session';
 
   bench('output flush latency (2000 chunks)', () => {
-    const raw = pane as unknown as { pendingOutput: Uint8Array[]; flushOutput: () => void };
-    raw.pendingOutput = [];
-
+    const raw = pane as unknown as { processAndWrite: (data: Uint8Array) => void };
     for (let i = 0; i < 2000; i++) {
-      raw.pendingOutput.push(encoder.encode(`bench-line-${i}-xxxxxxxxxxxxxxxxxxxxxxxx\n`));
+      raw.processAndWrite(encoder.encode(`bench-line-${i}-xxxxxxxxxxxxxxxxxxxxxxxx\n`));
     }
-    raw.flushOutput();
   });
 
   bench('resize fit latency (200 fits)', () => {

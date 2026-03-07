@@ -876,6 +876,10 @@ export function setBrowserTabTitle(projectId: string, tabId: string, title: stri
   });
 }
 
+export function setBrowserTabLoading(projectId: string, tabId: string, loading: boolean): void {
+  updateBrowserTab(projectId, tabId, (t) => t.loading === loading ? t : { ...t, loading });
+}
+
 export function toggleBrowserTabLocked(projectId: string, tabId: string): void {
   logger.debug('browser', 'toggleBrowserTabLocked', { projectId, tabId });
   updateBrowserTab(projectId, tabId, (t) => ({ ...t, locked: !t.locked }));

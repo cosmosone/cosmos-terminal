@@ -12,9 +12,8 @@ installTerminalPaneModuleMocks();
 const encoder = new TextEncoder();
 
 function pushAndFlush(pane: unknown, payload: string): void {
-  const raw = pane as { pendingOutput: Uint8Array[]; flushOutput: () => void };
-  raw.pendingOutput.push(encoder.encode(payload));
-  raw.flushOutput();
+  const raw = pane as { processAndWrite: (data: Uint8Array) => void };
+  raw.processAndWrite(encoder.encode(payload));
 }
 
 async function waitForFrames(count = 2): Promise<void> {

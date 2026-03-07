@@ -35,3 +35,7 @@ export function browserGoBack(tabId: string): Promise<void> {
 export function browserGoForward(tabId: string): Promise<void> {
   return invokeIpcLogged('browser', IPC_COMMANDS.BROWSER_GO_FORWARD, { tabId });
 }
+
+export function captureBrowserScreenshot(tabId: string): Promise<string> {
+  return invokeIpcLogged('browser', IPC_COMMANDS.CAPTURE_BROWSER_SCREENSHOT, { tabId });
+}

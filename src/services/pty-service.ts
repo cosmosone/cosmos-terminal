@@ -2,15 +2,7 @@ import { Channel } from '@tauri-apps/api/core';
 import { logger } from './logger';
 import { IPC_COMMANDS, invokeIpc, invokeIpcLogged } from './ipc';
 import type { PtySessionInfo } from '../state/types';
-
-function decodeBase64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
+import { decodeBase64ToBytes } from '../utils/base64';
 
 interface CreateSessionOptions {
   projectPath: string;

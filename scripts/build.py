@@ -181,8 +181,8 @@ def copy_exe_prompt() -> None:
         print("To enable, set the COSMOS_TERMINAL_APP_DIR environment variable.")
         return
     app_dir = Path(APP_DIR_ENV)
-    answer = input(f"{YELLOW}Copy exe to app folder? [Y/n] {RESET}").strip().lower()
-    if answer in ("", "y", "yes"):
+    answer = input(f"{YELLOW}Copy exe to app folder? [y/N] {RESET}").strip().lower()
+    if answer in ("y", "yes"):
         app_dir.mkdir(parents=True, exist_ok=True)
         dest = app_dir / "cosmos-terminal.exe"
         shutil.copy2(EXE_SRC, dest)

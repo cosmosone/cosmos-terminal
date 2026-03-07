@@ -1,5 +1,6 @@
 import { logger, type LogLevel, type LogEntry } from '../services/logger';
 import { createElement, clearChildren } from '../utils/dom';
+import { restoreBrowserWebview } from './browser-tab-content';
 
 const LEVEL_COLORS: Record<LogLevel, string> = {
   DEBUG: 'var(--text-muted)',
@@ -79,6 +80,7 @@ export function initLogViewer(): void {
   closeBtn.textContent = '\u00d7';
   closeBtn.addEventListener('click', () => {
     container.classList.add('hidden');
+    restoreBrowserWebview();
   });
   controls.appendChild(closeBtn);
 

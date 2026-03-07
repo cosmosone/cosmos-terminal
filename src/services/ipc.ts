@@ -34,6 +34,7 @@ export const IPC_COMMANDS = {
   BROWSER_GO_BACK: 'browser_go_back',
   BROWSER_GO_FORWARD: 'browser_go_forward',
   BROWSER_WEBVIEW_IS_ALIVE: 'browser_webview_is_alive',
+  CAPTURE_BROWSER_SCREENSHOT: 'capture_browser_screenshot',
 } as const;
 
 type IpcCommand = (typeof IPC_COMMANDS)[keyof typeof IPC_COMMANDS];
