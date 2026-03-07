@@ -379,7 +379,7 @@ dependencies = [
 
 [[package]]
 name = "cosmos-terminal"
-version = "0.1.112"
+version = "0.1.113"
 dependencies = [
  "base64 0.22.1",
  "dunce",
@@ -399,6 +399,9 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+ "webview2-com",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
