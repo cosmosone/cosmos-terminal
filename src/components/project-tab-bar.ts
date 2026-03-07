@@ -260,6 +260,9 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     bar.appendChild(actions);
 
     requestAnimationFrame(() => {
+      // If a newer render replaced this tabList, skip — operating on a detached
+      // element would corrupt savedScrollLeft to 0 and cause scroll jumps.
+      if (!tabList.isConnected) return;
       tabList.scrollLeft = savedScrollLeft;
       updateScrollArrows();
       const activeTab = tabList.querySelector('.project-tab.active') as HTMLElement | null;

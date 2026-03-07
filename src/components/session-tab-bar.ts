@@ -473,6 +473,7 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     bar.appendChild(sidebarActions);
 
     requestAnimationFrame(() => {
+      if (!tabList.isConnected) return;
       tabList.scrollLeft = savedScrollLeft;
       updateScrollArrows();
       const activeTab = tabList.querySelector('.session-tab.active') as HTMLElement | null;

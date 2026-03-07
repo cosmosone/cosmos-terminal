@@ -7,8 +7,6 @@ import { arrowLeftIcon, arrowRightIcon, refreshIcon } from '../utils/icons';
 import { logger } from '../services/logger';
 import { BROWSER_NAVIGATED_EVENT, BROWSER_TITLE_CHANGED_EVENT } from '../state/types';
 import type { AppState, BrowserNavEvent, BrowserTab, BrowserTitleEvent, Project } from '../state/types';
-import { decodeBase64ToBytes } from '../utils/base64';
-
 /** Currently active browser tab ID (runtime only, not persisted). */
 let activeTabId: string | null = null;
 
@@ -29,24 +27,17 @@ let scheduleResizeRef: (() => void) | null = null;
  */
 let suppressCount = 0;
 
-/** Object URL for the current screenshot blob (must be revoked on cleanup). */
-let screenshotObjectUrl: string | null = null;
-
 function getWebviewArea(): HTMLElement | null {
   return (containerRef ?? document).querySelector('.browser-webview-area') as HTMLElement | null;
 }
 
-/** Clear screenshot background and revoke any object URL. */
+/** Clear screenshot background from the webview area. */
 function clearScreenshotBackground(): void {
   const area = getWebviewArea();
   if (area) {
     area.style.backgroundImage = '';
     area.style.backgroundSize = '';
     area.style.backgroundRepeat = '';
-  }
-  if (screenshotObjectUrl) {
-    URL.revokeObjectURL(screenshotObjectUrl);
-    screenshotObjectUrl = null;
   }
 }
 
@@ -77,21 +68,17 @@ export async function suppressBrowserWebview(): Promise<void> {
       if ((suppressCount as number) === 0 || activeTabId !== captureTabId) return;
       const area = getWebviewArea();
       if (area) {
-        // Convert base64 to Blob + object URL to avoid multi-MB inline data URLs
-        const bytes = decodeBase64ToBytes(base64);
-        const blob = new Blob([bytes], { type: 'image/jpeg' });
-        clearScreenshotBackground(); // revoke any previous URL
-        screenshotObjectUrl = URL.createObjectURL(blob);
-        area.style.backgroundImage = `url(${screenshotObjectUrl})`;
+        // Use data URL directly — blob: URLs are blocked by the Tauri CSP
+        area.style.backgroundImage = `url(data:image/jpeg;base64,${base64})`;
         area.style.backgroundSize = '100% 100%';
         area.style.backgroundRepeat = 'no-repeat';
       }
-    } catch {
-      // Screenshot failed — fall back to hiding without a screenshot
+    } catch (err) {
+      logger.warn('browser', 'Screenshot capture failed', { error: String(err) });
     }
     // Re-check: restore or tab change may have occurred during the async capture
     if ((suppressCount as number) === 0 || activeTabId !== captureTabId) return;
-    void hideBrowserWebview(captureTabId);
+    await hideBrowserWebview(captureTabId);
   }
 }
 
