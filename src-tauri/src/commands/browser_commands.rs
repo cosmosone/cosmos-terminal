@@ -316,22 +316,27 @@ pub async fn close_browser_webview(app: AppHandle, tab_id: String) -> Result<(),
     Ok(())
 }
 
+/// Validate a tab, resolve its webview, and evaluate a JS snippet.
+fn eval_in_webview(app: &AppHandle, tab_id: &str, script: &str) -> Result<(), String> {
+    validate_tab_id(tab_id)?;
+    let manager = app.state::<BrowserManager>();
+    let wv = resolve_webview(app, &manager, tab_id)?;
+    wv.eval(script).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn reload_browser(app: AppHandle, tab_id: String) -> Result<(), String> {
+    eval_in_webview(&app, &tab_id, "location.reload()")
+}
+
 #[tauri::command]
 pub async fn browser_go_back(app: AppHandle, tab_id: String) -> Result<(), String> {
-    validate_tab_id(&tab_id)?;
-    let manager = app.state::<BrowserManager>();
-    let wv = resolve_webview(&app, &manager, &tab_id)?;
-    wv.eval("history.back()").map_err(|e| e.to_string())?;
-    Ok(())
+    eval_in_webview(&app, &tab_id, "history.back()")
 }
 
 #[tauri::command]
 pub async fn browser_go_forward(app: AppHandle, tab_id: String) -> Result<(), String> {
-    validate_tab_id(&tab_id)?;
-    let manager = app.state::<BrowserManager>();
-    let wv = resolve_webview(&app, &manager, &tab_id)?;
-    wv.eval("history.forward()").map_err(|e| e.to_string())?;
-    Ok(())
+    eval_in_webview(&app, &tab_id, "history.forward()")
 }
 
 #[tauri::command]

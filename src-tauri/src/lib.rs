@@ -182,6 +182,7 @@ pub fn run() {
             browser_commands::navigate_browser,
             browser_commands::resize_browser_webview,
             browser_commands::close_browser_webview,
+            browser_commands::reload_browser,
             browser_commands::browser_go_back,
             browser_commands::browser_go_forward,
             browser_commands::browser_webview_is_alive,

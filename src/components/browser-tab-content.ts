@@ -1,6 +1,6 @@
 import { store } from '../state/store';
 import { setBrowserTabUrl, setBrowserTabTitle, setBrowserTabLoading, setBrowserTabZoom } from '../state/actions';
-import { createBrowserWebview, showBrowserWebview, hideBrowserWebview, navigateBrowser, resizeBrowserWebview, browserGoBack, browserGoForward, captureBrowserScreenshot, setBrowserZoom } from '../services/browser-service';
+import { createBrowserWebview, showBrowserWebview, hideBrowserWebview, navigateBrowser, reloadBrowser, resizeBrowserWebview, browserGoBack, browserGoForward, captureBrowserScreenshot, setBrowserZoom } from '../services/browser-service';
 import { listen } from '@tauri-apps/api/event';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { arrowLeftIcon, arrowRightIcon, refreshIcon, zoomIcon } from '../utils/icons';
@@ -283,10 +283,11 @@ export function initBrowserTabContent(): void {
     const reloadBtn = createElement('button', { className: 'browser-nav-btn', title: 'Reload' });
     reloadBtn.innerHTML = refreshIcon(14);
     reloadBtn.addEventListener('click', () => {
-      const url = normaliseAddressBarInput(addressBar.value);
-      if (url && activeTabId) {
+      if (activeTabId) {
         logger.debug('browser', 'Reload clicked', { tabId: activeTabId });
-        void navigateBrowser(activeTabId, url);
+        const project = findProjectForBrowserTab(activeTabId);
+        if (project) setBrowserTabLoading(project.id, activeTabId, true);
+        void reloadBrowser(activeTabId);
       }
     });
     chrome.appendChild(reloadBtn);

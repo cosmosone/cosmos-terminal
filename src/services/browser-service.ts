@@ -18,6 +18,10 @@ export function navigateBrowser(tabId: string, url: string): Promise<void> {
   return invokeIpcLogged('browser', IPC_COMMANDS.NAVIGATE_BROWSER, { tabId, url });
 }
 
+export function reloadBrowser(tabId: string): Promise<void> {
+  return invokeIpcLogged('browser', IPC_COMMANDS.RELOAD_BROWSER, { tabId });
+}
+
 export function resizeBrowserWebview(
   tabId: string, x: number, y: number, width: number, height: number,
 ): Promise<void> {
