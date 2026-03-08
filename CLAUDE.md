@@ -73,7 +73,14 @@ State      → actions.ts mutates store → selectors notify subscribed componen
 
 ### Hierarchy
 
-Projects → Sessions → Panes (3-level). Each project has its own git state, file browser scope, and set of sessions. Each session has a pane tree for splits.
+Projects → Work Tabs → Panes (3-level). Each project has its own git state, file browser scope, and set of work tabs. Terminal sessions have a pane tree for splits.
+
+**Work tabs** are all tabs in the 2nd row (the work tab bar). A work tab can be:
+- **Terminal tab** — a PTY session (xterm.js), including AI agent sessions (Python, Bash, etc.)
+- **File tab** — a text/code viewer with optional editing, including markdown viewer
+- **Browser tab** — an embedded WebView2 browser
+
+In code: the work tab bar is `#work-tab-bar` (`components/work-tab-bar.ts`), base CSS class `.work-tab`, with subtypes `.file-tab` and `.browser-tab`. State is split across `project.sessions[]`, `project.tabs[]` (file tabs), and `project.browserTabs[]`.
 
 ## Conventions
 

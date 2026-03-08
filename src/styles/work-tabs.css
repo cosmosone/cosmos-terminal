@@ -1,58 +1,41 @@
-#session-tab-bar {
+#work-tab-bar {
   display: flex;
   align-items: end;
-  height: var(--session-tab-height);
+  height: var(--work-tab-height);
   background: var(--bg-secondary);
-  padding: 0 8px 0 0;
+  padding: 0 8px 0 6px;
 }
 
-#session-tab-bar .tab-list {
-  display: flex;
-  align-items: end;
-  gap: 0;
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  position: relative;
-}
-
-#session-tab-bar .tab-list::-webkit-scrollbar {
-  display: none;
-}
-
-/* ===== Scroll arrows ===== */
-#session-tab-bar .scroll-arrow {
+.work-tab-dropdown {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  width: 0;
+  width: 26px;
   height: 26px;
-  overflow: hidden;
+  align-self: end;
+  margin-bottom: 2px;
+  flex-shrink: 0;
   border-radius: var(--tab-border-radius);
   color: var(--text-muted);
-  font-size: 18px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-#session-tab-bar .scroll-arrow.visible {
-  opacity: 1;
-  pointer-events: auto;
-  width: 26px;
-}
-
-#session-tab-bar .scroll-arrow:hover {
+.work-tab-dropdown:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.session-tab {
+#work-tab-bar .tab-list {
+  align-items: end;
+}
+
+.work-tab {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  width: var(--work-tab-width);
+  flex-shrink: 0;
   height: 26px;
   padding: 0 8px;
   border-radius: 5px 5px 0 0;
@@ -62,48 +45,45 @@
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.session-tab:hover {
+.work-tab:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
 
-.session-tab.active {
+.work-tab.active {
   background: var(--bg-terminal);
   color: var(--text-primary);
   height: 28px;
 }
 
-.session-tab.active:hover {
+.work-tab.active:hover {
   background: var(--bg-terminal);
 }
 
-.session-tab .tab-label {
+.work-tab .tab-label {
   flex: 1;
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.browser-tab {
-  max-width: 160px;
-}
 
-.session-tab .tab-close {
+.work-tab .tab-close {
   width: 16px;
   height: 16px;
   font-size: 12px;
 }
 
-.session-tab:hover .tab-close {
+.work-tab:hover .tab-close {
   opacity: 0.6;
 }
 
-.session-tab .tab-lock {
+.work-tab .tab-lock {
   width: 16px;
   height: 16px;
 }
 
-.session-tab-add {
+.work-tab-add {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -119,17 +99,17 @@
   flex-shrink: 0;
 }
 
-.session-tab-add:hover {
+.work-tab-add:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.session-tab-agent {
+.work-tab-agent {
   color: var(--text-secondary);
 }
 
 /* ===== Tab type icons ===== */
-.session-tab-icon,
+.work-tab-icon,
 .file-tab-icon,
 .browser-tab-icon {
   display: inline-flex;
@@ -143,7 +123,7 @@
 }
 
 /* ===== File tab extras ===== */
-.session-tab-separator {
+.work-tab-separator {
   display: inline-block;
   width: 1px;
   height: 16px;
@@ -154,7 +134,7 @@
 }
 
 /* ===== Divider between new-tab buttons and sidebar actions ===== */
-.session-tab-divider {
+.work-tab-divider {
   width: 1px;
   height: 14px;
   background: var(--text-muted);
@@ -164,7 +144,7 @@
 }
 
 /* ===== Sidebar toggle actions (right side) ===== */
-.session-tab-actions {
+.work-tab-actions {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -173,7 +153,7 @@
   flex-shrink: 0;
 }
 
-.session-tab-action {
+.work-tab-action {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -184,7 +164,7 @@
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.session-tab-action:hover {
+.work-tab-action:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }

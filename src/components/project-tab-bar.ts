@@ -4,23 +4,21 @@ import { addProject, removeProject, setActiveProject, reorderProject, toggleSett
 import { logger } from '../services/logger';
 import { confirmCloseProject } from './confirm-dialog';
 import { showContextMenu, startInlineRename } from './context-menu';
-import { createElement, clearChildren, $ } from '../utils/dom';
+import { createElement, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { Project } from '../state/types';
 import { suppressBrowserWebview, restoreBrowserWebview } from './browser-tab-content';
 import { basename } from '../utils/path';
-import { chevronDownIcon, chevronLeftIcon, chevronRightIcon, folderIcon, settingsIcon } from '../utils/icons';
-import { setupScrollArrows } from '../utils/scroll-arrows';
+import { chevronDownIcon, folderIcon, settingsIcon } from '../utils/icons';
+import { createScrollableTabList } from '../utils/scrollable-tab-list';
 import { createTabDragManager } from '../utils/tab-drag';
+import { positionDropdownPanel, createDropdownRow } from '../utils/dropdown';
 
 export function initProjectTabBar(onProjectChange: () => void): void {
   const bar = $('#project-tab-bar')!;
 
   const dragManager = createTabDragManager();
-
-  // Reassigned each render so the ResizeObserver always calls the latest version
-  let updateScrollArrows: () => boolean = () => false;
-  let savedScrollLeft = 0;
+  const scrollList = createScrollableTabList();
 
   // While an inline rename is in progress we must defer re-renders so the
   // input field is not destroyed.  `pendingRender` stores the latest args
@@ -49,6 +47,82 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     window.removeEventListener('mousedown', onDropdownOutsideClick);
   }
 
+  // --- Stable frame elements (created once) ---
+
+  const dropdownBtn = createElement('button', {
+    className: 'project-tab-dropdown',
+    title: 'Show open projects',
+  });
+  dropdownBtn.innerHTML = chevronDownIcon(14);
+
+  dropdownBtn.addEventListener('click', async () => {
+    if (dropdownPanel) {
+      closeDropdown();
+      return;
+    }
+
+    // Freeze the browser webview before showing the dropdown so it renders on top of page content
+    await suppressBrowserWebview();
+
+    dropdownPanel = createElement('div', { className: 'tab-dropdown-panel' });
+
+    const header = createElement('div', { className: 'tab-dropdown-header' });
+    header.textContent = 'Open Projects';
+    dropdownPanel.appendChild(header);
+
+    const list = createElement('div', { className: 'tab-dropdown-list' });
+    for (const project of lastProjects) {
+      const isActive = project.id === lastActiveId;
+      list.appendChild(createDropdownRow({
+        icon: folderIcon(16),
+        name: project.name,
+        detail: project.path,
+        isActive,
+        onClick: () => {
+          closeDropdown();
+          setActiveProject(project.id);
+          onProjectChange();
+        },
+      }));
+    }
+    dropdownPanel.appendChild(list);
+
+    document.body.appendChild(dropdownPanel);
+    positionDropdownPanel(dropdownPanel, dropdownBtn.getBoundingClientRect());
+
+    requestAnimationFrame(() => {
+      window.addEventListener('mousedown', onDropdownOutsideClick);
+    });
+  });
+
+  const addProjectBtn = createElement('button', { className: 'project-tab-add' });
+  addProjectBtn.textContent = '+';
+  addProjectBtn.addEventListener('click', async () => {
+    const selected = await open({ directory: true, multiple: false });
+    if (selected) {
+      const path = selected as string;
+      const name = basename(path, 'Project');
+      logger.info('project', 'Add project via folder picker', { name, path });
+      addProject(name, path);
+      onProjectChange();
+    }
+  });
+
+  // Right-side actions
+  const actions = createElement('div', { className: 'project-tab-actions' });
+  const settingsBtn = createElement('button', { className: 'project-tab-action', title: 'Settings' });
+  settingsBtn.innerHTML = settingsIcon(16);
+  settingsBtn.addEventListener('click', toggleSettingsView);
+  actions.appendChild(settingsBtn);
+
+  // Assemble bar (once)
+  bar.appendChild(dropdownBtn);
+  bar.appendChild(scrollList.wrapper);
+  bar.appendChild(addProjectBtn);
+  bar.appendChild(actions);
+
+  // --- Render function (only rebuilds tab elements) ---
+
   function render(projects: Project[], activeId: string | null): void {
     // Defer re-render while an inline rename is active
     if (renameActive) {
@@ -60,17 +134,9 @@ export function initProjectTabBar(onProjectChange: () => void): void {
     // R5: Close any open dropdown before rebuilding the bar
     closeDropdown();
 
-    clearChildren(bar);
+    scrollList.clearTabs();
 
-    const leftArrow = createElement('button', { className: 'scroll-arrow left' });
-    leftArrow.innerHTML = chevronLeftIcon(16);
-
-    const tabList = createElement('div', { className: 'tab-list' });
-    tabList.addEventListener('scroll', () => { savedScrollLeft = tabList.scrollLeft; });
-
-    // Drop indicator element (lives inside tabList for positioning)
-    const indicator = createElement('div', { className: 'tab-drop-indicator' });
-    tabList.appendChild(indicator);
+    const { tabList, indicator } = scrollList;
 
     for (let pi = 0; pi < projects.length; pi++) {
       const project = projects[pi];
@@ -78,13 +144,11 @@ export function initProjectTabBar(onProjectChange: () => void): void {
       const tab = createElement('button', {
         className: `project-tab${isActive ? ' active' : ''}`,
       });
-      const iconEl = createElement('span', { className: 'project-tab-icon' });
-      iconEl.innerHTML = folderIcon(12);
-      tab.appendChild(iconEl);
-
+      const content = createElement('span', { className: 'project-tab-content' });
       const tabLabel = createElement('span', { className: 'tab-label' });
       tabLabel.textContent = project.name;
-      tab.appendChild(tabLabel);
+      content.appendChild(tabLabel);
+      tab.appendChild(content);
 
       // For the active project, only surface activity from background (non-visible) sessions.
       // For inactive projects, the user can't see ANY session, so all sessions count.
@@ -150,127 +214,7 @@ export function initProjectTabBar(onProjectChange: () => void): void {
       tabList.appendChild(tab);
     }
 
-    const addProjectBtn = createElement('button', { className: 'project-tab-add' });
-    addProjectBtn.textContent = '+';
-    addProjectBtn.addEventListener('click', async () => {
-      const selected = await open({ directory: true, multiple: false });
-      if (selected) {
-        const path = selected as string;
-        const name = basename(path, 'Project');
-        logger.info('project', 'Add project via folder picker', { name, path });
-        addProject(name, path);
-        onProjectChange();
-      }
-    });
-
-    // Right-side actions
-    const actions = createElement('div', { className: 'project-tab-actions' });
-
-    const settingsBtn = createElement('button', { className: 'project-tab-action', title: 'Settings' });
-    settingsBtn.innerHTML = settingsIcon(16);
-    settingsBtn.addEventListener('click', toggleSettingsView);
-    actions.appendChild(settingsBtn);
-
-    const rightArrow = createElement('button', { className: 'scroll-arrow right' });
-    rightArrow.innerHTML = chevronRightIcon(16);
-
-    updateScrollArrows = setupScrollArrows({ tabList, leftArrow, rightArrow });
-
-    // --- Tab list dropdown button (Edge-style) ---
-    const dropdownBtn = createElement('button', {
-      className: 'project-tab-dropdown',
-      title: 'Show open projects',
-    });
-    dropdownBtn.innerHTML = chevronDownIcon(14);
-
-    function createDropdownItem(project: Project, isActive: boolean): HTMLElement {
-      const row = createElement('div', {
-        className: `project-tab-dropdown-item${isActive ? ' active' : ''}`,
-      });
-
-      const icon = createElement('span', { className: 'project-tab-dropdown-icon' });
-      icon.innerHTML = folderIcon(16);
-      row.appendChild(icon);
-
-      const info = createElement('div', { className: 'project-tab-dropdown-info' });
-      const nameEl = createElement('div', { className: 'project-tab-dropdown-name' });
-      nameEl.textContent = project.name;
-      info.appendChild(nameEl);
-      const pathEl = createElement('div', { className: 'project-tab-dropdown-path' });
-      pathEl.textContent = project.path;
-      info.appendChild(pathEl);
-      row.appendChild(info);
-
-      row.addEventListener('click', () => {
-        closeDropdown();
-        setActiveProject(project.id);
-        onProjectChange();
-      });
-
-      return row;
-    }
-
-    function positionDropdownPanel(panel: HTMLElement, anchorRect: DOMRect): void {
-      panel.style.top = `${anchorRect.bottom + 2}px`;
-      panel.style.left = `${anchorRect.left}px`;
-
-      const panelRect = panel.getBoundingClientRect();
-      if (panelRect.right > window.innerWidth) {
-        panel.style.left = `${window.innerWidth - panelRect.width - 4}px`;
-      }
-      if (panelRect.bottom > window.innerHeight) {
-        panel.style.maxHeight = `${window.innerHeight - anchorRect.bottom - 8}px`;
-      }
-    }
-
-    dropdownBtn.addEventListener('click', async () => {
-      if (dropdownPanel) {
-        closeDropdown();
-        return;
-      }
-
-      // Freeze the browser webview before showing the dropdown so it renders on top of page content
-      await suppressBrowserWebview();
-
-      dropdownPanel = createElement('div', { className: 'project-tab-dropdown-panel' });
-
-      const header = createElement('div', { className: 'project-tab-dropdown-header' });
-      header.textContent = 'Open Projects';
-      dropdownPanel.appendChild(header);
-
-      const list = createElement('div', { className: 'project-tab-dropdown-list' });
-      for (const project of projects) {
-        list.appendChild(createDropdownItem(project, project.id === activeId));
-      }
-      dropdownPanel.appendChild(list);
-
-      document.body.appendChild(dropdownPanel);
-      positionDropdownPanel(dropdownPanel, dropdownBtn.getBoundingClientRect());
-
-      requestAnimationFrame(() => {
-        window.addEventListener('mousedown', onDropdownOutsideClick);
-      });
-    });
-
-    bar.appendChild(dropdownBtn);
-    bar.appendChild(leftArrow);
-    bar.appendChild(tabList);
-    bar.appendChild(rightArrow);
-    bar.appendChild(addProjectBtn);
-    bar.appendChild(actions);
-
-    requestAnimationFrame(() => {
-      // If a newer render replaced this tabList, skip — operating on a detached
-      // element would corrupt savedScrollLeft to 0 and cause scroll jumps.
-      if (!tabList.isConnected) return;
-      tabList.scrollLeft = savedScrollLeft;
-      updateScrollArrows();
-      const activeTab = tabList.querySelector('.project-tab.active') as HTMLElement | null;
-      activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
-      updateScrollArrows();
-      // Capture the settled position so rapid successive renders don't clobber it
-      savedScrollLeft = tabList.scrollLeft;
-    });
+    scrollList.finalizeRender('.project-tab.active');
   }
 
   // Two targeted selectors instead of subscribe() to avoid re-rendering
@@ -297,6 +241,4 @@ export function initProjectTabBar(onProjectChange: () => void): void {
   );
 
   render(lastProjects, lastActiveId);
-
-  new ResizeObserver(() => updateScrollArrows()).observe(bar);
 }

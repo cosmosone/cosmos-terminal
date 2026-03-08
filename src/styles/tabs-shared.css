@@ -1,4 +1,4 @@
-/* Shared tab styles used by both project-tabs and session-tabs. */
+/* Shared tab styles used by both project-tabs and work-tabs. */
 
 /* Activity indicator dot — pulsing accent circle */
 .tab-activity {
@@ -59,7 +59,7 @@
   background: var(--bg-hover);
 }
 
-/* Drop indicator — shared between project and session tab bars */
+/* Drop indicator — shared between project and work tab bars */
 .tab-drop-indicator {
   position: absolute;
   top: 4px;
@@ -74,9 +74,172 @@
 
 /* Dragging tab ghost state — shared */
 .project-tab.dragging,
-.session-tab.dragging {
+.work-tab.dragging {
   opacity: 0.7;
   z-index: 100;
   pointer-events: none;
   transition: none !important;
+}
+
+/* ===== Scrollable tab list wrapper ===== */
+
+.tab-scroll-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  -webkit-app-region: no-drag;
+}
+
+.tab-scroll-wrapper > .tab-list {
+  display: flex;
+  height: 100%;
+  overflow-x: auto;
+  position: relative;
+  scrollbar-width: none;
+}
+
+.tab-scroll-wrapper > .tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+/* Overlay scroll arrows — positioned over tab list edges.
+   Unlike the previous approach (width: 0 → 26px), these never affect
+   flex layout, eliminating the tab position drift bug. */
+
+.tab-scroll-wrapper > .scroll-arrow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+  color: var(--text-muted);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tab-scroll-wrapper > .scroll-arrow.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tab-scroll-wrapper > .scroll-arrow:hover {
+  color: var(--text-primary);
+}
+
+.tab-scroll-wrapper > .scroll-arrow.left {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-secondary) 50%, transparent);
+}
+
+.tab-scroll-wrapper > .scroll-arrow.right {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-secondary) 50%, transparent);
+}
+
+/* ===== Tab dropdown panel (shared by project + work tab bars) ===== */
+
+.tab-dropdown-panel {
+  position: fixed;
+  z-index: 300;
+  width: 300px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.tab-dropdown-header {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.tab-dropdown-list {
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.tab-dropdown-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.tab-dropdown-list::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 2px;
+}
+
+.tab-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background var(--transition-fast);
+}
+
+.tab-dropdown-item:hover {
+  background: var(--bg-hover);
+}
+
+.tab-dropdown-item.active {
+  background: var(--bg-active);
+}
+
+.tab-dropdown-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.tab-dropdown-item.active .tab-dropdown-icon {
+  color: var(--accent);
+}
+
+.tab-dropdown-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.tab-dropdown-name,
+.tab-dropdown-detail {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-dropdown-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.tab-dropdown-item.active .tab-dropdown-name {
+  color: var(--accent);
+}
+
+.tab-dropdown-detail {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  line-height: 1.3;
 }

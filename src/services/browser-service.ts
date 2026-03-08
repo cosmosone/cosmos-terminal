@@ -40,6 +40,10 @@ export function captureBrowserScreenshot(tabId: string): Promise<string> {
   return invokeIpcLogged('browser', IPC_COMMANDS.CAPTURE_BROWSER_SCREENSHOT, { tabId });
 }
 
+export function setBrowserZoom(tabId: string, zoomFactor: number): Promise<void> {
+  return invokeIpcLogged('browser', IPC_COMMANDS.SET_BROWSER_ZOOM, { tabId, zoomFactor });
+}
+
 export function setBrowserPoolSize(size: number): Promise<void> {
   return invokeIpcLogged('browser', IPC_COMMANDS.SET_BROWSER_POOL_SIZE, { size });
 }

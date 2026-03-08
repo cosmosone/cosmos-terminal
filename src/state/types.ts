@@ -184,6 +184,8 @@ export interface BrowserTab {
   locked: boolean;
   /** Runtime-only loading indicator (not persisted). */
   loading?: boolean;
+  /** Zoom factor (1.0 = 100%). Persisted across sessions. */
+  zoomFactor?: number;
 }
 
 /** Event name emitted by the Rust backend on webview navigation. */

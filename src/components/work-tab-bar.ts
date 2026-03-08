@@ -1,19 +1,20 @@
 import { store } from '../state/store';
 import { addSession, removeSession, removeProject, setActiveSession, setActiveTab, removeFileTab, closeOtherTabs, splitPane, renameSession, setFileTabEditing, toggleSessionLocked, toggleSessionMuted, toggleFileTabLocked, toggleFileBrowserSidebar, toggleGitSidebar, reorderSession, reorderFileTab, addBrowserTab, removeBrowserTab, setActiveBrowserTab, toggleBrowserTabLocked, reorderBrowserTab, closeOtherBrowserTabs } from '../state/actions';
 import { AGENT_DEFINITIONS } from '../services/agent-definitions';
-import type { AgentDef } from '../services/agent-definitions';
 import { setInitialCommand } from '../services/initial-command';
 import { findLeafPaneIds } from '../layout/pane-tree';
 import { logger } from '../services/logger';
 import { confirmCloseProject, confirmCloseTerminalTab, showConfirmDialog } from './confirm-dialog';
 import { showContextMenu, startInlineRename } from './context-menu';
 import type { MenuItem } from './context-menu';
-import { createElement, clearChildren, $ } from '../utils/dom';
+import { createElement, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { PaneLeaf, Project } from '../state/types';
-import { bellOffIcon, chevronLeftIcon, chevronRightIcon, fileIcon, folderIcon, gitBranchIcon, globeIcon, lockIcon, terminalIcon } from '../utils/icons';
-import { setupScrollArrows } from '../utils/scroll-arrows';
+import { suppressBrowserWebview, restoreBrowserWebview } from './browser-tab-content';
+import { bellOffIcon, chevronDownIcon, fileIcon, folderIcon, gitBranchIcon, globeIcon, lockIcon, terminalIcon } from '../utils/icons';
+import { createScrollableTabList } from '../utils/scrollable-tab-list';
 import { createTabDragManager } from '../utils/tab-drag';
+import { positionDropdownPanel, createDropdownRow } from '../utils/dropdown';
 
 const SESSION_ICON_MAP: Record<string, (size?: number) => string> = Object.fromEntries(
   AGENT_DEFINITIONS.map((a) => [a.command, a.icon]),
@@ -25,14 +26,11 @@ function sessionIcon(agentCommand: string | undefined, title: string, size?: num
   return iconFn(size);
 }
 
-export function initSessionTabBar(onTabChange: () => void): { triggerRename: () => void } {
-  const bar = $('#session-tab-bar')!;
+export function initWorkTabBar(onTabChange: () => void): { triggerRename: () => void } {
+  const bar = $('#work-tab-bar')!;
 
   const dragManager = createTabDragManager();
-
-  // Reassigned each render so the ResizeObserver always calls the latest version
-  let updateScrollArrows: () => boolean = () => false;
-  let savedScrollLeft = 0;
+  const scrollList = createScrollableTabList();
 
   // While an inline rename is in progress we must defer re-renders so the
   // input field is not destroyed.  `pendingRender` stores the latest project
@@ -40,17 +38,24 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
   let renameActive = false;
   let pendingRender: { project: Project | undefined } | null = null;
 
-  function createAgentButton(project: Project, agent: AgentDef): HTMLButtonElement {
-    const btn = createElement('button', { className: 'session-tab-add session-tab-agent' });
-    btn.innerHTML = agent.icon(12);
-    btn.title = `New ${agent.label} session`;
-    btn.addEventListener('click', () => {
-      logger.info('session', `Add ${agent.label} session via tab bar`, { projectId: project.id });
-      const session = addSession(project.id, { title: agent.label, agentCommand: agent.command });
-      setInitialCommand((session.paneTree as PaneLeaf).paneId, agent.initialCmd ?? agent.command);
-      onTabChange();
+  // Mutable reference for stable frame element handlers
+  let currentProject: Project | undefined;
+
+  function beginRename(tab: HTMLElement, projectId: string, sessionId: string, sessionTitle: string): void {
+    renameActive = true;
+    pendingRender = null;
+    startInlineRename(tab, sessionTitle, (newName) => {
+      renameSession(projectId, sessionId, newName);
+    }, () => {
+      renameActive = false;
+      if (pendingRender) {
+        const deferred = pendingRender;
+        pendingRender = null;
+        render(deferred.project);
+      } else {
+        onTabChange();
+      }
     });
-    return btn;
   }
 
   async function closeSessionTab(project: Project, sessionId: string, sessionTitle: string): Promise<void> {
@@ -81,22 +86,205 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     onTabChange();
   }
 
-  function beginRename(tab: HTMLElement, projectId: string, sessionId: string, sessionTitle: string): void {
-    renameActive = true;
-    pendingRender = null;
-    startInlineRename(tab, sessionTitle, (newName) => {
-      renameSession(projectId, sessionId, newName);
-    }, () => {
-      renameActive = false;
-      if (pendingRender) {
-        const deferred = pendingRender;
-        pendingRender = null;
-        render(deferred.project);
-      } else {
-        onTabChange();
-      }
-    });
+  // --- Tab list dropdown ---
+  let dropdownPanel: HTMLElement | null = null;
+
+  function onDropdownOutsideClick(e: MouseEvent): void {
+    const target = e.target as Node;
+    if (dropdownPanel?.contains(target)) return;
+    if ((target as Element).closest?.('.work-tab-dropdown')) return;
+    closeDropdown();
   }
+
+  function closeDropdown(): void {
+    if (dropdownPanel) {
+      dropdownPanel.remove();
+      dropdownPanel = null;
+      restoreBrowserWebview();
+    }
+    window.removeEventListener('mousedown', onDropdownOutsideClick);
+  }
+
+  function appendLockOrClose(tab: HTMLElement, locked: boolean, onUnlock: () => void, onClose: () => void | Promise<void>): void {
+    if (locked) {
+      const lock = createElement('span', { className: 'tab-lock' });
+      lock.innerHTML = lockIcon(10);
+      lock.title = 'Unlock tab';
+      lock.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onUnlock();
+      });
+      tab.appendChild(lock);
+    } else {
+      const close = createElement('span', { className: 'tab-close' });
+      close.textContent = '\u00d7';
+      close.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await onClose();
+      });
+      tab.appendChild(close);
+    }
+  }
+
+  // --- Stable frame elements (created once) ---
+
+  const dropdownBtn = createElement('button', {
+    className: 'work-tab-dropdown',
+    title: 'Show open tabs',
+  });
+  dropdownBtn.innerHTML = chevronDownIcon(14);
+
+  dropdownBtn.addEventListener('click', async () => {
+    if (dropdownPanel) {
+      closeDropdown();
+      return;
+    }
+    const project = currentProject;
+    if (!project) return;
+
+    await suppressBrowserWebview();
+
+    dropdownPanel = createElement('div', { className: 'tab-dropdown-panel' });
+    const list = createElement('div', { className: 'tab-dropdown-list' });
+
+    // Determine what is currently active
+    const activeSessionId = project.activeSessionId;
+    const activeTabId = project.activeTabId;
+    const activeBrowserTabId = project.activeBrowserTabId;
+    const isSessionActive = (id: string) => id === activeSessionId && activeTabId === null && activeBrowserTabId === null;
+
+    // Terminal sessions
+    if (project.sessions.length > 0) {
+      const header = createElement('div', { className: 'tab-dropdown-header' });
+      header.textContent = 'Sessions';
+      list.appendChild(header);
+
+      for (const session of project.sessions) {
+        list.appendChild(createDropdownRow({
+          icon: sessionIcon(session.agentCommand, session.title, 16),
+          name: session.title,
+          detail: session.agentCommand,
+          isActive: isSessionActive(session.id),
+          onClick: () => {
+            closeDropdown();
+            setActiveSession(project.id, session.id);
+            onTabChange();
+          },
+        }));
+      }
+    }
+
+    // File tabs
+    if (project.tabs.length > 0) {
+      const header = createElement('div', { className: 'tab-dropdown-header' });
+      header.textContent = 'Files';
+      list.appendChild(header);
+
+      for (const fileTab of project.tabs) {
+        list.appendChild(createDropdownRow({
+          icon: fileIcon(16),
+          name: fileTab.dirty ? `* ${fileTab.title}` : fileTab.title,
+          isActive: fileTab.id === activeTabId,
+          onClick: () => {
+            closeDropdown();
+            setActiveTab(project.id, fileTab.id);
+            onTabChange();
+          },
+        }));
+      }
+    }
+
+    // Browser tabs
+    if (project.browserTabs.length > 0) {
+      const header = createElement('div', { className: 'tab-dropdown-header' });
+      header.textContent = 'Browser';
+      list.appendChild(header);
+
+      for (const browserTab of project.browserTabs) {
+        list.appendChild(createDropdownRow({
+          icon: globeIcon(16),
+          name: browserTab.title || 'New Tab',
+          detail: browserTab.url || undefined,
+          isActive: browserTab.id === activeBrowserTabId,
+          onClick: () => {
+            closeDropdown();
+            setActiveBrowserTab(project.id, browserTab.id);
+            onTabChange();
+          },
+        }));
+      }
+    }
+
+    dropdownPanel.appendChild(list);
+    document.body.appendChild(dropdownPanel);
+    positionDropdownPanel(dropdownPanel, dropdownBtn.getBoundingClientRect());
+
+    requestAnimationFrame(() => {
+      window.addEventListener('mousedown', onDropdownOutsideClick);
+    });
+  });
+
+  const addBtn = createElement('button', { className: 'work-tab-add work-tab-agent' });
+  addBtn.innerHTML = terminalIcon(12);
+  addBtn.title = 'New terminal session';
+  addBtn.addEventListener('click', () => {
+    if (!currentProject) return;
+    logger.info('session', 'Add session via tab bar', { projectId: currentProject.id });
+    addSession(currentProject.id);
+    onTabChange();
+  });
+
+  const agentButtons: HTMLElement[] = [];
+  for (const agent of AGENT_DEFINITIONS) {
+    const btn = createElement('button', { className: 'work-tab-add work-tab-agent' });
+    btn.innerHTML = agent.icon(12);
+    btn.title = `New ${agent.label} session`;
+    btn.addEventListener('click', () => {
+      if (!currentProject) return;
+      logger.info('session', `Add ${agent.label} session via tab bar`, { projectId: currentProject.id });
+      const session = addSession(currentProject.id, { title: agent.label, agentCommand: agent.command });
+      setInitialCommand((session.paneTree as PaneLeaf).paneId, agent.initialCmd ?? agent.command);
+      onTabChange();
+    });
+    agentButtons.push(btn);
+  }
+
+  const browserAddBtn = createElement('button', { className: 'work-tab-add' });
+  browserAddBtn.innerHTML = globeIcon(12);
+  browserAddBtn.title = 'New browser tab';
+  browserAddBtn.addEventListener('click', () => {
+    if (!currentProject) return;
+    logger.info('browser', 'Add browser tab via tab bar', { projectId: currentProject.id });
+    addBrowserTab(currentProject.id);
+    onTabChange();
+  });
+
+  // Right-side sidebar actions
+  const sidebarActions = createElement('div', { className: 'work-tab-actions' });
+
+  const explorerBtn = createElement('button', { className: 'work-tab-action', title: 'Explorer' });
+  explorerBtn.innerHTML = folderIcon(12);
+  explorerBtn.addEventListener('click', toggleFileBrowserSidebar);
+  sidebarActions.appendChild(explorerBtn);
+
+  const gitBtn = createElement('button', { className: 'work-tab-action', title: 'Source Control' });
+  gitBtn.innerHTML = gitBranchIcon(12);
+  gitBtn.addEventListener('click', toggleGitSidebar);
+  sidebarActions.appendChild(gitBtn);
+
+  // Assemble bar (once)
+  bar.appendChild(dropdownBtn);
+  bar.appendChild(scrollList.wrapper);
+  bar.appendChild(addBtn);
+  for (const btn of agentButtons) {
+    bar.appendChild(btn);
+  }
+  bar.appendChild(createElement('span', { className: 'work-tab-divider' }));
+  bar.appendChild(browserAddBtn);
+  bar.appendChild(createElement('span', { className: 'work-tab-divider' }));
+  bar.appendChild(sidebarActions);
+
+  // --- Render function (only rebuilds tab elements) ---
 
   function render(project: Project | undefined): void {
     // Defer re-render while an inline rename is active
@@ -106,48 +294,22 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     }
     // If a drag is in progress when re-render fires, abort it cleanly
     dragManager.cleanupDrag();
+    closeDropdown();
 
-    clearChildren(bar);
-    if (!project) {
-      savedScrollLeft = 0;
-      return;
-    }
+    currentProject = project;
+    scrollList.clearTabs();
 
-    const tabList = createElement('div', { className: 'tab-list' });
-    tabList.addEventListener('scroll', () => { savedScrollLeft = tabList.scrollLeft; });
+    if (!project) return;
 
-    // Drop indicator element (lives inside tabList for positioning)
-    const indicator = createElement('div', { className: 'tab-drop-indicator' });
-    tabList.appendChild(indicator);
-
-    function appendLockOrClose(tab: HTMLElement, locked: boolean, onUnlock: () => void, onClose: () => void | Promise<void>): void {
-      if (locked) {
-        const lock = createElement('span', { className: 'tab-lock' });
-        lock.innerHTML = lockIcon(10);
-        lock.title = 'Unlock tab';
-        lock.addEventListener('click', (e) => {
-          e.stopPropagation();
-          onUnlock();
-        });
-        tab.appendChild(lock);
-      } else {
-        const close = createElement('span', { className: 'tab-close' });
-        close.textContent = '\u00d7';
-        close.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          await onClose();
-        });
-        tab.appendChild(close);
-      }
-    }
+    const { tabList, indicator } = scrollList;
 
     for (let si = 0; si < project.sessions.length; si++) {
       const session = project.sessions[si];
       const isActive = session.id === project.activeSessionId && project.activeTabId === null;
       const tab = createElement('button', {
-        className: `session-tab${isActive ? ' active' : ''}`,
+        className: `work-tab${isActive ? ' active' : ''}`,
       });
-      const iconEl = createElement('span', { className: 'session-tab-icon' });
+      const iconEl = createElement('span', { className: 'work-tab-icon' });
       iconEl.innerHTML = sessionIcon(session.agentCommand, session.title, 11);
       tab.appendChild(iconEl);
 
@@ -179,7 +341,7 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
       );
 
       tab.addEventListener('mousedown', (e: MouseEvent) => {
-        dragManager.startDrag(e, tab, tabList, indicator, session.id, si, '.session-tab:not(.file-tab):not(.browser-tab)', project.sessions, (itemId, _origin, adjustedIndex) => {
+        dragManager.startDrag(e, tab, tabList, indicator, session.id, si, '.work-tab:not(.file-tab):not(.browser-tab)', project.sessions, (itemId, _origin, adjustedIndex) => {
           reorderSession(project.id, itemId, adjustedIndex);
           onTabChange();
         });
@@ -245,14 +407,13 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
 
     // --- File tabs ---
     if (project.tabs.length > 0) {
-      const separator = createElement('span', { className: 'session-tab-separator' });
-      tabList.appendChild(separator);
+      tabList.appendChild(createElement('span', { className: 'work-tab-separator' }));
 
       for (let ci = 0; ci < project.tabs.length; ci++) {
         const fileTab = project.tabs[ci];
         const isActive = fileTab.id === project.activeTabId;
         const tab = createElement('button', {
-          className: `session-tab file-tab${isActive ? ' active' : ''}`,
+          className: `work-tab file-tab${isActive ? ' active' : ''}`,
         });
 
         const iconEl = createElement('span', { className: 'file-tab-icon' });
@@ -340,14 +501,14 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
 
     // --- Browser tabs ---
     if (project.browserTabs.length > 0) {
-      const bSeparator = createElement('span', { className: 'session-tab-separator' });
+      const bSeparator = createElement('span', { className: 'work-tab-separator' });
       tabList.appendChild(bSeparator);
 
       for (let bi = 0; bi < project.browserTabs.length; bi++) {
         const browserTab = project.browserTabs[bi];
         const isActive = browserTab.id === project.activeBrowserTabId;
         const tab = createElement('button', {
-          className: `session-tab browser-tab${isActive ? ' active' : ''}`,
+          className: `work-tab browser-tab${isActive ? ' active' : ''}`,
         });
 
         const iconEl = createElement('span', {
@@ -417,71 +578,7 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
       }
     }
 
-    // Scroll arrows
-    const leftArrow = createElement('button', { className: 'scroll-arrow left' });
-    leftArrow.innerHTML = chevronLeftIcon(16);
-
-    const rightArrow = createElement('button', { className: 'scroll-arrow right' });
-    rightArrow.innerHTML = chevronRightIcon(16);
-
-    updateScrollArrows = setupScrollArrows({ tabList, leftArrow, rightArrow });
-
-    // Add-session buttons
-    const addBtn = createElement('button', { className: 'session-tab-add session-tab-agent' });
-    addBtn.innerHTML = terminalIcon(12);
-    addBtn.title = 'New terminal session';
-    addBtn.addEventListener('click', () => {
-      logger.info('session', 'Add session via tab bar', { projectId: project.id });
-      addSession(project.id);
-      onTabChange();
-    });
-
-    // Right-side sidebar actions
-    const sidebarActions = createElement('div', { className: 'session-tab-actions' });
-
-    const explorerBtn = createElement('button', { className: 'session-tab-action', title: 'Explorer' });
-    explorerBtn.innerHTML = folderIcon(12);
-    explorerBtn.addEventListener('click', toggleFileBrowserSidebar);
-    sidebarActions.appendChild(explorerBtn);
-
-    const gitBtn = createElement('button', { className: 'session-tab-action', title: 'Source Control' });
-    gitBtn.innerHTML = gitBranchIcon(12);
-    gitBtn.addEventListener('click', toggleGitSidebar);
-    sidebarActions.appendChild(gitBtn);
-
-    bar.appendChild(leftArrow);
-    bar.appendChild(tabList);
-    bar.appendChild(rightArrow);
-    bar.appendChild(addBtn);
-    for (const agent of AGENT_DEFINITIONS) {
-      bar.appendChild(createAgentButton(project, agent));
-    }
-
-    bar.appendChild(createElement('span', { className: 'session-tab-divider' }));
-
-    const browserAddBtn = createElement('button', { className: 'session-tab-add' });
-    browserAddBtn.innerHTML = globeIcon(12);
-    browserAddBtn.title = 'New browser tab';
-    browserAddBtn.addEventListener('click', () => {
-      logger.info('browser', 'Add browser tab via tab bar', { projectId: project.id });
-      addBrowserTab(project.id);
-      onTabChange();
-    });
-    bar.appendChild(browserAddBtn);
-
-    bar.appendChild(createElement('span', { className: 'session-tab-divider' }));
-    bar.appendChild(sidebarActions);
-
-    requestAnimationFrame(() => {
-      if (!tabList.isConnected) return;
-      tabList.scrollLeft = savedScrollLeft;
-      updateScrollArrows();
-      const activeTab = tabList.querySelector('.session-tab.active') as HTMLElement | null;
-      activeTab?.scrollIntoView({ inline: 'nearest', behavior: 'instant' });
-      updateScrollArrows();
-      // Capture the settled position so rapid successive renders don't clobber it
-      savedScrollLeft = tabList.scrollLeft;
-    });
+    scrollList.finalizeRender('.work-tab.active');
   }
 
   // Two targeted selectors instead of a single combined selector to avoid
@@ -506,8 +603,6 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
 
   render(lastProject);
 
-  new ResizeObserver(() => updateScrollArrows()).observe(bar);
-
   function triggerRename(): void {
     const state = store.getState();
     const project = state.projects.find((p) => p.id === state.activeProjectId);
@@ -519,7 +614,7 @@ export function initSessionTabBar(onTabChange: () => void): { triggerRename: () 
     // Only rename terminal tabs (not file or browser tabs)
     if (project.activeTabId !== null || project.activeBrowserTabId !== null) return;
 
-    const activeTab = bar.querySelector('.session-tab.active:not(.file-tab)') as HTMLElement | null;
+    const activeTab = scrollList.tabList.querySelector('.work-tab.active:not(.file-tab)') as HTMLElement | null;
     if (!activeTab) return;
 
     beginRename(activeTab, project.id, session.id, session.title);

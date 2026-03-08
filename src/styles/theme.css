@@ -30,8 +30,10 @@
 
   /* Sizing */
   --project-tab-height: 36px;
-  --session-tab-height: 32px;
+  --work-tab-height: 32px;
   --statusbar-height: 24px;
+  --project-tab-width: 150px;
+  --work-tab-width: 120px;
   --tab-border-radius: 4px;
 
   /* Font stacks */
@@ -77,4 +79,10 @@
 .toggle-switch-sm.active::after {
   background: var(--text-secondary);
   transform: translateX(14px);
+}
+
+/* Shared keyframes — referenced by statusbar.css and work-tabs.css */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

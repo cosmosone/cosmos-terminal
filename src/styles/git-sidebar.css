@@ -496,6 +496,7 @@
 
 /* ===== Ahead Badge ===== */
 .git-project-ahead {
+  background: rgba(158, 206, 106, 0.15);
   background: color-mix(in srgb, var(--success) 15%, transparent);
   color: var(--success);
 }

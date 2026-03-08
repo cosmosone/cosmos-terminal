@@ -895,6 +895,10 @@ export function setBrowserTabLoading(projectId: string, tabId: string, loading: 
   updateBrowserTab(projectId, tabId, (t) => t.loading === loading ? t : { ...t, loading });
 }
 
+export function setBrowserTabZoom(projectId: string, tabId: string, zoomFactor: number): void {
+  updateBrowserTab(projectId, tabId, (t) => t.zoomFactor === zoomFactor ? t : { ...t, zoomFactor });
+}
+
 export function toggleBrowserTabLocked(projectId: string, tabId: string): void {
   logger.debug('browser', 'toggleBrowserTabLocked', { projectId, tabId });
   updateBrowserTab(projectId, tabId, (t) => ({ ...t, locked: !t.locked }));

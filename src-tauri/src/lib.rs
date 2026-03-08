@@ -185,6 +185,7 @@ pub fn run() {
             browser_commands::browser_go_back,
             browser_commands::browser_go_forward,
             browser_commands::browser_webview_is_alive,
+            browser_commands::set_browser_zoom,
             browser_commands::capture_browser_screenshot,
             browser_commands::set_browser_pool_size,
         ])
@@ -200,13 +201,23 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
+                // kill() blocks on thread::join per session — drain first
+                // (cheap lock + remove), then join on a background thread to
+                // avoid stalling the window-destroyed handler.
                 let sm = window.state::<SessionManager>();
-                sm.kill_all();
+                let handles = sm.drain_all();
+                std::thread::spawn(move || {
+                    for handle in handles {
+                        handle.kill();
+                    }
+                });
+
                 let watcher = window.state::<FsWatcher>();
                 watcher.unwatch();
                 let bm = window.state::<BrowserManager>();
+                let app = window.app_handle().clone();
                 for label in bm.remove_all() {
-                    if let Some(wv) = window.app_handle().get_webview(&label) {
+                    if let Some(wv) = app.get_webview(&label) {
                         let _ = wv.close();
                     }
                 }

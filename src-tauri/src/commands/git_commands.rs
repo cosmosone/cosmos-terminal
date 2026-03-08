@@ -404,7 +404,11 @@ pub async fn git_push(path: String) -> Result<GitPushResult, String> {
             .output()
             .map_err(|e| format!("Failed to run git push: {e}"))?;
 
-        let raw_message = String::from_utf8_lossy(&output.stderr).into_owned();
+        let raw_message = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
         // Redact embedded credentials (e.g. https://user:token@host/...) from
         // stderr before forwarding to the frontend.
         let message = redact_credentials(&raw_message);

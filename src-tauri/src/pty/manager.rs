@@ -53,15 +53,10 @@ impl SessionManager {
         Ok(())
     }
 
-    pub fn kill_all(&self) {
-        // Drain into a Vec and release the lock before joining threads.
-        // kill() blocks on thread::join; holding the Mutex during that
-        // would prevent any in-flight Tauri command from completing.
-        let handles: Vec<Arc<SessionHandle>> =
-            self.sessions.lock().drain().map(|(_, h)| h).collect();
-        for handle in handles {
-            handle.kill();
-        }
+    /// Drain all sessions from the registry without killing them.
+    /// The caller is responsible for calling `kill()` on each handle.
+    pub fn drain_all(&self) -> Vec<Arc<SessionHandle>> {
+        self.sessions.lock().drain().map(|(_, h)| h).collect()
     }
 
     /// Look up a session by ID and invoke `f` on it.  The map lock is released

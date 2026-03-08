@@ -35,6 +35,7 @@ export const IPC_COMMANDS = {
   BROWSER_GO_FORWARD: 'browser_go_forward',
   BROWSER_WEBVIEW_IS_ALIVE: 'browser_webview_is_alive',
   CAPTURE_BROWSER_SCREENSHOT: 'capture_browser_screenshot',
+  SET_BROWSER_ZOOM: 'set_browser_zoom',
   SET_BROWSER_POOL_SIZE: 'set_browser_pool_size',
 } as const;
 

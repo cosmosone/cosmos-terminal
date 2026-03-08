@@ -84,12 +84,21 @@ fn is_system_critical_path(path: &Path) -> bool {
         if let Some(stripped) = lower.strip_prefix("\\\\?\\") {
             lower = stripped.to_string();
         }
-        for prefix in [
+        // Build blocklist from environment variables to handle non-C: installations
+        let env_prefixes: Vec<String> = ["WINDIR", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA", "SYSTEMROOT"]
+            .iter()
+            .filter_map(|v| std::env::var(v).ok())
+            .map(|s| s.to_lowercase().replace('/', "\\"))
+            .collect();
+        // Fallback hardcoded entries in case environment variables are cleared
+        let hardcoded = [
             "c:\\windows",
             "c:\\program files",
             "c:\\program files (x86)",
             "c:\\programdata",
-        ] {
+        ];
+        let all_prefixes = env_prefixes.iter().map(|s| s.as_str()).chain(hardcoded.iter().copied());
+        for prefix in all_prefixes {
             if lower == prefix || lower.starts_with(&format!("{prefix}\\")) {
                 return true;
             }

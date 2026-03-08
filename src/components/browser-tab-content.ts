@@ -1,10 +1,11 @@
 import { store } from '../state/store';
-import { setBrowserTabUrl, setBrowserTabTitle, setBrowserTabLoading } from '../state/actions';
-import { createBrowserWebview, showBrowserWebview, hideBrowserWebview, navigateBrowser, resizeBrowserWebview, browserGoBack, browserGoForward, captureBrowserScreenshot } from '../services/browser-service';
+import { setBrowserTabUrl, setBrowserTabTitle, setBrowserTabLoading, setBrowserTabZoom } from '../state/actions';
+import { createBrowserWebview, showBrowserWebview, hideBrowserWebview, navigateBrowser, resizeBrowserWebview, browserGoBack, browserGoForward, captureBrowserScreenshot, setBrowserZoom } from '../services/browser-service';
 import { listen } from '@tauri-apps/api/event';
 import { createElement, clearChildren, $ } from '../utils/dom';
-import { arrowLeftIcon, arrowRightIcon, refreshIcon } from '../utils/icons';
+import { arrowLeftIcon, arrowRightIcon, refreshIcon, zoomIcon } from '../utils/icons';
 import { logger } from '../services/logger';
+import { keybindings } from '../utils/keybindings';
 import { BROWSER_NAVIGATED_EVENT, BROWSER_TITLE_CHANGED_EVENT } from '../state/types';
 import type { AppState, BrowserNavEvent, BrowserTab, BrowserTitleEvent, Project } from '../state/types';
 /** Currently active browser tab ID (runtime only, not persisted). */
@@ -26,6 +27,71 @@ let scheduleResizeRef: (() => void) | null = null;
  * overlays render on top of the (static) page content instead of a blank area.
  */
 let suppressCount = 0;
+
+/** Zoom range bounds — must match the clamp in set_browser_zoom (browser_commands.rs). */
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 5.0;
+
+/** Predefined zoom levels matching common browser steps. */
+const ZOOM_LEVELS = [ZOOM_MIN, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, ZOOM_MAX];
+
+function getZoom(tabId: string): number {
+  const project = findProjectForBrowserTab(tabId);
+  const tab = project?.browserTabs.find((t) => t.id === tabId);
+  return tab?.zoomFactor ?? 1.0;
+}
+
+function applyZoom(tabId: string, factor: number): void {
+  const project = findProjectForBrowserTab(tabId);
+  if (!project) return;
+  setBrowserTabZoom(project.id, tabId, factor);
+  setBrowserZoom(tabId, factor).catch((err) => {
+    logger.warn('browser', 'Failed to set zoom', { tabId, factor, error: String(err) });
+  });
+  updateZoomIndicator(factor);
+}
+
+function zoomIn(tabId: string): void {
+  const current = getZoom(tabId);
+  const next = ZOOM_LEVELS.find((l) => l > current + 0.001);
+  applyZoom(tabId, next ?? ZOOM_LEVELS[ZOOM_LEVELS.length - 1]);
+}
+
+function zoomOut(tabId: string): void {
+  const current = getZoom(tabId);
+  const next = ZOOM_LEVELS.findLast((l) => l < current - 0.001);
+  applyZoom(tabId, next ?? ZOOM_LEVELS[0]);
+}
+
+function resetZoom(tabId: string): void {
+  applyZoom(tabId, 1.0);
+}
+
+function isDefaultZoom(factor: number): boolean {
+  return Math.round(factor * 100) === 100;
+}
+
+/**
+ * Zoom UI state — grouped for clear lifecycle management.
+ * All fields are set during renderChrome() and go stale on tab switch
+ * (renderChrome re-assigns them). `dismiss` must be called before
+ * clearing the container to avoid leaking document-level listeners.
+ */
+const zoomUI = {
+  labelEl: null as HTMLElement | null,
+  triggerEl: null as HTMLElement | null,
+  dismiss: null as (() => void) | null,
+};
+
+/** Update the zoom indicator label and trigger state. */
+function updateZoomIndicator(factor: number): void {
+  const pct = Math.round(factor * 100);
+  if (zoomUI.labelEl) zoomUI.labelEl.textContent = `${pct}%`;
+  if (zoomUI.triggerEl) {
+    zoomUI.triggerEl.classList.toggle('browser-zoom-active', !isDefaultZoom(factor));
+    zoomUI.triggerEl.title = `Zoom (${pct}%)`;
+  }
+}
 
 function getWebviewArea(): HTMLElement | null {
   return (containerRef ?? document).querySelector('.browser-webview-area') as HTMLElement | null;
@@ -61,34 +127,21 @@ export async function suppressBrowserWebview(): Promise<void> {
   if (suppressCount === 1 && activeTabId) {
     const captureTabId = activeTabId;
     logger.debug('browser', 'Suppressing browser webview for overlay', { tabId: captureTabId });
-    // Capture a screenshot before hiding so overlays show page content behind them
+    // Capture a screenshot while the webview is still visible, set it as a CSS
+    // background, then hide the native HWND. This order is critical — WebView2's
+    // CapturePreview returns blank for hidden webviews, so capture must come first.
     try {
       const base64 = await captureBrowserScreenshot(captureTabId);
-      // Discard stale capture if restore happened or tab changed during the async gap
       if ((suppressCount as number) === 0 || activeTabId !== captureTabId) return;
       const area = getWebviewArea();
       if (area) {
-        // Use data URL directly — blob: URLs are blocked by the Tauri CSP
-        const dataUrl = `data:image/jpeg;base64,${base64}`;
-        // Preload: force the browser to decode the JPEG before displaying it
-        // so the screenshot is ready on the first frame after the webview hides
-        const img = new Image();
-        await new Promise<void>((resolve) => {
-          const done = () => { img.onload = null; img.onerror = null; resolve(); };
-          img.onload = done;
-          img.onerror = done;
-          setTimeout(done, 500);
-          img.src = dataUrl;
-        });
-        if ((suppressCount as number) === 0 || activeTabId !== captureTabId) return;
-        area.style.backgroundImage = `url(${dataUrl})`;
+        area.style.backgroundImage = `url(data:image/jpeg;base64,${base64})`;
         area.style.backgroundSize = '100% 100%';
         area.style.backgroundRepeat = 'no-repeat';
       }
     } catch (err) {
       logger.warn('browser', 'Screenshot capture failed', { error: String(err) });
     }
-    // Re-check: restore or tab change may have occurred during the async capture
     if ((suppressCount as number) === 0 || activeTabId !== captureTabId) return;
     await hideBrowserWebview(captureTabId);
   }
@@ -176,6 +229,13 @@ export function initBrowserTabContent(): void {
     logger.debug('browser', 'showOrCreateWebview', { tabId: tab.id, url: tab.url, bounds });
     // createBrowserWebview handles the "already alive" case idempotently
     await createBrowserWebview(tab.id, tab.url, bounds.x, bounds.y, bounds.width, bounds.height);
+    // Restore persisted zoom level (fresh webviews start at 1.0)
+    const zoom = tab.zoomFactor ?? 1.0;
+    if (zoom !== 1.0) {
+      setBrowserZoom(tab.id, zoom).catch((err) => {
+        logger.warn('browser', 'Failed to restore zoom', { tabId: tab.id, zoom, error: String(err) });
+      });
+    }
   }
 
   scheduleResizeRef = scheduleResize;
@@ -252,6 +312,71 @@ export function initBrowserTabContent(): void {
     // Select all text on focus for easy replacement
     addressBar.addEventListener('focus', () => addressBar.select());
     chrome.appendChild(addressBar);
+
+    // Zoom — magnifier icon with inline [−] [%] [+] that expand to its left
+    zoomUI.dismiss?.();
+    const currentZoom = tab.zoomFactor ?? 1.0;
+    const zoomAnchor = createElement('div', { className: 'browser-zoom-anchor' });
+
+    // Controls (hidden by default, appear inline to the left of the trigger)
+    const controls = createElement('div', { className: 'browser-zoom-controls hidden' });
+
+    const zoomOutBtn = createElement('button', { className: 'browser-nav-btn browser-zoom-btn', title: 'Zoom out (Ctrl+−)' });
+    zoomOutBtn.textContent = '−';
+    zoomOutBtn.addEventListener('click', () => { if (activeTabId) zoomOut(activeTabId); });
+    controls.appendChild(zoomOutBtn);
+
+    const zoomLabel = createElement('button', { className: 'browser-zoom-label', title: 'Reset zoom (Ctrl+0)' });
+    zoomLabel.textContent = `${Math.round(currentZoom * 100)}%`;
+    zoomLabel.addEventListener('click', () => { if (activeTabId) resetZoom(activeTabId); });
+    controls.appendChild(zoomLabel);
+
+    const zoomInBtn = createElement('button', { className: 'browser-nav-btn browser-zoom-btn', title: 'Zoom in (Ctrl++)' });
+    zoomInBtn.textContent = '+';
+    zoomInBtn.addEventListener('click', () => { if (activeTabId) zoomIn(activeTabId); });
+    controls.appendChild(zoomInBtn);
+
+    zoomAnchor.appendChild(controls);
+
+    // Magnifier trigger
+    const zoomTrigger = createElement('button', {
+      className: 'browser-nav-btn browser-zoom-trigger',
+      title: `Zoom (${Math.round(currentZoom * 100)}%)`,
+    });
+    zoomTrigger.innerHTML = zoomIcon(14);
+    if (!isDefaultZoom(currentZoom)) zoomTrigger.classList.add('browser-zoom-active');
+    zoomAnchor.appendChild(zoomTrigger);
+
+    chrome.appendChild(zoomAnchor);
+
+    zoomUI.labelEl = zoomLabel;
+    zoomUI.triggerEl = zoomTrigger;
+
+    // Toggle controls on magnifier click
+    zoomTrigger.addEventListener('click', () => {
+      if (zoomUI.dismiss) {
+        zoomUI.dismiss();
+        return;
+      }
+      controls.classList.remove('hidden');
+      const dismiss = () => {
+        controls.classList.add('hidden');
+        document.removeEventListener('mousedown', onOutside);
+        document.removeEventListener('keydown', onEscape);
+        zoomUI.dismiss = null;
+      };
+      const onOutside = (e: MouseEvent) => {
+        if (!zoomAnchor.contains(e.target as Node)) dismiss();
+      };
+      const onEscape = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') { e.stopPropagation(); dismiss(); }
+      };
+      zoomUI.dismiss = dismiss;
+      requestAnimationFrame(() => {
+        document.addEventListener('mousedown', onOutside);
+        document.addEventListener('keydown', onEscape);
+      });
+    });
 
     container.appendChild(chrome);
 
@@ -334,6 +459,7 @@ export function initBrowserTabContent(): void {
         lastTabId = null;
         // R1: Reset suppress state — no webview context, stale suppressions are meaningless
         resetSuppression();
+        zoomUI.dismiss?.();
         return;
       }
 
@@ -372,6 +498,19 @@ export function initBrowserTabContent(): void {
     logger.debug('browser', 'Window resize, scheduling webview reposition');
     scheduleResize();
   });
+
+  // Keyboard shortcuts for zoom — registered via KeybindingManager so they
+  // respect setActive() suppression (confirm dialogs, keybinding recording)
+  // and are visible to xterm's matchesBinding() pass-through check.
+  const guardedZoom = (fn: (tabId: string) => void) => () => {
+    const id = activeTabId;
+    if (id && containerRef && !containerRef.classList.contains('hidden')) fn(id);
+  };
+
+  keybindings.register({ key: '=', ctrl: true, handler: guardedZoom(zoomIn) });
+  keybindings.register({ key: '+', ctrl: true, shift: true, handler: guardedZoom(zoomIn) });
+  keybindings.register({ key: '-', ctrl: true, handler: guardedZoom(zoomOut) });
+  keybindings.register({ key: '0', ctrl: true, handler: guardedZoom(resetZoom) });
 
   logger.info('browser', 'Browser tab content initialised');
 }

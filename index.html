@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost https://api.openai.com; object-src 'none'; base-uri 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src ipc: http://ipc.localhost https://api.openai.com; img-src 'self' asset: https://asset.localhost data:; object-src 'none'; base-uri 'self'" />
     <title>Cosmos Terminal</title>
     <link rel="stylesheet" href="/src/styles/reset.css" />
     <link rel="stylesheet" href="/src/styles/theme.css" />
     <link rel="stylesheet" href="/src/styles/layout.css" />
     <link rel="stylesheet" href="/src/styles/tabs-shared.css" />
     <link rel="stylesheet" href="/src/styles/project-tabs.css" />
-    <link rel="stylesheet" href="/src/styles/session-tabs.css" />
+    <link rel="stylesheet" href="/src/styles/work-tabs.css" />
     <link rel="stylesheet" href="/src/styles/terminal.css" />
     <link rel="stylesheet" href="/src/styles/settings.css" />
     <link rel="stylesheet" href="/src/styles/statusbar.css" />
@@ -27,7 +27,7 @@
   <body>
     <div id="app">
       <div id="project-tab-bar"></div>
-      <div id="session-tab-bar"></div>
+      <div id="work-tab-bar"></div>
       <div id="main-content">
         <div id="terminal-container"></div>
         <div id="file-tab-container" class="hidden"></div>

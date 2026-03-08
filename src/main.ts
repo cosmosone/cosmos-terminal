@@ -7,7 +7,7 @@ import { findLeafPaneIds } from './layout/pane-tree';
 import type { AppState, BrowserTab, KeybindingConfig, Session, FileTab } from './state/types';
 import { logger } from './services/logger';
 import { initProjectTabBar } from './components/project-tab-bar';
-import { initSessionTabBar } from './components/session-tab-bar';
+import { initWorkTabBar } from './components/work-tab-bar';
 import { SplitContainer } from './components/split-container';
 import { initSettingsPage } from './components/settings-page';
 import { initStatusBar } from './components/status-bar';
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   const refresh = () => splitContainer.render();
 
   initProjectTabBar(refresh);
-  const sessionTabBar = initSessionTabBar(refresh);
+  const workTabBar = initWorkTabBar(refresh);
   initSettingsPage(() => { splitContainer.applySettings(); applyFontSettings(); });
   initStatusBar(() => splitContainer.clearAllScrollback());
   initLogViewer();
@@ -284,7 +284,7 @@ async function main(): Promise<void> {
       refresh();
     });
 
-    bind(kb.renameTab, () => sessionTabBar.triggerRename());
+    bind(kb.renameTab, () => workTabBar.triggerRename());
   }
 
   store.select(

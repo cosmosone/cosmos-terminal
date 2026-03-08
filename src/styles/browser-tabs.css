@@ -55,8 +55,8 @@
   border-radius: 13px;
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: var(--font-ui);
-  font-size: var(--font-ui-size);
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: var(--font-ui-size, 13px);
   outline: none;
   min-width: 0;
 }
@@ -67,6 +67,62 @@
 
 .browser-address-bar::placeholder {
   color: var(--text-secondary);
+}
+
+/* ── Zoom controls ── */
+
+.browser-zoom-anchor {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Highlight the magnifier icon when zoomed to a non-default level */
+.browser-zoom-trigger.browser-zoom-active {
+  color: var(--accent);
+}
+
+/* Inline controls that expand to the left of the magnifier */
+.browser-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.browser-zoom-controls.hidden {
+  display: none;
+}
+
+.browser-zoom-btn {
+  font-size: 14px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.browser-zoom-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 26px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.browser-zoom-label:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.browser-zoom-label:active {
+  opacity: 0.7;
 }
 
 /* ── Webview placeholder area ── */

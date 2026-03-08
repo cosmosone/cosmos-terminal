@@ -19,6 +19,28 @@ fn validate_url(url: &str) -> Result<url::Url, String> {
     }
 }
 
+/// Validate that a tab ID is a well-formed UUID (same format as session IDs).
+fn validate_tab_id(tab_id: &str) -> Result<(), String> {
+    const UUID_LEN: usize = 36;
+    const HYPHEN_POSITIONS: [usize; 4] = [8, 13, 18, 23];
+    let bytes = tab_id.as_bytes();
+    if bytes.len() != UUID_LEN {
+        return Err("Invalid tab id".to_string());
+    }
+    for (index, b) in bytes.iter().enumerate() {
+        if HYPHEN_POSITIONS.contains(&index) {
+            if *b != b'-' {
+                return Err("Invalid tab id".to_string());
+            }
+            continue;
+        }
+        if !b.is_ascii_hexdigit() {
+            return Err("Invalid tab id".to_string());
+        }
+    }
+    Ok(())
+}
+
 /// Build a unique webview label from a tab ID.
 fn webview_label(tab_id: &str) -> String {
     format!("browser-{tab_id}")
@@ -42,6 +64,7 @@ pub async fn create_browser_webview(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
+    validate_tab_id(&tab_id)?;
     let parsed = validate_url(&url)?;
     let manager = app.state::<BrowserManager>();
 
@@ -141,6 +164,7 @@ pub async fn create_browser_webview(
 
 #[tauri::command]
 pub async fn show_browser_webview(app: AppHandle, tab_id: String) -> Result<(), String> {
+    validate_tab_id(&tab_id)?;
     let manager = app.state::<BrowserManager>();
     let wv = resolve_webview(&app, &manager, &tab_id)?;
     wv.show().map_err(|e| e.to_string())?;
@@ -150,6 +174,7 @@ pub async fn show_browser_webview(app: AppHandle, tab_id: String) -> Result<(), 
 
 #[tauri::command]
 pub async fn hide_browser_webview(app: AppHandle, tab_id: String) -> Result<(), String> {
+    validate_tab_id(&tab_id)?;
     let manager = app.state::<BrowserManager>();
     if let Some(label) = manager.get_label(&tab_id) {
         if let Some(wv) = app.get_webview(&label) {
@@ -161,6 +186,7 @@ pub async fn hide_browser_webview(app: AppHandle, tab_id: String) -> Result<(), 
 
 #[tauri::command]
 pub async fn navigate_browser(app: AppHandle, tab_id: String, url: String) -> Result<(), String> {
+    validate_tab_id(&tab_id)?;
     let parsed = validate_url(&url)?;
     let manager = app.state::<BrowserManager>();
     let wv = resolve_webview(&app, &manager, &tab_id)?;
@@ -177,6 +203,7 @@ pub async fn resize_browser_webview(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
+    validate_tab_id(&tab_id)?;
     let manager = app.state::<BrowserManager>();
     let wv = resolve_webview(&app, &manager, &tab_id)?;
     wv.set_position(tauri::LogicalPosition::new(x, y))
@@ -188,6 +215,7 @@ pub async fn resize_browser_webview(
 
 #[tauri::command]
 pub async fn close_browser_webview(app: AppHandle, tab_id: String) -> Result<(), String> {
+    validate_tab_id(&tab_id)?;
     let manager = app.state::<BrowserManager>();
     if let Some(label) = manager.remove(&tab_id) {
         if let Some(wv) = app.get_webview(&label) {
@@ -199,6 +227,7 @@ pub async fn close_browser_webview(app: AppHandle, tab_id: String) -> Result<(),
 
 #[tauri::command]
 pub async fn browser_go_back(app: AppHandle, tab_id: String) -> Result<(), String> {
+    validate_tab_id(&tab_id)?;
     let manager = app.state::<BrowserManager>();
     let wv = resolve_webview(&app, &manager, &tab_id)?;
     wv.eval("history.back()").map_err(|e| e.to_string())?;
@@ -207,6 +236,7 @@ pub async fn browser_go_back(app: AppHandle, tab_id: String) -> Result<(), Strin
 
 #[tauri::command]
 pub async fn browser_go_forward(app: AppHandle, tab_id: String) -> Result<(), String> {
+    validate_tab_id(&tab_id)?;
     let manager = app.state::<BrowserManager>();
     let wv = resolve_webview(&app, &manager, &tab_id)?;
     wv.eval("history.forward()").map_err(|e| e.to_string())?;
@@ -215,14 +245,41 @@ pub async fn browser_go_forward(app: AppHandle, tab_id: String) -> Result<(), St
 
 #[tauri::command]
 pub async fn browser_webview_is_alive(app: AppHandle, tab_id: String) -> Result<bool, String> {
+    validate_tab_id(&tab_id)?;
     let manager = app.state::<BrowserManager>();
     Ok(manager.is_alive(&tab_id))
 }
 
 #[tauri::command]
 pub fn set_browser_pool_size(app: AppHandle, size: usize) {
+    const MAX_POOL_SIZE: usize = 50;
     let manager = app.state::<BrowserManager>();
-    manager.set_pool_size(size.max(1));
+    manager.set_pool_size(size.clamp(1, MAX_POOL_SIZE));
+}
+
+/// Set the zoom factor for a browser webview (1.0 = 100%).
+/// Clamps to the WebView2-supported range of 0.25–5.0.
+/// Range must match ZOOM_MIN/ZOOM_MAX in browser-tab-content.ts.
+#[tauri::command]
+pub async fn set_browser_zoom(
+    app: AppHandle,
+    tab_id: String,
+    zoom_factor: f64,
+) -> Result<(), String> {
+    validate_tab_id(&tab_id)?;
+    let clamped = zoom_factor.clamp(0.25, 5.0);
+    let manager = app.state::<BrowserManager>();
+    let wv = resolve_webview(&app, &manager, &tab_id)?;
+
+    wv.with_webview(move |platform_wv| {
+        unsafe {
+            let controller = platform_wv.controller();
+            let _ = controller.SetZoomFactor(clamped);
+        }
+    })
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 /// Capture the browser webview content as a base64-encoded JPEG screenshot.
@@ -232,6 +289,7 @@ pub async fn capture_browser_screenshot(
     app: AppHandle,
     tab_id: String,
 ) -> Result<String, String> {
+    validate_tab_id(&tab_id)?;
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         ICoreWebView2, ICoreWebView2CapturePreviewCompletedHandler,
         ICoreWebView2CapturePreviewCompletedHandler_Impl,
@@ -320,6 +378,10 @@ unsafe fn read_stream_to_base64(
     let size = stat.cbSize as usize;
     if size == 0 {
         return Err("Empty capture".into());
+    }
+    const MAX_SCREENSHOT_BYTES: usize = 50 * 1024 * 1024; // 50 MB
+    if size > MAX_SCREENSHOT_BYTES {
+        return Err(format!("Screenshot too large: {size} bytes"));
     }
 
     stream
