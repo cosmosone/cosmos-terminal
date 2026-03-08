@@ -194,6 +194,9 @@ export const BROWSER_NAVIGATED_EVENT = 'browser-navigated';
 /** Event name emitted by the Rust backend when a page title is available. */
 export const BROWSER_TITLE_CHANGED_EVENT = 'browser-title-changed';
 
+/** Event name emitted by the Rust backend when a zoom shortcut is pressed in the WebView2 overlay. */
+export const BROWSER_ZOOM_KEY_EVENT = 'browser-zoom-key';
+
 /** Event name emitted by the Rust backend on filesystem changes. */
 export const FS_CHANGE_EVENT = 'fs-change';
 

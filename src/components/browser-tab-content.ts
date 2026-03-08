@@ -6,7 +6,7 @@ import { createElement, clearChildren, $ } from '../utils/dom';
 import { arrowLeftIcon, arrowRightIcon, refreshIcon, zoomIcon } from '../utils/icons';
 import { logger } from '../services/logger';
 import { keybindings } from '../utils/keybindings';
-import { BROWSER_NAVIGATED_EVENT, BROWSER_TITLE_CHANGED_EVENT } from '../state/types';
+import { BROWSER_NAVIGATED_EVENT, BROWSER_TITLE_CHANGED_EVENT, BROWSER_ZOOM_KEY_EVENT } from '../state/types';
 import type { AppState, BrowserNavEvent, BrowserTab, BrowserTitleEvent, Project } from '../state/types';
 /** Currently active browser tab ID (runtime only, not persisted). */
 let activeTabId: string | null = null;
@@ -511,6 +511,18 @@ export function initBrowserTabContent(): void {
   keybindings.register({ key: '+', ctrl: true, shift: true, handler: guardedZoom(zoomIn) });
   keybindings.register({ key: '-', ctrl: true, handler: guardedZoom(zoomOut) });
   keybindings.register({ key: '0', ctrl: true, handler: guardedZoom(resetZoom) });
+
+  // Listen for zoom shortcuts forwarded from the WebView2 overlay (Rust-side
+  // AcceleratorKeyPressed handler) — fires when the overlay has focus and the
+  // app's DOM-level keybindings can't see the key events.
+  void listen<{ tabId: string; action: string }>(BROWSER_ZOOM_KEY_EVENT, (event) => {
+    const { tabId, action } = event.payload;
+    switch (action) {
+      case 'zoom-in': zoomIn(tabId); break;
+      case 'zoom-out': zoomOut(tabId); break;
+      case 'zoom-reset': resetZoom(tabId); break;
+    }
+  });
 
   logger.info('browser', 'Browser tab content initialised');
 }

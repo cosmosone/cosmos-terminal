@@ -1,5 +1,5 @@
 use crate::browser::manager::BrowserManager;
-use crate::models::{BrowserNavEvent, BrowserTitleEvent};
+use crate::models::{BrowserNavEvent, BrowserTitleEvent, BrowserZoomKeyEvent};
 use base64::Engine;
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, EventTarget, Manager, Webview};
@@ -9,6 +9,9 @@ const BROWSER_NAVIGATED_EVENT: &str = "browser-navigated";
 
 /// Event name for page title updates (must match TypeScript `BROWSER_TITLE_CHANGED_EVENT`).
 const BROWSER_TITLE_CHANGED_EVENT: &str = "browser-title-changed";
+
+/// Event name for zoom key interception (must match TypeScript `BROWSER_ZOOM_KEY_EVENT`).
+const BROWSER_ZOOM_KEY_EVENT: &str = "browser-zoom-key";
 
 /// Validate a URL string: must be http or https.
 fn validate_url(url: &str) -> Result<url::Url, String> {
@@ -158,6 +161,94 @@ pub async fn create_browser_webview(
         .map_err(|e| format!("Failed to create browser webview: {e}"))?;
 
     manager.register(&tab_id, &label);
+
+    // Intercept zoom keyboard shortcuts (Ctrl+=/+/-/0) inside the WebView2 overlay.
+    // Without this, these keys are consumed by WebView2 natively and the app's
+    // KeybindingManager never sees them.
+    {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2AcceleratorKeyPressedEventArgs,
+            ICoreWebView2AcceleratorKeyPressedEventHandler,
+            ICoreWebView2AcceleratorKeyPressedEventHandler_Impl,
+            ICoreWebView2Controller,
+            COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
+        };
+        use windows::core::implement;
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL};
+
+        #[implement(ICoreWebView2AcceleratorKeyPressedEventHandler)]
+        struct ZoomKeyHandler {
+            app: AppHandle,
+            tab_id: String,
+        }
+
+        impl ICoreWebView2AcceleratorKeyPressedEventHandler_Impl for ZoomKeyHandler_Impl {
+            fn Invoke(
+                &self,
+                _sender: windows_core::Ref<'_, ICoreWebView2Controller>,
+                args: windows_core::Ref<'_, ICoreWebView2AcceleratorKeyPressedEventArgs>,
+            ) -> windows::core::Result<()> {
+                let Some(args) = args.clone() else { return Ok(()); };
+                unsafe {
+                    let mut kind = COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN;
+                    args.KeyEventKind(&mut kind)?;
+                    if kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN {
+                        return Ok(());
+                    }
+
+                    let mut vk = 0u32;
+                    args.VirtualKey(&mut vk)?;
+                    let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
+                    if !ctrl {
+                        return Ok(());
+                    }
+
+                    const VK_OEM_PLUS: u32 = 0xBB;
+                    const VK_ADD: u32 = 0x6B;
+                    const VK_OEM_MINUS: u32 = 0xBD;
+                    const VK_SUBTRACT: u32 = 0x6D;
+                    const VK_0: u32 = 0x30;
+
+                    let action = match vk {
+                        VK_OEM_PLUS | VK_ADD => Some("zoom-in"),
+                        VK_OEM_MINUS | VK_SUBTRACT => Some("zoom-out"),
+                        VK_0 => Some("zoom-reset"),
+                        _ => None,
+                    };
+
+                    if let Some(action) = action {
+                        let _ = args.SetHandled(true);
+                        let _ = self.app.emit_to(
+                            EventTarget::labeled("main"),
+                            BROWSER_ZOOM_KEY_EVENT,
+                            BrowserZoomKeyEvent {
+                                tab_id: self.tab_id.clone(),
+                                action: action.to_string(),
+                            },
+                        );
+                    }
+                }
+                Ok(())
+            }
+        }
+
+        if let Some(wv) = app.get_webview(&label) {
+            let app_zoom = app.clone();
+            let tab_id_zoom = tab_id;
+            let _ = wv.with_webview(move |platform_wv| {
+                unsafe {
+                    let controller = platform_wv.controller();
+                    let handler: ICoreWebView2AcceleratorKeyPressedEventHandler = ZoomKeyHandler {
+                        app: app_zoom,
+                        tab_id: tab_id_zoom,
+                    }
+                    .into();
+                    let mut token = std::mem::zeroed();
+                    let _ = controller.add_AcceleratorKeyPressed(&handler, &mut token);
+                }
+            });
+        }
+    }
 
     Ok(())
 }

@@ -79,6 +79,13 @@ pub struct BrowserTitleEvent {
     pub title: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserZoomKeyEvent {
+    pub tab_id: String,
+    pub action: String,
+}
+
 // --- Filesystem models ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
