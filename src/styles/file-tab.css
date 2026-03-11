@@ -71,7 +71,8 @@
   min-height: 0;
 }
 
-.file-tab-content:has(.file-tab-editor) {
+.file-tab-content:has(.file-tab-editor),
+.file-tab-content:has(.highlighted-editor-wrap) {
   overflow: hidden;
 }
 
