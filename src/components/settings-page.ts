@@ -165,7 +165,7 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
     // ── 6. Keybindings ──
     const kb = createCollapsibleSection('Keybindings');
     const kbLabels: [keyof KeybindingConfig, string][] = [
-      ['newSession', 'New Session'],
+      ['newSession', 'New Terminal Tab'],
       ['toggleSettings', 'Settings'],
       ['navigatePaneLeft', 'Move to Left Pane'],
       ['navigatePaneRight', 'Move to Right Pane'],
