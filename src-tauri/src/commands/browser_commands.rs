@@ -1,7 +1,6 @@
 use crate::browser::manager::BrowserManager;
 use crate::models::{BrowserNavEvent, BrowserTitleEvent, BrowserZoomKeyEvent};
 use base64::Engine;
-use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Emitter, EventTarget, Manager, Webview};
 
 /// Event name for browser navigation events (must match TypeScript `BROWSER_NAVIGATED_EVENT`).
@@ -96,61 +95,12 @@ pub async fn create_browser_webview(
         .get_window("main")
         .ok_or("Main window not found")?;
 
-    let tab_id_load = tab_id.clone();
-    let app_load = app.clone();
-
     let webview = tauri::webview::WebviewBuilder::new(
         &label,
         tauri::WebviewUrl::External(parsed),
     )
     // Match the app's dark background (#0f0f14) to prevent white flash during show/hide transitions
-    .background_color(tauri::webview::Color(15, 15, 20, 255))
-    .on_page_load(move |webview, payload| {
-        let loading = matches!(payload.event(), PageLoadEvent::Started);
-        let url = payload.url().to_string();
-        let tab_id = tab_id_load.clone();
-
-        let _ = app_load.emit_to(
-            EventTarget::labeled("main"),
-            BROWSER_NAVIGATED_EVENT,
-            BrowserNavEvent {
-                tab_id: tab_id.clone(),
-                url,
-                loading,
-            },
-        );
-
-        // Extract page title from WebView2 after page load finishes
-        if !loading {
-            let app_title = app_load.clone();
-            let tab_id_title = tab_id;
-            let _ = webview.with_webview(move |platform_wv| {
-                let title: Option<String> = (|| unsafe {
-                    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2;
-                    use windows::core::PWSTR;
-                    use windows::Win32::System::Com::CoTaskMemFree;
-                    let controller = platform_wv.controller();
-                    let core: ICoreWebView2 = controller.CoreWebView2().ok()?;
-                    let mut title_pwstr = PWSTR::null();
-                    core.DocumentTitle(&mut title_pwstr).ok()?;
-                    let s = title_pwstr.to_string().unwrap_or_default();
-                    // Free the COM-allocated PWSTR buffer
-                    if !title_pwstr.is_null() {
-                        CoTaskMemFree(Some(title_pwstr.0 as *const _));
-                    }
-                    if s.is_empty() { return None; }
-                    Some(s)
-                })();
-                if let Some(title) = title {
-                    let _ = app_title.emit_to(
-                        EventTarget::labeled("main"),
-                        BROWSER_TITLE_CHANGED_EVENT,
-                        BrowserTitleEvent { tab_id: tab_id_title, title },
-                    );
-                }
-            });
-        }
-    });
+    .background_color(tauri::webview::Color(15, 15, 20, 255));
 
     window
         .add_child(
@@ -162,19 +112,37 @@ pub async fn create_browser_webview(
 
     manager.register(&tab_id, &label);
 
-    // Intercept zoom keyboard shortcuts (Ctrl+=/+/-/0) inside the WebView2 overlay.
-    // Without this, these keys are consumed by WebView2 natively and the app's
-    // KeybindingManager never sees them.
+    // Register WebView2 event handlers: zoom key interception and navigation events.
+    // Navigation events (NavigationStarting/Completed) are registered directly via
+    // the COM API because Tauri's on_page_load callback does not reliably fire for
+    // link-initiated navigations in child webviews created with add_child.
     {
         use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2,
             ICoreWebView2AcceleratorKeyPressedEventArgs,
             ICoreWebView2AcceleratorKeyPressedEventHandler,
             ICoreWebView2AcceleratorKeyPressedEventHandler_Impl,
             ICoreWebView2Controller,
+            ICoreWebView2NavigationCompletedEventArgs,
+            ICoreWebView2NavigationCompletedEventHandler,
+            ICoreWebView2NavigationCompletedEventHandler_Impl,
+            ICoreWebView2NavigationStartingEventArgs,
+            ICoreWebView2NavigationStartingEventHandler,
+            ICoreWebView2NavigationStartingEventHandler_Impl,
             COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
         };
-        use windows::core::implement;
+        use windows::core::{implement, PWSTR};
+        use windows::Win32::System::Com::CoTaskMemFree;
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL};
+
+        /// Read a COM-allocated `PWSTR` into an owned `String` and free the buffer.
+        unsafe fn pwstr_to_owned(ptr: PWSTR) -> String {
+            let s = ptr.to_string().unwrap_or_default();
+            if !ptr.is_null() {
+                CoTaskMemFree(Some(ptr.0 as *const _));
+            }
+            s
+        }
 
         #[implement(ICoreWebView2AcceleratorKeyPressedEventHandler)]
         struct ZoomKeyHandler {
@@ -232,19 +200,120 @@ pub async fn create_browser_webview(
             }
         }
 
+        #[implement(ICoreWebView2NavigationStartingEventHandler)]
+        struct NavStartHandler {
+            app: AppHandle,
+            tab_id: String,
+        }
+
+        impl ICoreWebView2NavigationStartingEventHandler_Impl for NavStartHandler_Impl {
+            fn Invoke(
+                &self,
+                _sender: windows_core::Ref<'_, ICoreWebView2>,
+                args: windows_core::Ref<'_, ICoreWebView2NavigationStartingEventArgs>,
+            ) -> windows::core::Result<()> {
+                let Some(args) = args.clone() else { return Ok(()); };
+                unsafe {
+                    let mut uri = PWSTR::null();
+                    args.Uri(&mut uri)?;
+                    let url = pwstr_to_owned(uri);
+                    let _ = self.app.emit_to(
+                        EventTarget::labeled("main"),
+                        BROWSER_NAVIGATED_EVENT,
+                        BrowserNavEvent {
+                            tab_id: self.tab_id.clone(),
+                            url,
+                            loading: true,
+                        },
+                    );
+                }
+                Ok(())
+            }
+        }
+
+        #[implement(ICoreWebView2NavigationCompletedEventHandler)]
+        struct NavCompleteHandler {
+            app: AppHandle,
+            tab_id: String,
+        }
+
+        impl ICoreWebView2NavigationCompletedEventHandler_Impl for NavCompleteHandler_Impl {
+            fn Invoke(
+                &self,
+                sender: windows_core::Ref<'_, ICoreWebView2>,
+                _args: windows_core::Ref<'_, ICoreWebView2NavigationCompletedEventArgs>,
+            ) -> windows::core::Result<()> {
+                let Some(core) = sender.clone() else { return Ok(()); };
+                unsafe {
+                    // Read the final URL after navigation (accounts for redirects)
+                    let mut source = PWSTR::null();
+                    core.Source(&mut source)?;
+                    let url = pwstr_to_owned(source);
+                    let _ = self.app.emit_to(
+                        EventTarget::labeled("main"),
+                        BROWSER_NAVIGATED_EVENT,
+                        BrowserNavEvent {
+                            tab_id: self.tab_id.clone(),
+                            url,
+                            loading: false,
+                        },
+                    );
+
+                    // Extract page title
+                    let mut title_pwstr = PWSTR::null();
+                    if core.DocumentTitle(&mut title_pwstr).is_ok() {
+                        let title = pwstr_to_owned(title_pwstr);
+                        if !title.is_empty() {
+                            let _ = self.app.emit_to(
+                                EventTarget::labeled("main"),
+                                BROWSER_TITLE_CHANGED_EVENT,
+                                BrowserTitleEvent {
+                                    tab_id: self.tab_id.clone(),
+                                    title,
+                                },
+                            );
+                        }
+                    }
+                }
+                Ok(())
+            }
+        }
+
         if let Some(wv) = app.get_webview(&label) {
-            let app_zoom = app.clone();
-            let tab_id_zoom = tab_id;
+            let app_wv = app.clone();
+            let tab_id_wv = tab_id;
             let _ = wv.with_webview(move |platform_wv| {
                 unsafe {
                     let controller = platform_wv.controller();
+
+                    // Zoom key interception
                     let handler: ICoreWebView2AcceleratorKeyPressedEventHandler = ZoomKeyHandler {
-                        app: app_zoom,
-                        tab_id: tab_id_zoom,
+                        app: app_wv.clone(),
+                        tab_id: tab_id_wv.clone(),
                     }
                     .into();
                     let mut token = std::mem::zeroed();
                     let _ = controller.add_AcceleratorKeyPressed(&handler, &mut token);
+
+                    // Navigation event handlers for URL bar and loading state
+                    let Ok(core) = controller.CoreWebView2() else { return; };
+
+                    let nav_start: ICoreWebView2NavigationStartingEventHandler = NavStartHandler {
+                        app: app_wv.clone(),
+                        tab_id: tab_id_wv.clone(),
+                    }
+                    .into();
+                    let mut token = std::mem::zeroed();
+                    let _ = core.add_NavigationStarting(&nav_start, &mut token);
+
+                    let nav_complete: ICoreWebView2NavigationCompletedEventHandler =
+                        NavCompleteHandler {
+                            app: app_wv,
+                            tab_id: tab_id_wv,
+                        }
+                        .into();
+                    let mut token = std::mem::zeroed();
+                    let _ = core.add_NavigationCompleted(&nav_complete, &mut token);
                 }
             });
         }
