@@ -122,16 +122,23 @@ pub async fn create_browser_webview(
             ICoreWebView2AcceleratorKeyPressedEventArgs,
             ICoreWebView2AcceleratorKeyPressedEventHandler,
             ICoreWebView2AcceleratorKeyPressedEventHandler_Impl,
+            ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler,
+            ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler_Impl,
             ICoreWebView2Controller,
+            ICoreWebView2ExecuteScriptCompletedHandler,
+            ICoreWebView2ExecuteScriptCompletedHandler_Impl,
             ICoreWebView2NavigationCompletedEventArgs,
             ICoreWebView2NavigationCompletedEventHandler,
             ICoreWebView2NavigationCompletedEventHandler_Impl,
             ICoreWebView2NavigationStartingEventArgs,
             ICoreWebView2NavigationStartingEventHandler,
             ICoreWebView2NavigationStartingEventHandler_Impl,
+            ICoreWebView2WebMessageReceivedEventArgs,
+            ICoreWebView2WebMessageReceivedEventHandler,
+            ICoreWebView2WebMessageReceivedEventHandler_Impl,
             COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
         };
-        use windows::core::{implement, PWSTR};
+        use windows::core::{implement, PCWSTR, PWSTR};
         use windows::Win32::System::Com::CoTaskMemFree;
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL};
 
@@ -143,6 +150,22 @@ pub async fn create_browser_webview(
             }
             s
         }
+
+        /// JavaScript injected into every document via AddScriptToExecuteOnDocumentCreated.
+        /// Overrides history.pushState/replaceState and listens for popstate/hashchange to
+        /// detect SPA navigations that don't trigger WebView2 navigation events.
+        /// Sends URL changes back to the host via window.chrome.webview.postMessage().
+        const SPA_URL_MONITOR_SCRIPT: &str = r#"(function(){
+if(window.top!==window||window.__cosmos_url_monitor)return;
+window.__cosmos_url_monitor=true;
+var n=function(){window.chrome.webview.postMessage(JSON.stringify({__cosmos:true,url:location.href,title:document.title}))};
+var ps=history.pushState;
+history.pushState=function(){var r=ps.apply(history,arguments);n();return r};
+var rs=history.replaceState;
+history.replaceState=function(){var r=rs.apply(history,arguments);n();return r};
+window.addEventListener('popstate',n);
+window.addEventListener('hashchange',n);
+})()"#;
 
         #[implement(ICoreWebView2AcceleratorKeyPressedEventHandler)]
         struct ZoomKeyHandler {
@@ -217,6 +240,7 @@ pub async fn create_browser_webview(
                     let mut uri = PWSTR::null();
                     args.Uri(&mut uri)?;
                     let url = pwstr_to_owned(uri);
+
                     let _ = self.app.emit_to(
                         EventTarget::labeled("main"),
                         BROWSER_NAVIGATED_EVENT,
@@ -249,6 +273,7 @@ pub async fn create_browser_webview(
                     let mut source = PWSTR::null();
                     core.Source(&mut source)?;
                     let url = pwstr_to_owned(source);
+
                     let _ = self.app.emit_to(
                         EventTarget::labeled("main"),
                         BROWSER_NAVIGATED_EVENT,
@@ -275,6 +300,114 @@ pub async fn create_browser_webview(
                         }
                     }
                 }
+                Ok(())
+            }
+        }
+
+        /// Receives postMessage calls from the injected SPA URL monitor script.
+        #[implement(ICoreWebView2WebMessageReceivedEventHandler)]
+        struct WebMessageHandler {
+            app: AppHandle,
+            tab_id: String,
+        }
+
+        impl ICoreWebView2WebMessageReceivedEventHandler_Impl for WebMessageHandler_Impl {
+            fn Invoke(
+                &self,
+                _sender: windows_core::Ref<'_, ICoreWebView2>,
+                args: windows_core::Ref<'_, ICoreWebView2WebMessageReceivedEventArgs>,
+            ) -> windows::core::Result<()> {
+                let Some(args) = args.clone() else { return Ok(()); };
+                unsafe {
+                    let mut msg = PWSTR::null();
+                    // TryGetWebMessageAsString fails for non-string messages — skip those
+                    if args.TryGetWebMessageAsString(&mut msg).is_err() {
+                        return Ok(());
+                    }
+                    let json = pwstr_to_owned(msg);
+
+                    // Only process messages from our injected script
+                    if !json.contains("\"__cosmos\"") {
+                        return Ok(());
+                    }
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
+                        if parsed.get("__cosmos").and_then(|v| v.as_bool()) != Some(true) {
+                            return Ok(());
+                        }
+
+                        // Read the source document URI from the event args to validate
+                        // same-origin. Prevents a malicious page from spoofing the
+                        // address bar via a crafted postMessage with a cross-origin URL.
+                        let event_origin = {
+                            let mut src = PWSTR::null();
+                            if args.Source(&mut src).is_err() {
+                                return Ok(());
+                            }
+                            let s = pwstr_to_owned(src);
+                            url::Url::parse(&s).ok().map(|u| u.origin())
+                        };
+
+                        if let Some(url) = parsed.get("url").and_then(|v| v.as_str()) {
+                            let same_origin = match (&event_origin, url::Url::parse(url).ok()) {
+                                (Some(src), Some(reported)) => src == &reported.origin(),
+                                _ => false,
+                            };
+                            if same_origin {
+                                let _ = self.app.emit_to(
+                                    EventTarget::labeled("main"),
+                                    BROWSER_NAVIGATED_EVENT,
+                                    BrowserNavEvent {
+                                        tab_id: self.tab_id.clone(),
+                                        url: url.to_string(),
+                                        loading: false,
+                                    },
+                                );
+                            }
+                        }
+                        if let Some(title) = parsed.get("title").and_then(|v| v.as_str()) {
+                            if !title.is_empty() {
+                                let _ = self.app.emit_to(
+                                    EventTarget::labeled("main"),
+                                    BROWSER_TITLE_CHANGED_EVENT,
+                                    BrowserTitleEvent {
+                                        tab_id: self.tab_id.clone(),
+                                        title: title.to_string(),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
+        }
+
+        /// No-op handler for AddScriptToExecuteOnDocumentCreated completion.
+        #[implement(ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler)]
+        struct ScriptAddedHandler;
+
+        impl ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler_Impl
+            for ScriptAddedHandler_Impl
+        {
+            fn Invoke(
+                &self,
+                _error_code: windows::core::HRESULT,
+                _id: &PCWSTR,
+            ) -> windows::core::Result<()> {
+                Ok(())
+            }
+        }
+
+        /// No-op handler for ExecuteScript completion.
+        #[implement(ICoreWebView2ExecuteScriptCompletedHandler)]
+        struct ScriptExecHandler;
+
+        impl ICoreWebView2ExecuteScriptCompletedHandler_Impl for ScriptExecHandler_Impl {
+            fn Invoke(
+                &self,
+                _error_code: windows::core::HRESULT,
+                _result: &PCWSTR,
+            ) -> windows::core::Result<()> {
                 Ok(())
             }
         }
@@ -308,12 +441,43 @@ pub async fn create_browser_webview(
 
                     let nav_complete: ICoreWebView2NavigationCompletedEventHandler =
                         NavCompleteHandler {
+                            app: app_wv.clone(),
+                            tab_id: tab_id_wv.clone(),
+                        }
+                        .into();
+                    let mut token = std::mem::zeroed();
+                    let _ = core.add_NavigationCompleted(&nav_complete, &mut token);
+
+                    // SPA URL monitoring: receive postMessage from injected script
+                    let msg_handler: ICoreWebView2WebMessageReceivedEventHandler =
+                        WebMessageHandler {
                             app: app_wv,
                             tab_id: tab_id_wv,
                         }
                         .into();
                     let mut token = std::mem::zeroed();
-                    let _ = core.add_NavigationCompleted(&nav_complete, &mut token);
+                    let _ = core.add_WebMessageReceived(&msg_handler, &mut token);
+
+                    // Inject SPA URL monitor script into every new document.
+                    // AddScriptToExecuteOnDocumentCreated covers future navigations;
+                    // ExecuteScript injects into the already-loading/loaded page.
+                    static SCRIPT_UTF16: std::sync::OnceLock<Vec<u16>> =
+                        std::sync::OnceLock::new();
+                    let script_wide = SCRIPT_UTF16.get_or_init(|| {
+                        SPA_URL_MONITOR_SCRIPT
+                            .encode_utf16()
+                            .chain(std::iter::once(0))
+                            .collect()
+                    });
+                    let pcwstr = PCWSTR(script_wide.as_ptr());
+                    let script_added: ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler =
+                        ScriptAddedHandler.into();
+                    let _ = core.AddScriptToExecuteOnDocumentCreated(pcwstr, &script_added);
+
+                    // Also inject into the current document (already loaded or loading)
+                    let exec_handler: ICoreWebView2ExecuteScriptCompletedHandler =
+                        ScriptExecHandler.into();
+                    let _ = core.ExecuteScript(pcwstr, &exec_handler);
                 }
             });
         }
