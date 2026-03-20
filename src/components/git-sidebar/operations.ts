@@ -37,7 +37,29 @@ interface GitSidebarOperationsDeps {
 }
 
 export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitSidebarOperations {
-  let pollInFlight = false;
+  /** Per-project promise chain — serialises git operations to avoid index.lock conflicts. */
+  const projectLocks = new Map<string, Promise<void>>();
+
+  /** Serialises `fn` behind any in-flight operation for this project. User operations queue here. */
+  async function withProjectLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = projectLocks.get(projectId) ?? Promise.resolve();
+    let resolve!: () => void;
+    const next = new Promise<void>((r) => { resolve = r; });
+    projectLocks.set(projectId, next);
+    try {
+      await prev;
+      return await fn();
+    } finally {
+      resolve();
+      if (projectLocks.get(projectId) === next) projectLocks.delete(projectId);
+    }
+  }
+
+  /** If the project has an unresolved lock, returns `undefined` (skip). Otherwise behaves like `withProjectLock`. */
+  function tryWithProjectLock<T>(projectId: string, fn: () => Promise<T>): Promise<T> | undefined {
+    if (projectLocks.has(projectId)) return undefined;
+    return withProjectLock(projectId, fn);
+  }
 
   function getProjectGitState(projectId: string): ProjectGitState {
     return store.getState().gitStates[projectId] || defaultGitState();
@@ -63,7 +85,7 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
     }
   }
 
-  async function refreshProject(project: Project, silent = false): Promise<void> {
+  async function refreshProjectInner(project: Project, silent: boolean): Promise<void> {
     const existingState = store.getState().gitStates[project.id];
     if (existingState?.isRepo === false) return;
 
@@ -106,6 +128,15 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
     }
   }
 
+  async function refreshProject(project: Project, silent = false): Promise<void> {
+    if (silent) {
+      const result = tryWithProjectLock(project.id, () => refreshProjectInner(project, true));
+      if (result) await result;
+    } else {
+      await withProjectLock(project.id, () => refreshProjectInner(project, false));
+    }
+  }
+
   async function fetchLog(project: Project): Promise<void> {
     try {
       const log = await getGitLog(project.path, 50);
@@ -116,44 +147,69 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
   }
 
   async function refreshAllProjects(silent = false): Promise<void> {
-    if (pollInFlight) return;
-    pollInFlight = true;
     const projects = store.getState().projects;
-    try {
-      await Promise.all(projects.map((p) => {
-        if (silent && getProjectGitState(p.id).loading) return;
-        return refreshProject(p, silent);
-      }));
-    } finally {
-      pollInFlight = false;
-    }
+    await Promise.all(projects.map((p) => {
+      if (silent && getProjectGitState(p.id).loading) return;
+      return refreshProject(p, silent);
+    }));
   }
 
   async function generateCommitMessageForProject(project: Project): Promise<void> {
     if (getProjectGitState(project.id).generating) return;
 
-    setGenerating(project.id, true, 'Generating...');
-    try {
-      const diff = await getGitDiff(project.path);
-      if (!diff.trim()) {
-        clearCommitMessage(project.id);
-        return;
+    await withProjectLock(project.id, async () => {
+      setGenerating(project.id, true, 'Generating...');
+      try {
+        const diff = await getGitDiff(project.path);
+        if (!diff.trim()) {
+          clearCommitMessage(project.id);
+          return;
+        }
+        const message = await generateCommitMessage(diff, (label) => {
+          setGenerating(project.id, true, label);
+        });
+        deps.localCommitMessages.set(project.id, message);
+        setCommitMessage(project.id, message);
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to generate commit message';
+        logger.error('git', 'Generate commit message failed', errorMsg);
+        updateGitState(project.id, { error: errorMsg });
+        setTimeout(() => {
+          const current = store.getState().gitStates[project.id];
+          if (current?.error === errorMsg) updateGitState(project.id, { error: null });
+        }, 5000);
+      } finally {
+        setGenerating(project.id, false);
       }
-      const message = await generateCommitMessage(diff, (label) => {
-        setGenerating(project.id, true, label);
-      });
-      deps.localCommitMessages.set(project.id, message);
-      setCommitMessage(project.id, message);
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to generate commit message';
-      logger.error('git', 'Generate commit message failed', errorMsg);
-      updateGitState(project.id, { error: errorMsg });
-      setTimeout(() => {
-        const current = store.getState().gitStates[project.id];
-        if (current?.error === errorMsg) updateGitState(project.id, { error: null });
-      }, 5000);
-    } finally {
-      setGenerating(project.id, false);
+    });
+  }
+
+  function isLockFileError(message: string): boolean {
+    const lower = message.toLowerCase();
+    return lower.includes('lock') && (lower.includes('file') || lower.includes('index'));
+  }
+
+  /** Show lock-file confirm dialog, remove the lock if confirmed, and retry the operation. */
+  async function handleLockFileRetry(
+    project: Project,
+    operation: string,
+    retryFn: () => Promise<void>,
+  ): Promise<void> {
+    const { confirmed } = await showConfirmDialog({
+      title: 'Git Lock File Detected',
+      message: `A git lock file is preventing the ${operation}. This usually means a previous git operation was interrupted. Would you like to remove the lock file and retry?`,
+      confirmText: 'Remove & Retry',
+      cancelText: 'Cancel',
+      danger: true,
+    });
+    if (confirmed) {
+      try {
+        await gitRemoveLockFile(project.path);
+        logger.info('git', 'Removed git lock file', { projectId: project.id });
+        await retryFn();
+      } catch (removeErr: unknown) {
+        deps.showNotification(project.id, removeErr instanceof Error ? removeErr.message : 'Failed to remove lock file', 'error');
+      }
     }
   }
 
@@ -167,60 +223,48 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       return;
     }
 
-    const loadingLabel = push ? 'Commit & Push' : 'Commit';
-    updateGitState(project.id, { loading: true, loadingLabel, error: null, notification: null });
-    try {
-      await gitStageAll(project.path);
-      const result = await gitCommit(project.path, message);
-      logger.info('git', 'Commit created', { projectId: project.id, commitId: result.commitId });
+    let lockFileDetected = false;
 
-      let pushFailed = '';
-      if (push) {
-        const pushResult = await gitPush(project.path);
-        if (pushResult.success) {
-          logger.info('git', 'Push completed', { projectId: project.id });
-        } else {
-          pushFailed = pushResult.message;
-        }
-      }
+    await withProjectLock(project.id, async () => {
+      const loadingLabel = push ? 'Commit & Push' : 'Commit';
+      updateGitState(project.id, { loading: true, loadingLabel, error: null, notification: null });
+      try {
+        await gitStageAll(project.path);
+        const result = await gitCommit(project.path, message);
+        logger.info('git', 'Commit created', { projectId: project.id, commitId: result.commitId });
 
-      deps.localCommitMessages.delete(project.id);
-      await refreshAndUpdate(project, { commitMessage: '' });
-
-      if (pushFailed) {
-        deps.showNotification(project.id, `Committed, but push failed: ${pushFailed}`, 'error', 8000);
-      }
-    } catch (err: unknown) {
-      updateGitState(project.id, { loading: false, loadingLabel: undefined });
-      const errorMsg = err instanceof Error ? err.message : String(err);
-
-      if (isLockFileError(errorMsg)) {
-        const { confirmed } = await showConfirmDialog({
-          title: 'Git Lock File Detected',
-          message: 'A git lock file is preventing the commit. This usually means a previous git operation was interrupted. Would you like to remove the lock file and retry?',
-          confirmText: 'Remove & Retry',
-          cancelText: 'Cancel',
-          danger: true,
-        });
-        if (confirmed) {
-          try {
-            await gitRemoveLockFile(project.path);
-            logger.info('git', 'Removed git lock file', { projectId: project.id });
-            await doCommit(project, push);
-          } catch (removeErr: unknown) {
-            deps.showNotification(project.id, removeErr instanceof Error ? removeErr.message : 'Failed to remove lock file', 'error');
+        let pushFailed = '';
+        if (push) {
+          const pushResult = await gitPush(project.path);
+          if (pushResult.success) {
+            logger.info('git', 'Push completed', { projectId: project.id });
+          } else {
+            pushFailed = pushResult.message;
           }
         }
-        return;
+
+        deps.localCommitMessages.delete(project.id);
+        await refreshAndUpdate(project, { commitMessage: '' });
+
+        if (pushFailed) {
+          deps.showNotification(project.id, `Committed, but push failed: ${pushFailed}`, 'error', 8000);
+        }
+      } catch (err: unknown) {
+        updateGitState(project.id, { loading: false, loadingLabel: undefined });
+        const errorMsg = err instanceof Error ? err.message : String(err);
+
+        if (isLockFileError(errorMsg)) {
+          lockFileDetected = true;
+          return;
+        }
+
+        deps.showNotification(project.id, errorMsg, 'error');
       }
+    });
 
-      deps.showNotification(project.id, errorMsg, 'error');
+    if (lockFileDetected) {
+      await handleLockFileRetry(project, 'commit', () => doCommit(project, push));
     }
-  }
-
-  function isLockFileError(message: string): boolean {
-    const lower = message.toLowerCase();
-    return lower.includes('lock') && (lower.includes('file') || lower.includes('index'));
   }
 
   async function doPush(project: Project): Promise<void> {
@@ -232,29 +276,48 @@ export function createGitSidebarOperations(deps: GitSidebarOperationsDeps): GitS
       return;
     }
 
-    updateGitState(project.id, { loading: true, loadingLabel: 'Push', error: null, notification: null });
-    try {
-      const pushResult = await gitPush(project.path);
+    let lockFileDetected = false;
 
-      if (!pushResult.success) {
+    await withProjectLock(project.id, async () => {
+      updateGitState(project.id, { loading: true, loadingLabel: 'Push', error: null, notification: null });
+      try {
+        const pushResult = await gitPush(project.path);
+
+        if (!pushResult.success) {
+          updateGitState(project.id, { loading: false, loadingLabel: undefined });
+          if (isLockFileError(pushResult.message)) {
+            lockFileDetected = true;
+            return;
+          }
+          deps.showNotification(project.id, `Push failed: ${pushResult.message}`, 'error');
+          return;
+        }
+
+        const msg = pushResult.message.toLowerCase();
+        if (msg.includes('up-to-date') || msg.includes('up to date')) {
+          updateGitState(project.id, { loading: false, loadingLabel: undefined });
+          deps.showNotification(project.id, 'Already up-to-date. Nothing to push.', 'info');
+          return;
+        }
+
+        logger.info('git', 'Push completed', { projectId: project.id });
+        await refreshAndUpdate(project);
+        deps.showNotification(project.id, 'Pushed successfully.', 'info');
+      } catch (err: unknown) {
         updateGitState(project.id, { loading: false, loadingLabel: undefined });
-        deps.showNotification(project.id, `Push failed: ${pushResult.message}`, 'error');
-        return;
-      }
+        const errorMsg = err instanceof Error ? err.message : String(err);
 
-      const msg = pushResult.message.toLowerCase();
-      if (msg.includes('up-to-date') || msg.includes('up to date')) {
-        updateGitState(project.id, { loading: false, loadingLabel: undefined });
-        deps.showNotification(project.id, 'Already up-to-date. Nothing to push.', 'info');
-        return;
-      }
+        if (isLockFileError(errorMsg)) {
+          lockFileDetected = true;
+          return;
+        }
 
-      logger.info('git', 'Push completed', { projectId: project.id });
-      await refreshAndUpdate(project);
-      deps.showNotification(project.id, 'Pushed successfully.', 'info');
-    } catch (err: unknown) {
-      updateGitState(project.id, { loading: false, loadingLabel: undefined });
-      deps.showNotification(project.id, err instanceof Error ? err.message : 'Push failed', 'error');
+        deps.showNotification(project.id, errorMsg, 'error');
+      }
+    });
+
+    if (lockFileDetected) {
+      await handleLockFileRetry(project, 'push', () => doPush(project));
     }
   }
 
