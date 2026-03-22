@@ -39,9 +39,8 @@ describe('git sidebar project render', () => {
     const clickSpy = vi.fn();
     const project = createProject();
     const gs = createGitState([]);
-    const element = renderProject(project, gs, true, {
+    const { element } = renderProject(project, gs, true, {
       localCommitMessages: new Map(),
-      textareaMaxHeight: 200,
       handlers: {
         onProjectRowClick: clickSpy,
         onGenerateCommitMessage: async () => {},
@@ -69,9 +68,8 @@ describe('git sidebar project render', () => {
         staged: false,
       },
     ]);
-    const element = renderProject(project, gs, true, {
+    const { element } = renderProject(project, gs, true, {
       localCommitMessages: new Map(),
-      textareaMaxHeight: 200,
       handlers: {
         onProjectRowClick: clickSpy,
         onGenerateCommitMessage: async () => {},

@@ -1,5 +1,5 @@
 import { createElement } from '../../utils/dom';
-import { STATUS_LETTERS, relativeTime } from './shared';
+import { STATUS_LETTERS, relativeTime, autoResizeCommitTextarea } from './shared';
 import type { Project, ProjectGitState, GitFileStatus, GitLogEntry } from '../../state/types';
 
 const committedFilesExpanded = new Map<string, boolean>();
@@ -23,17 +23,23 @@ export interface GitSidebarRenderHandlers {
 
 export interface GitProjectRenderDeps {
   localCommitMessages: Map<string, string>;
-  textareaMaxHeight: number;
   handlers: GitSidebarRenderHandlers;
 }
 
-export function renderProject(project: Project, gs: ProjectGitState, expanded: boolean, deps: GitProjectRenderDeps): HTMLElement {
+export interface RenderProjectResult {
+  element: HTMLElement;
+  /** Call after the element is mounted in the DOM to synchronously size the commit textarea. */
+  onMount: (() => void) | null;
+}
+
+export function renderProject(project: Project, gs: ProjectGitState, expanded: boolean, deps: GitProjectRenderDeps): RenderProjectResult {
   const wrap = createElement('div');
   const hasStatus = gs.status !== null;
   const hasFileChanges = (gs.status?.files.length ?? 0) > 0;
   const ahead = gs.status?.ahead ?? 0;
   const canExpand = hasStatus && (hasFileChanges || ahead > 0);
   const isExpanded = expanded && canExpand;
+  let commitTextarea: HTMLTextAreaElement | null = null;
 
   const row = createElement('div', { className: `git-project-row${isExpanded ? ' active' : ''}` });
 
@@ -78,7 +84,9 @@ export function renderProject(project: Project, gs: ProjectGitState, expanded: b
       err.textContent = gs.error;
       wrap.appendChild(err);
     } else if (gs.status) {
-      wrap.appendChild(renderCommitArea(project, gs, deps));
+      const { element: commitArea, textarea } = renderCommitArea(project, gs, deps);
+      commitTextarea = textarea;
+      wrap.appendChild(commitArea);
       if (hasFileChanges) {
         wrap.appendChild(renderChangesSection(project, gs.status.files));
       }
@@ -94,7 +102,11 @@ export function renderProject(project: Project, gs: ProjectGitState, expanded: b
     }
   }
 
-  return wrap;
+  const onMount = commitTextarea?.value
+    ? () => { autoResizeCommitTextarea(commitTextarea!); }
+    : null;
+
+  return { element: wrap, onMount };
 }
 
 export function renderLog(gs: ProjectGitState): HTMLElement {
@@ -128,7 +140,7 @@ function renderFile(file: GitFileStatus): HTMLElement {
   return row;
 }
 
-function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjectRenderDeps): HTMLElement {
+function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjectRenderDeps): { element: HTMLElement; textarea: HTMLTextAreaElement } {
   const area = createElement('div', { className: 'git-commit-area' });
 
   const textarea = createElement('textarea', { className: 'git-commit-textarea' });
@@ -136,20 +148,11 @@ function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjec
   textarea.value = deps.localCommitMessages.get(project.id) ?? gs.commitMessage;
   textarea.disabled = gs.loading;
 
-  const autoResize = () => {
-    textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, deps.textareaMaxHeight) + 'px';
-  };
-
   textarea.addEventListener('input', () => {
     deps.localCommitMessages.set(project.id, textarea.value);
-    autoResize();
+    autoResizeCommitTextarea(textarea);
   });
   area.appendChild(textarea);
-
-  if (textarea.value) {
-    requestAnimationFrame(autoResize);
-  }
 
   const buttons = createElement('div', { className: 'git-commit-buttons' });
 
@@ -181,7 +184,7 @@ function renderCommitArea(project: Project, gs: ProjectGitState, deps: GitProjec
   });
 
   area.appendChild(buttons);
-  return area;
+  return { element: area, textarea: textarea as HTMLTextAreaElement };
 }
 
 function renderChangesSection(project: Project, files: GitFileStatus[]): HTMLElement {

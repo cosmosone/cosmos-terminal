@@ -12,6 +12,12 @@ export const STATUS_LETTERS: Record<GitFileStatusKind, string> = {
 /** Must match .git-commit-textarea max-height in git-sidebar.css */
 export const COMMIT_TEXTAREA_MAX_HEIGHT = 200;
 
+/** Resize a commit textarea to fit its content, capped at COMMIT_TEXTAREA_MAX_HEIGHT. */
+export function autoResizeCommitTextarea(ta: HTMLTextAreaElement): void {
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, COMMIT_TEXTAREA_MAX_HEIGHT) + 'px';
+}
+
 export function relativeTime(epochSeconds: number): string {
   const diff = Math.floor(Date.now() / 1000 - epochSeconds);
   if (diff < 60) return 'just now';

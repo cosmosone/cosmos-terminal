@@ -11,7 +11,6 @@ import {
 } from '../state/actions';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { setupSidebarResize } from '../utils/sidebar-resize';
-import { COMMIT_TEXTAREA_MAX_HEIGHT } from './git-sidebar/shared';
 import { renderLog, renderProject, pruneRenderState, type GitSidebarRenderHandlers } from './git-sidebar/render';
 import { createGitSidebarNotificationManager } from './git-sidebar/notification-manager';
 import { createGitSidebarOperations } from './git-sidebar/operations';
@@ -127,7 +126,6 @@ export function initGitSidebar(onLayoutChange: () => void): void {
 
   const projectRenderDeps = {
     localCommitMessages,
-    textareaMaxHeight: COMMIT_TEXTAREA_MAX_HEIGHT,
     handlers: renderHandlers,
   };
 
@@ -193,6 +191,7 @@ export function initGitSidebar(onLayoutChange: () => void): void {
     }
 
     // Update only projects whose state actually changed
+    const mountCallbacks: (() => void)[] = [];
     for (const project of gitProjects) {
       const gs = gitStates[project.id] || defaultGitState();
       const expanded = expandedIds.has(project.id);
@@ -202,7 +201,7 @@ export function initGitSidebar(onLayoutChange: () => void): void {
         continue;
       }
 
-      const newElement = renderProject(project, gs, expanded, projectRenderDeps);
+      const { element: newElement, onMount } = renderProject(project, gs, expanded, projectRenderDeps);
 
       if (existing) {
         existing.element.replaceWith(newElement);
@@ -213,6 +212,8 @@ export function initGitSidebar(onLayoutChange: () => void): void {
       } else {
         renderedProjects.set(project.id, { element: newElement, gs, expanded, projectName: project.name });
       }
+
+      if (onMount) mountCallbacks.push(onMount);
     }
 
     // Reconcile DOM order — appendChild moves existing nodes without recreating.
@@ -232,6 +233,10 @@ export function initGitSidebar(onLayoutChange: () => void): void {
         changesContent.appendChild(renderedProjects.get(project.id)!.element);
       }
     }
+
+    // Synchronously auto-size commit textareas now that elements are in the
+    // DOM.  This avoids a 1-frame flash caused by deferring via RAF.
+    for (const cb of mountCallbacks) cb();
 
     // --- Graph section ---
     const activeId = gitSidebar.activeProjectId || gitProjects[0]?.id;
