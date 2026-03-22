@@ -384,7 +384,7 @@ export function initFileTabContent(): FileTabContentApi {
         });
       }
       items.push({
-        label: 'Copy',
+        label: 'Copy All',
         action: () => { void navigator.clipboard.writeText(currentContent); },
       });
       showContextMenu(e.clientX, e.clientY, items);
