@@ -4,12 +4,13 @@ import {
   setFileBrowserSidebarWidth,
   toggleFileBrowserPath,
   addFileTab,
+  removeFileTab,
 } from '../state/actions';
 import { listDirectory, searchFiles, showInExplorer, deletePath, onFsChange } from '../services/fs-service';
 import type { DirEntry } from '../services/fs-service';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { setupSidebarResize } from '../utils/sidebar-resize';
-import { normalizeFsPath } from '../utils/path';
+import { normalizeFsPath, isPathWithinDirectory } from '../utils/path';
 import { folderIcon, fileIcon, chevronRightIcon, searchIcon, refreshIcon } from '../utils/icons';
 import { showContextMenu } from './context-menu';
 import type { MenuItem } from './context-menu';
@@ -227,6 +228,17 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     row.appendChild(nameEl);
   }
 
+  function closeFileTabsForDeletedPath(deletedPath: string): void {
+    const state = store.getState();
+    const project = state.projects.find((p) => p.id === state.activeProjectId);
+    if (!project) return;
+    for (const tab of project.tabs) {
+      if (isPathWithinDirectory(tab.filePath, deletedPath)) {
+        removeFileTab(project.id, tab.id);
+      }
+    }
+  }
+
   async function handleDelete(path: string, name: string): Promise<void> {
     const { confirmed } = await showConfirmDialog({
       title: 'Delete',
@@ -237,6 +249,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     if (!confirmed) return;
     try {
       await deletePath(path);
+      closeFileTabsForDeletedPath(path);
       dirCache.clear();
       scheduleRender();
     } catch {
@@ -292,6 +305,7 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
     for (const path of selectedPaths) {
       try {
         await deletePath(path);
+        closeFileTabsForDeletedPath(path);
       } catch {
         // ignore
       }
