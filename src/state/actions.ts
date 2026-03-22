@@ -721,7 +721,7 @@ export function addFileTab(projectId: string, filePath: string, fileType: string
     title: basename(filePath, 'File'),
     filePath,
     fileType,
-    editing: false,
+    editing: fileType === 'markdown',
     dirty: false,
     locked: false,
   };

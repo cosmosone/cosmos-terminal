@@ -1,7 +1,7 @@
 import { store } from '../state/store';
 import { setFileTabEditing, setFileTabDirty } from '../state/actions';
 import { readTextFile, writeTextFile, writeTextFileIfUnmodified, getFileMtime, onFsChange } from '../services/fs-service';
-import { showContextMenu } from './context-menu';
+import { showContextMenu, type MenuItem } from './context-menu';
 import { showConfirmDialog } from './confirm-dialog';
 import { getGrammar } from '../highlight/languages/index';
 import { tokenize, tokensToHtml } from '../highlight/tokenizer';
@@ -307,19 +307,6 @@ export function initFileTabContent(): FileTabContentApi {
       const mdView = createElement('div', { className: 'file-tab-markdown' });
       mdView.innerHTML = renderMarkdownCached(tab.filePath, currentContent, lastMtime);
       content.appendChild(mdView);
-
-      content.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        showContextMenu(e.clientX, e.clientY, [
-          {
-            label: 'Edit',
-            action: () => {
-              editBuffer = currentContent;
-              setFileTabEditing(projectId, tab.id, true);
-            },
-          },
-        ]);
-      });
     } else {
       // Markdown editing uses the plain textarea path to avoid overlay
       // hit-testing drift between textarea and syntax backdrop.
@@ -377,25 +364,31 @@ export function initFileTabContent(): FileTabContentApi {
         });
         content.appendChild(textarea);
       }
+    }
 
-      if (tab.fileType === 'markdown') {
-        content.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          showContextMenu(e.clientX, e.clientY, [
-            {
-              label: 'View',
-              action: () => {
-                setFileTabEditing(projectId, tab.id, false);
-              },
-            },
-          ]);
+    content.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const items: MenuItem[] = [];
+      if (tab.fileType === 'markdown' && !tab.editing) {
+        items.push({
+          label: 'Edit',
+          action: () => {
+            editBuffer = currentContent;
+            setFileTabEditing(projectId, tab.id, true);
+          },
         });
-      } else {
-        content.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
+      } else if (tab.fileType === 'markdown') {
+        items.push({
+          label: 'View',
+          action: () => { setFileTabEditing(projectId, tab.id, false); },
         });
       }
-    }
+      items.push({
+        label: 'Copy',
+        action: () => { void navigator.clipboard.writeText(currentContent); },
+      });
+      showContextMenu(e.clientX, e.clientY, items);
+    });
 
     container.appendChild(content);
     findController.attach(content);
