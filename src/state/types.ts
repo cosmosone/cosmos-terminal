@@ -91,6 +91,7 @@ export interface AppSettings {
   confirmCloseTerminalTab: boolean;
   confirmCloseProjectTab: boolean;
   runCommand: string;
+  showRunButton: boolean;
   keybindings: KeybindingConfig;
   openaiApiKey: string;
   browserHomePage: string;

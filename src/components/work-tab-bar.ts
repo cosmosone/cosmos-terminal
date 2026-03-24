@@ -333,7 +333,7 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
         tab.appendChild(muteEl);
       }
 
-      if (!session.agentCommand) {
+      if (!session.agentCommand && store.getState().settings.showRunButton) {
         const playEl = createElement('span', { className: 'tab-play' });
         playEl.innerHTML = playIcon(10);
         playEl.title = store.getState().settings.runCommand || 'Run command';
@@ -613,6 +613,10 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
       lastProject = store.getState().projects.find((p) => p.id === activeProjectId);
       render(lastProject);
     },
+  );
+  store.select(
+    (s) => s.settings.showRunButton,
+    () => render(lastProject),
   );
 
   render(lastProject);

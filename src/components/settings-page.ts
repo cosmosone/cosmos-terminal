@@ -135,7 +135,10 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
         apply({ ctrlShiftVAsAltV: v })),
     );
     term.content.appendChild(
-      createTextRow('Run Command', settings.runCommand, (v) => apply({ runCommand: v })),
+      createTextRow('Run Custom Command', settings.runCommand, (v) => apply({ runCommand: v })),
+    );
+    term.content.appendChild(
+      createToggleRow('Show Run Button in Tabs', settings.showRunButton, (v) => apply({ showRunButton: v })),
     );
     inner.appendChild(term.wrapper);
 
