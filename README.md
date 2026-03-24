@@ -1,6 +1,6 @@
 # Cosmos Terminal
 
-**A terminal built for coding on Windows.** Project-level workspace organization, split panes, a file browser, and a built-in Git sidebar — so you can write, navigate, and commit without ever leaving the terminal.
+**A terminal built for vibe coding on Windows.** Project workspaces, split panes, an embedded browser, AI agent sessions, a file browser, and Git — all in one window. No IDE required.
 
 Built with [Tauri v2](https://v2.tauri.app/) + Rust. Developed and tested on Windows 11.
 
@@ -8,87 +8,116 @@ Built with [Tauri v2](https://v2.tauri.app/) + Rust. Developed and tested on Win
 
 ---
 
-## The Problem
+## Why Cosmos Terminal
 
-Developers on Windows don't have many great options. Windows Terminal is fast but it's just a shell — no project awareness, no source control. VS Code has an integrated terminal but you're running an entire IDE just to use a terminal with Git. Tabby and Hyper are Electron-based, cross-platform afterthoughts that don't feel native on Windows.
+Windows Terminal is fast but it's just a shell — no project awareness, no source control, no file browsing. VS Code has all of that, but you're running an entire IDE. Electron-based terminals like Tabby and Hyper are cross-platform afterthoughts that don't feel native on Windows.
 
-**Cosmos Terminal fills the gap**: a lightweight Windows terminal that understands your coding workflow.
+Cosmos Terminal fills the gap: a lightweight, native Windows terminal that understands your coding workflow. It's particularly well suited for **vibe coding** — working with AI agents like Claude, Codex, and Gemini directly in your terminal while keeping your files, browser, and Git all within reach.
 
 ## What Makes It Different
 
-### Project-Level Organization
+### Project-Level Organisation
 
-Most terminals give you a flat list of tabs. That breaks down when you're working across multiple codebases. Cosmos Terminal organizes terminals in two levels — **projects** at the top, **sessions** within each project:
+Most terminals give you a flat list of tabs. That breaks down when you're working across multiple codebases. Cosmos Terminal organises terminals in two levels — **projects** at the top, **work tabs** within each project:
 
 ```
 cosmos-api          ← project tab
   ├── terminal 1    →  dev server
   ├── terminal 2    →  database
-  └── terminal 3    →  tests
+  ├── config.yaml   →  file tab (built-in editor)
+  └── localhost:3000 →  browser tab (embedded)
 
 cosmos-frontend     ← project tab
+  ├── Claude        →  AI agent session
   ├── terminal 1    →  vite dev
-  └── terminal 2    →  playwright
+  └── terminal 2    →  tests
 ```
 
-Switch projects with one click. Each project keeps its own terminals, split layouts, and working directory — all persisted across restarts.
+Switch projects with one click. Each project keeps its own terminals, file tabs, browser tabs, split layouts, and working directory — all persisted across restarts.
 
-### Tab Activity Indicators
+### AI Agent Sessions
 
-When a background terminal has a running command, a pulsing blue dot appears on its session tab and project tab — so you always know where work is happening without switching tabs to check.
+Launch AI coding agents directly from the terminal. Built-in support for **Claude**, **Codex**, **Gemini**, and **Cline** — select an agent from the dropdown when creating a new session and it starts automatically with the right command.
 
-- Detects activity via **OSC 133 shell integration** (precise command start/finish signals) with automatic fallback to **output volume heuristics** for shells without OSC support
-- Dots only appear on **background tabs** — never on the tab you're already looking at
-- Auto-clears when the command finishes (OSC) or output stops for 5 seconds (fallback)
-- Suppresses false positives from terminal resize/repaint bursts after tab switches
+Agent sessions appear as regular work tabs with their own icons, so you can run an AI agent alongside your dev server and tests in the same project.
+
+### Embedded Browser
+
+Open web pages in tabs alongside your terminals — no Alt-Tab to Chrome. Built on WebView2 (the same engine behind Edge, already on Windows 11).
+
+- Address bar with URL entry and DuckDuckGo search fallback
+- Back, forward, reload, and zoom controls (`Ctrl++`/`Ctrl+-`/`Ctrl+0`)
+- LRU-based tab pooling — keeps memory bounded while preserving page state
+- Browser tabs persist across restarts like everything else
+
+Useful for keeping docs, localhost, or a PR review open right next to the terminal that's running the code.
 
 ### Built-in Git Sidebar
 
-Stage files, review diffs, write commit messages, and push — right next to your terminal. No context switching to another app. Toggle it with `Ctrl+Shift+G`.
+Stage files, review diffs, write commit messages, and push — right next to your terminal. Toggle with `Alt+D`. Projects with no changes stay compact to reduce visual noise.
 
-Projects with no working-tree file changes stay compact in the list (no expand chevron and no commit action panel) to reduce visual noise.
+Commit history with a graph view lets you browse past commits without switching to another tool.
 
-Optionally generate conventional commit messages with AI (OpenAI) for large changesets.
+Optionally generate conventional commit messages with AI (OpenAI `gpt-5-nano`) for large changesets — configure your API key in settings.
 
-### File Browser Sidebar
+### File Browser & Editor
 
-Browse your project's files without leaving the terminal. Toggle it with `Alt+F` — a tree view of the active project's directory appears on the right side, mirroring the Git sidebar's position.
+Toggle with `Alt+F` to get a tree view of the active project's directory.
 
-- **Tree navigation** — Expand and collapse folders inline. The tree auto-scopes to the active project's root directory.
-- **Open any file** — Double-click any file to open it in a built-in viewer tab. Text files open directly in an editable textarea. Markdown files (`.md`) render as formatted output with a right-click "Edit" option to switch to a raw editor, and "View" to switch back.
-- **File tabs in the session bar** — Opened files appear as tabs alongside your terminal sessions, separated by a divider. Dirty (unsaved) files show a `*` prefix. Save with the header button after editing.
-- **Real-time file refresh + safe saves** — Open file tabs auto-check for external changes from filesystem events, tab re-activation, window focus, and periodic fallback polling. Saves are conflict-aware: if the file changed on disk, you can reload or explicitly overwrite.
-- **Tab locking** — Right-click any tab (terminal or file) and select "Lock" to protect it from "Close Others". Locked tabs show a lock icon in place of the close button — click the icon to unlock.
-- **Sidebar mutual exclusion** — Only one sidebar (file browser or Git) is open at a time. Opening one automatically closes the other.
-- **Resizable** — Drag the left edge of the sidebar to adjust width (200–500px). Width persists across restarts.
+- **Open any file** as a tab — text files are editable, Markdown renders with formatting (toggle between view and edit)
+- **Find in document** — `Ctrl+F` for case-insensitive search with match highlighting and navigation
+- **Real-time sync** — file tabs detect external changes via filesystem watcher events and auto-refresh
+- **Conflict-safe saves** — if a file changed on disk since you opened it, you choose whether to reload or overwrite
+- **Search files** — `Ctrl+Shift+F` to search the file tree by name
+- **Context actions** — right-click for delete, show in Explorer, and more
+- Sidebar is resizable (200–500px) and width persists
 
-### Built and Tested on Windows 11
+### Split Panes
 
-This isn't a Linux terminal ported to Windows. Cosmos Terminal is developed and tested on Windows 11 from day one:
+Horizontal and vertical splits within any terminal session. Keyboard shortcuts for splitting (`Alt+X/S/Z/C`) and navigating between panes (`Alt+Arrows`). Drag dividers to resize. The split layout is a binary tree — nest splits as deep as you need.
 
-- **ConPTY** backend — works with PowerShell, CMD, Git Bash, and other Windows shells
-- **WebGL rendering** with ClearType LCD text optimizations
-- **Windows 11 dark mode** title bar integration
-- **Tauri v2 + Rust** backend — uses the system WebView2 already on Windows 11, no bundled browser
+### Tab Activity Indicators
+
+When a background terminal has a running command, a pulsing blue dot appears on its session tab and project tab.
+
+- Detects activity via **OSC 133 shell integration** with automatic fallback to **output volume heuristics**
+- Only appears on background tabs — never on the one you're looking at
+- Auto-clears when the command finishes or output stops
+- Mute individual sessions to suppress their indicators
+
+### Run Button
+
+A configurable play button on terminal tabs that sends a command to the active pane. Set your build/test command once (e.g. `python scripts/build.py`) and trigger it with one click. Toggled via settings.
 
 ---
 
 ## Features
 
-- **Multi-project workspaces** — Top-level project tabs, each with its own terminals and layout
-- **Sessions per project** — Tabbed sessions within each project, each with independent split panes
-- **Split panes** — Horizontal and vertical splits with keyboard navigation
-- **Activity indicators** — Pulsing blue dots on project and session tabs when background terminals have running commands or output, powered by OSC 133 shell integration with volume-based fallback
-- **File browser sidebar** — Tree view of the project directory; double-click any file to open it in a built-in viewer/editor tab
-- **File tabs** — Text and Markdown viewer/editor tabs alongside terminal sessions, with real-time external change detection and conflict-safe save flows
-- **Tab locking** — Lock any tab (terminal or file) to protect it from "Close Others"
-- **Git sidebar** — Stage, diff, commit, push, and browse commit history from a collapsible panel
-- **AI commit messages** — Generate conventional commit messages from staged changes (OpenAI, optional)
-- **WebGL rendering** — GPU-accelerated terminal via xterm.js WebGL addon with ClearType optimizations
-- **Workspace persistence** — Projects, sessions, splits, and sidebar state restored on restart
-- **Configurable keybindings** — Customize shortcuts for splits, navigation, and session cycling
-- **System monitor** — CPU and memory usage in the status bar
-- **Lightweight** — Tauri v2 + Rust backend, small install footprint
+| Category | Features |
+|----------|----------|
+| **Workspaces** | Multi-project tabs, per-project sessions, workspace persistence across restarts |
+| **Terminal** | Split panes (horizontal/vertical), WebGL rendering with ClearType, 10K–100K scrollback, copy-on-select, right-click paste |
+| **AI Agents** | One-click launch for Claude, Codex, Gemini, Cline with auto-configured commands |
+| **Browser** | Embedded WebView2 tabs with navigation, zoom, address bar, LRU pooling |
+| **Git** | Stage, diff, commit, push, commit history graph, AI commit messages (OpenAI) |
+| **Files** | File browser tree, built-in editor/viewer, Markdown rendering, find in document, filesystem watcher |
+| **Tabs** | Drag-to-reorder, lock (protect from close), mute (suppress indicators), rename, context menus |
+| **Run** | Configurable run button on terminal tabs for quick command execution |
+| **Customisation** | 22 configurable keybindings, terminal/UI/editor font settings, shell path selection |
+| **System** | CPU and memory monitor in status bar, debug logging with auto-expiry, memory cleanup |
+
+## Built for Windows
+
+This isn't a Linux terminal ported to Windows. Every layer is Windows-native:
+
+- **ConPTY** backend — works with PowerShell, CMD, Git Bash, NuShell, and other Windows shells
+- **WebView2** — the system browser engine already on Windows 11, no bundled Chromium
+- **WebGL rendering** with ClearType LCD text optimisations
+- **Windows 11 dark mode** title bar integration
+- **Tauri v2 + Rust** backend — small install footprint, low memory use
+- **Path security** — canonicalisation and traversal prevention at every IPC boundary
+
+---
 
 ## Getting Started
 
@@ -115,31 +144,55 @@ The installer will be in `src-tauri/target/release/bundle/`.
 
 ## Keybindings
 
-| Action | Shortcut |
-|--------|----------|
+All shortcuts are configurable in settings (`Ctrl+,`).
+
+| Action | Default |
+|--------|---------|
 | New session | `Ctrl+Shift+T` |
-| Close session | `Ctrl+Shift+W` |
+| Close session | `Ctrl+W` |
 | Settings | `Ctrl+,` |
 | File browser | `Alt+F` |
-| Git sidebar | `Ctrl+Shift+G` / `Alt+D` |
-| Split panes | Configurable in settings |
-| Navigate panes | Configurable in settings |
-| Cycle sessions/projects | Configurable in settings |
+| Search file browser | `Ctrl+Shift+F` |
+| Git sidebar | `Alt+D` |
+| Find in document | `Ctrl+F` |
+| Split down / up / left / right | `Alt+X` / `Alt+S` / `Alt+Z` / `Alt+C` |
+| Navigate panes | `Alt+Arrows` |
+| Cycle sessions | `Alt+K` / `Alt+J` |
+| Cycle projects | `Alt+I` / `Alt+U` |
+| Rename tab | `Ctrl+Shift+N` |
+| Scroll to bottom | `Alt+B` |
 
 ## Project Structure
 
 ```
 src/                  # Frontend (TypeScript + xterm.js)
-  components/         # UI components (tabs, settings, git sidebar, file browser)
-  services/           # PTY, settings, git, filesystem, system monitor
-  state/              # Centralized state management
+  components/         # UI components (tabs, settings, git, file browser, browser)
+  services/           # PTY, settings, git, filesystem, browser, system monitor
+  state/              # Centralised state management (Redux-like store)
   layout/             # Pane tree and split layout logic
-  utils/              # Shared utilities (icons, path helpers, file types)
+  utils/              # Shared utilities (icons, paths, file types, tab drag)
 
 src-tauri/            # Backend (Rust + Tauri v2)
-  src/commands/       # Tauri IPC handlers (git, PTY, filesystem, system)
+  src/commands/       # Tauri IPC handlers (git, PTY, filesystem, browser, system)
   src/pty/            # PTY session management (ConPTY)
+  src/browser/        # WebView2 pool and lifecycle management
+  src/security/       # Path validation and input sanitisation
+  src/watcher.rs      # Filesystem change detection (debounced)
 ```
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Tauri v2 |
+| Backend | Rust (tokio, parking_lot, serde) |
+| Terminal | xterm.js 6 with WebGL addon |
+| PTY | portable-pty (ConPTY on Windows) |
+| Git | git2 (libgit2 bindings) |
+| Browser | WebView2 via webview2-com |
+| System stats | sysinfo |
+| File watching | notify (debounced) |
+| Frontend | Vanilla TypeScript, direct DOM manipulation — no React/Vue/Svelte |
 
 ## License
 
