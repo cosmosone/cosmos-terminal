@@ -276,6 +276,11 @@ export class SplitContainer {
     }
   }
 
+  writeToPane(paneId: string, data: string): void {
+    const tp = this.terminals.get(paneId);
+    if (tp) tp.write(data);
+  }
+
   reLayout(): void {
     const project = getActiveProject();
     if (!project) return;

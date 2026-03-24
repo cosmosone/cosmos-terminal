@@ -40,7 +40,6 @@
   padding: 0 8px;
   border-radius: 5px 5px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
   white-space: nowrap;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
@@ -74,8 +73,15 @@
   font-size: 12px;
 }
 
-.work-tab:hover .tab-close {
+.work-tab:hover .tab-close,
+.work-tab:hover .tab-play {
   opacity: 0.6;
+}
+
+.work-tab .tab-play {
+  width: 16px;
+  height: 16px;
+  font-size: 12px;
 }
 
 .work-tab .tab-lock {

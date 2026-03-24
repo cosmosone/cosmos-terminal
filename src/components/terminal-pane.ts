@@ -916,6 +916,12 @@ export class TerminalPane {
     this.element.classList.remove('focused');
   }
 
+  write(data: string): void {
+    if (this.backendId) {
+      writeToPtySession(this.backendId, data);
+    }
+  }
+
   applySettings(settings: AppSettings): void {
     logger.info('pty', 'Applying settings to terminal', {
       paneId: this.paneId,

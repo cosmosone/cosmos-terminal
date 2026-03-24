@@ -3,7 +3,7 @@ import { initStore, store } from './state/store';
 import { addProject, addSession, getActiveProject, getActiveSession, removeProject, removeSession, splitPane, cycleSession, cycleProject, toggleSettingsView, toggleGitSidebar, toggleFileBrowserSidebar, defaultGitSidebarState, defaultFileBrowserSidebarState } from './state/actions';
 import { loadSettings, saveSettings, buildUiFont } from './services/settings-service';
 import { loadWorkspace, saveWorkspace } from './services/workspace-service';
-import { findLeafPaneIds } from './layout/pane-tree';
+import { resolveActivePaneId } from './layout/pane-tree';
 import type { AppState, BrowserTab, KeybindingConfig, Session, FileTab } from './state/types';
 import { logger } from './services/logger';
 import { initProjectTabBar } from './components/project-tab-bar';
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   const refresh = () => splitContainer.render();
 
   initProjectTabBar(refresh);
-  const workTabBar = initWorkTabBar(refresh);
+  const workTabBar = initWorkTabBar(refresh, (paneId, data) => splitContainer.writeToPane(paneId, data));
   initSettingsPage(() => { splitContainer.applySettings(); applyFontSettings(); });
   initStatusBar(() => splitContainer.clearAllScrollback());
   initLogViewer();
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
       const project = getActiveProject();
       const session = getActiveSession();
       if (!project || !session) return;
-      const target = session.activePaneId ?? findLeafPaneIds(session.paneTree)[0];
+      const target = resolveActivePaneId(session.activePaneId, session.paneTree);
       if (target) {
         splitPane(project.id, session.id, target, direction, before);
         refresh();

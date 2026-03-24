@@ -5,6 +5,11 @@ export function findLeafPaneIds(node: PaneNode): string[] {
   return node.children.flatMap(findLeafPaneIds);
 }
 
+/** Resolve a session's effective pane: active pane if set, otherwise first leaf. */
+export function resolveActivePaneId(activePaneId: string | null, paneTree: PaneNode): string | undefined {
+  return activePaneId ?? findLeafPaneIds(paneTree)[0];
+}
+
 export function updateRatio(
   node: PaneNode,
   path: number[],

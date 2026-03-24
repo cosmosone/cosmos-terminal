@@ -53,7 +53,7 @@ export const DEFAULT_FONT_SETTINGS = {
   fontFamily: 'Cascadia Code',
   lineHeight: 1.2,
   uiFontFamily: 'System Default',
-  uiFontSize: 12.5,
+  uiFontSize: 11.5,
   viewerFontSize: 12.5,
   editorFontSize: 12.5,
 } as const;
@@ -96,6 +96,7 @@ function defaultSettings(): AppSettings {
     confirmCloseProjectTab: true,
     debugLogging: false,
     debugLoggingExpiry: null,
+    runCommand: 'python scripts/build.py',
     openaiApiKey: '',
     browserHomePage: 'https://www.google.com.au',
     browserPoolSize: 10,

@@ -59,6 +59,21 @@
   background: var(--bg-hover);
 }
 
+/* Play/run button — same behaviour as close button (hidden until tab hover) */
+.tab-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.tab-play:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
 /* Drop indicator — shared between project and work tab bars */
 .tab-drop-indicator {
   position: absolute;

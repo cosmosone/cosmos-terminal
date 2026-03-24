@@ -90,6 +90,7 @@ export interface AppSettings {
   debugLoggingExpiry: string | null;
   confirmCloseTerminalTab: boolean;
   confirmCloseProjectTab: boolean;
+  runCommand: string;
   keybindings: KeybindingConfig;
   openaiApiKey: string;
   browserHomePage: string;

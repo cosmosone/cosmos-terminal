@@ -2,7 +2,7 @@ import { store } from '../state/store';
 import { addSession, removeSession, removeProject, setActiveSession, setActiveTab, removeFileTab, closeOtherTabs, splitPane, renameSession, setFileTabEditing, toggleSessionLocked, toggleSessionMuted, toggleFileTabLocked, toggleFileBrowserSidebar, toggleGitSidebar, reorderSession, reorderFileTab, addBrowserTab, removeBrowserTab, setActiveBrowserTab, toggleBrowserTabLocked, reorderBrowserTab, closeOtherBrowserTabs } from '../state/actions';
 import { AGENT_DEFINITIONS } from '../services/agent-definitions';
 import { setInitialCommand } from '../services/initial-command';
-import { findLeafPaneIds } from '../layout/pane-tree';
+import { resolveActivePaneId } from '../layout/pane-tree';
 import { logger } from '../services/logger';
 import { confirmCloseProject, confirmCloseTerminalTab, showConfirmDialog } from './confirm-dialog';
 import { showContextMenu, startInlineRename } from './context-menu';
@@ -11,7 +11,7 @@ import { createElement, $ } from '../utils/dom';
 import { appendActivityIndicator } from './tab-indicators';
 import type { PaneLeaf, Project } from '../state/types';
 import { suppressBrowserWebview, restoreBrowserWebview } from './browser-tab-content';
-import { bellOffIcon, chevronDownIcon, fileIcon, folderIcon, gitBranchIcon, globeIcon, lockIcon, terminalIcon } from '../utils/icons';
+import { bellOffIcon, chevronDownIcon, fileIcon, folderIcon, gitBranchIcon, globeIcon, lockIcon, playIcon, terminalIcon } from '../utils/icons';
 import { createScrollableTabList } from '../utils/scrollable-tab-list';
 import { createTabDragManager } from '../utils/tab-drag';
 import { positionDropdownPanel, createDropdownRow } from '../utils/dropdown';
@@ -26,7 +26,7 @@ function sessionIcon(agentCommand: string | undefined, title: string, size?: num
   return iconFn(size);
 }
 
-export function initWorkTabBar(onTabChange: () => void): { triggerRename: () => void } {
+export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId: string, data: string) => void): { triggerRename: () => void } {
   const bar = $('#work-tab-bar')!;
 
   const dragManager = createTabDragManager();
@@ -333,6 +333,20 @@ export function initWorkTabBar(onTabChange: () => void): { triggerRename: () => 
         tab.appendChild(muteEl);
       }
 
+      if (!session.agentCommand) {
+        const playEl = createElement('span', { className: 'tab-play' });
+        playEl.innerHTML = playIcon(10);
+        playEl.title = store.getState().settings.runCommand || 'Run command';
+        playEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const cmd = store.getState().settings.runCommand;
+          if (!cmd || !onWriteToPane) return;
+          const paneId = resolveActivePaneId(session.activePaneId, session.paneTree);
+          if (paneId) onWriteToPane(paneId, cmd + '\r');
+        });
+        tab.appendChild(playEl);
+      }
+
       appendLockOrClose(
         tab,
         session.locked,
@@ -356,7 +370,7 @@ export function initWorkTabBar(onTabChange: () => void): { triggerRename: () => 
 
       tab.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        const targetPaneId = session.activePaneId ?? findLeafPaneIds(session.paneTree)[0];
+        const targetPaneId = resolveActivePaneId(session.activePaneId, session.paneTree);
 
         const doSplit = (direction: 'horizontal' | 'vertical', before: boolean): void => {
           if (!targetPaneId) return;

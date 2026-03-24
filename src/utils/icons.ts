@@ -6,6 +6,10 @@ function filledSvgAttrs(size: number, viewBox = '0 0 16 16'): string {
   return `width="${size}" height="${size}" viewBox="${viewBox}" fill="currentColor"`;
 }
 
+export function playIcon(size = 14): string {
+  return `<svg ${svgAttrs(size)}><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+}
+
 export function folderIcon(size = 14): string {
   return `<svg ${svgAttrs(size)}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
 }
