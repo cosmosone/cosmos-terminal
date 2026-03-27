@@ -16,20 +16,8 @@
 .tok-heading    { color: #7aa2f7; }
 .tok-meta       { color: #f7768e; }
 
-/* ===== Overlay editor layout ===== */
-.highlighted-editor-wrap {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-/* Shared properties that must stay in sync between layers */
-.highlighted-editor-backdrop,
-.highlighted-editor-textarea {
-  position: absolute;
-  top: 0;
-  left: 0;
+/* ===== Read-only syntax-highlighted code view ===== */
+.file-tab-code {
   width: 100%;
   height: 100%;
   padding: 16px;
@@ -43,15 +31,13 @@
   white-space: pre-wrap;
   word-wrap: break-word;
   box-sizing: border-box;
-}
-
-.highlighted-editor-backdrop {
-  pointer-events: none;
   background: var(--bg-terminal);
   color: var(--text-primary);
+  user-select: text;
+  cursor: text;
 }
 
-.highlighted-editor-backdrop code {
+.file-tab-code code {
   display: block;
   font-family: inherit;
   font-size: inherit;
@@ -61,42 +47,25 @@
   word-wrap: inherit;
 }
 
-.highlighted-editor-textarea {
-  outline: none;
-  resize: none;
-  background: transparent;
-  color: transparent;
-  caret-color: var(--text-primary);
-  z-index: 1;
-}
-
-.highlighted-editor-textarea:focus {
-  outline: none;
-}
-
-.highlighted-editor-textarea::selection {
+.file-tab-code::selection,
+.file-tab-code *::selection {
   background: rgba(122, 162, 247, 0.3);
 }
 
-/* Hide scrollbar on backdrop — textarea scrollbar is the visible one */
-.highlighted-editor-backdrop::-webkit-scrollbar {
-  display: none;
-}
-
-.highlighted-editor-textarea::-webkit-scrollbar {
+.file-tab-code::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-.highlighted-editor-textarea::-webkit-scrollbar-track {
+.file-tab-code::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.highlighted-editor-textarea::-webkit-scrollbar-thumb {
+.file-tab-code::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;
 }
 
-.highlighted-editor-textarea::-webkit-scrollbar-thumb:hover {
+.file-tab-code::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }

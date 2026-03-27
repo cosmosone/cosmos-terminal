@@ -3,7 +3,7 @@ import { createElement } from '../utils/dom';
 import { debounce } from '../utils/debounce';
 import { logger } from '../services/logger';
 
-export type RenderMode = 'markdown' | 'highlighted-editor' | 'plain-editor';
+export type RenderMode = 'markdown' | 'highlighted' | 'plain-editor';
 
 export interface FindController {
   open(): void;
@@ -82,7 +82,7 @@ export function createFindController(
     }
   }
 
-  // --- DOM-based highlighting (markdown, highlighted-editor) ---
+  // --- DOM-based highlighting (markdown, highlighted) ---
 
   function getHighlightTarget(): HTMLElement | null {
     if (!contentEl) return null;
@@ -90,8 +90,8 @@ export function createFindController(
     if (mode === 'markdown') {
       return contentEl.querySelector('.file-tab-markdown');
     }
-    if (mode === 'highlighted-editor') {
-      return contentEl.querySelector('.highlighted-editor-backdrop code') as HTMLElement | null;
+    if (mode === 'highlighted') {
+      return contentEl.querySelector('.file-tab-code code') as HTMLElement | null;
     }
     return null;
   }
@@ -313,21 +313,7 @@ export function createFindController(
       return;
     }
 
-    if (mode === 'highlighted-editor') {
-      const target = getHighlightTarget();
-      const mark = target?.querySelector('mark.find-match-current');
-      if (!mark) return;
-      mark.scrollIntoView({ block: 'center' });
-      const backdrop = contentEl?.querySelector('.highlighted-editor-backdrop') as HTMLElement | null;
-      const textarea = contentEl?.querySelector('.highlighted-editor-textarea') as HTMLTextAreaElement | null;
-      if (backdrop && textarea) {
-        textarea.scrollTop = backdrop.scrollTop;
-        textarea.scrollLeft = backdrop.scrollLeft;
-      }
-      return;
-    }
-
-    // Markdown - direct scrollIntoView
+    // Highlighted and markdown — direct scrollIntoView
     const target = getHighlightTarget();
     const mark = target?.querySelector('mark.find-match-current');
     mark?.scrollIntoView({ block: 'center' });

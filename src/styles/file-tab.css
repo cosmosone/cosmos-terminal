@@ -72,7 +72,7 @@
 }
 
 .file-tab-content:has(.file-tab-editor),
-.file-tab-content:has(.highlighted-editor-wrap) {
+.file-tab-content:has(.file-tab-code) {
   overflow: hidden;
 }
 

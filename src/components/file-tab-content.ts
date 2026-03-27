@@ -10,6 +10,7 @@ import { logger } from '../services/logger';
 import { debounce } from '../utils/debounce';
 import { normalizeFsPath, isPathWithinDirectory } from '../utils/path';
 import type { AppState, FileTab, Project } from '../state/types';
+import type { Grammar } from '../highlight/types';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { createFindController, type RenderMode } from './find-in-document';
 
@@ -18,6 +19,16 @@ export interface FileTabContentApi {
 }
 
 let externalChangePollTimer: ReturnType<typeof setInterval> | null = null;
+
+let hlCache: { key: string; html: string } | null = null;
+
+function highlightCached(filePath: string, fileType: string, content: string, mtime: number, grammar: Grammar): string {
+  const key = `${filePath}|${mtime}|${fileType}`;
+  if (hlCache?.key === key) return hlCache.html;
+  const html = tokensToHtml(tokenize(content, grammar));
+  hlCache = { key, html };
+  return html;
+}
 
 /** Look up the active project and its active tab from state. */
 function getActiveTab(s: AppState): { project: Project; tab: FileTab } | null {
@@ -302,74 +313,39 @@ export function initFileTabContent(): FileTabContentApi {
       return;
     }
 
+    const grammar = tab.fileType !== 'markdown' ? getGrammar(tab.fileType) : null;
+    const hasViewMode = tab.fileType === 'markdown' || !!grammar;
+
     if (tab.fileType === 'markdown' && !tab.editing) {
       currentMode = 'markdown';
       const mdView = createElement('div', { className: 'file-tab-markdown' });
       mdView.innerHTML = renderMarkdownCached(tab.filePath, currentContent, lastMtime);
       content.appendChild(mdView);
+    } else if (grammar && !tab.editing) {
+      currentMode = 'highlighted';
+      const pre = createElement('pre', { className: 'file-tab-code' });
+      const code = createElement('code');
+      code.innerHTML = highlightCached(tab.filePath, tab.fileType, currentContent, lastMtime, grammar);
+      pre.appendChild(code);
+      content.appendChild(pre);
     } else {
-      // Markdown editing uses the plain textarea path to avoid overlay
-      // hit-testing drift between textarea and syntax backdrop.
-      const grammar = tab.fileType === 'markdown' ? null : getGrammar(tab.fileType);
-
-      if (grammar) {
-        currentMode = 'highlighted-editor';
-        const wrap = createElement('div', { className: 'highlighted-editor-wrap' });
-
-        const backdrop = createElement('pre', { className: 'highlighted-editor-backdrop' });
-        const code = createElement('code');
-        backdrop.appendChild(code);
-
-        const textarea = createElement('textarea', { className: 'highlighted-editor-textarea' }) as HTMLTextAreaElement;
-        textarea.spellcheck = false;
-
-        const text = tab.dirty ? editBuffer : currentContent;
-        textarea.value = text;
-
-        const tokens = tokenize(text, grammar);
-        code.innerHTML = tokensToHtml(tokens);
-
-        const rehighlight = debounce(() => {
-          const t = tokenize(textarea.value, grammar);
-          code.innerHTML = tokensToHtml(t);
-          findController.refreshHighlights();
-        }, 150);
-
-        textarea.addEventListener('input', () => {
-          editBuffer = textarea.value;
-          if (!tab.dirty) {
-            setFileTabDirty(projectId, tab.id, true);
-          }
-          rehighlight();
-        });
-
-        textarea.addEventListener('scroll', () => {
-          backdrop.scrollTop = textarea.scrollTop;
-          backdrop.scrollLeft = textarea.scrollLeft;
-        });
-
-        wrap.appendChild(backdrop);
-        wrap.appendChild(textarea);
-        content.appendChild(wrap);
-      } else {
-        currentMode = 'plain-editor';
-        const textarea = createElement('textarea', { className: 'file-tab-editor' }) as HTMLTextAreaElement;
-        textarea.spellcheck = false;
-        textarea.value = tab.dirty ? editBuffer : currentContent;
-        textarea.addEventListener('input', () => {
-          editBuffer = textarea.value;
-          if (!tab.dirty) {
-            setFileTabDirty(projectId, tab.id, true);
-          }
-        });
-        content.appendChild(textarea);
-      }
+      currentMode = 'plain-editor';
+      const textarea = createElement('textarea', { className: 'file-tab-editor' }) as HTMLTextAreaElement;
+      textarea.spellcheck = false;
+      textarea.value = tab.dirty ? editBuffer : currentContent;
+      textarea.addEventListener('input', () => {
+        editBuffer = textarea.value;
+        if (!tab.dirty) {
+          setFileTabDirty(projectId, tab.id, true);
+        }
+      });
+      content.appendChild(textarea);
     }
 
     content.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const items: MenuItem[] = [];
-      if (tab.fileType === 'markdown' && !tab.editing) {
+      if (hasViewMode && !tab.editing) {
         items.push({
           label: 'Edit',
           action: () => {
@@ -377,7 +353,7 @@ export function initFileTabContent(): FileTabContentApi {
             setFileTabEditing(projectId, tab.id, true);
           },
         });
-      } else if (tab.fileType === 'markdown') {
+      } else if (hasViewMode) {
         items.push({
           label: 'View',
           action: () => { setFileTabEditing(projectId, tab.id, false); },
