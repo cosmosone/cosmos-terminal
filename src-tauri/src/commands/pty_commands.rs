@@ -4,6 +4,7 @@ use tauri::{AppHandle, Manager};
 use crate::commands::task::spawn_blocking_result;
 use crate::models::PtySessionInfo;
 use crate::pty::manager::SessionManager;
+use crate::pty::process_monitor::ProcessMonitor;
 use crate::pty::shell::normalize_shell_path;
 
 fn validate_dimensions(rows: u16, cols: u16) -> Result<(), String> {
@@ -30,7 +31,11 @@ pub async fn create_session(
     spawn_blocking_result(move || {
         let shell_path = normalize_shell_path(shell_path)?;
         let session_manager = app.state::<SessionManager>();
-        session_manager.create_session(shell_path, project_path, rows, cols, on_output, on_exit)
+        let info =
+            session_manager.create_session(shell_path, project_path, rows, cols, on_output, on_exit)?;
+        let monitor = app.state::<ProcessMonitor>();
+        monitor.register(info.id.clone(), info.pid);
+        Ok(info)
     })
     .await
 }
@@ -96,6 +101,8 @@ pub async fn kill_session(
 ) -> Result<(), String> {
     validate_session_id(&session_id)?;
     spawn_blocking_result(move || {
+        let monitor = app.state::<ProcessMonitor>();
+        monitor.unregister(&session_id);
         let session_manager = app.state::<SessionManager>();
         session_manager.kill_session(&session_id)
     })

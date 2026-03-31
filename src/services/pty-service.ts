@@ -61,3 +61,30 @@ export async function resizePtySession(
 export async function killPtySession(sessionId: string): Promise<void> {
   await invokeIpcLogged<void>('pty', IPC_COMMANDS.KILL_SESSION, { sessionId }, 'info');
 }
+
+// --- Backend-to-frontend session ID mapping for process monitor events ---
+
+interface BackendSessionMapping {
+  projectId: string;
+  sessionId: string;
+  paneId: string;
+}
+
+const backendToFrontend = new Map<string, BackendSessionMapping>();
+
+export function registerBackendSession(
+  backendId: string,
+  projectId: string,
+  sessionId: string,
+  paneId: string,
+): void {
+  backendToFrontend.set(backendId, { projectId, sessionId, paneId });
+}
+
+export function unregisterBackendSession(backendId: string): void {
+  backendToFrontend.delete(backendId);
+}
+
+export function lookupBackendSession(backendId: string): BackendSessionMapping | undefined {
+  return backendToFrontend.get(backendId);
+}

@@ -13,6 +13,7 @@ use commands::pty_commands;
 use commands::system_commands::{self, SystemMonitor};
 use commands::watcher_commands;
 use pty::manager::SessionManager;
+use pty::process_monitor::ProcessMonitor;
 use tauri::Manager;
 use watcher::FsWatcher;
 
@@ -144,6 +145,7 @@ pub fn run() {
     let session_manager = SessionManager::new();
     let system_monitor = SystemMonitor::new();
     let browser_manager = BrowserManager::new();
+    let process_monitor = ProcessMonitor::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -152,6 +154,7 @@ pub fn run() {
         .manage(session_manager)
         .manage(system_monitor)
         .manage(browser_manager)
+        .manage(process_monitor)
         .invoke_handler(tauri::generate_handler![
             pty_commands::create_session,
             pty_commands::write_to_session,
@@ -194,6 +197,9 @@ pub fn run() {
             let fs_watcher = FsWatcher::new(app.handle().clone());
             app.manage(fs_watcher);
 
+            let pm = app.state::<ProcessMonitor>();
+            pm.start(app.handle().clone());
+
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
                 setup_window(&window);
@@ -213,6 +219,8 @@ pub fn run() {
                     }
                 });
 
+                let pm = window.state::<ProcessMonitor>();
+                pm.stop();
                 let watcher = window.state::<FsWatcher>();
                 watcher.unwatch();
                 let bm = window.state::<BrowserManager>();

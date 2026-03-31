@@ -199,6 +199,15 @@ export const BROWSER_TITLE_CHANGED_EVENT = 'browser-title-changed';
 /** Event name emitted by the Rust backend when a zoom shortcut is pressed in the WebView2 overlay. */
 export const BROWSER_ZOOM_KEY_EVENT = 'browser-zoom-key';
 
+/** Event name emitted by the Rust backend when a session's child process state changes. */
+export const SESSION_CHILDREN_CHANGED_EVENT = 'session-children-changed';
+
+/** Payload shape for `session-children-changed` events (mirrors Rust `SessionChildrenEvent`). */
+export interface SessionChildrenEvent {
+  sessionId: string;
+  hasChildren: boolean;
+}
+
 /** Event name emitted by the Rust backend on filesystem changes. */
 export const FS_CHANGE_EVENT = 'fs-change';
 

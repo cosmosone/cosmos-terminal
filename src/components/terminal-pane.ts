@@ -5,10 +5,10 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ImageAddon } from '@xterm/addon-image';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { open } from '@tauri-apps/plugin-shell';
-import { createPtySession, writeToPtySession, resizePtySession, killPtySession } from '../services/pty-service';
+import { createPtySession, writeToPtySession, resizePtySession, killPtySession, registerBackendSession, unregisterBackendSession } from '../services/pty-service';
 import { consumeInitialCommand } from '../services/initial-command';
 import { store } from '../state/store';
-import { addBrowserTab, getActiveProject } from '../state/actions';
+import { addBrowserTab, getActiveProject, cleanupProcessTreePane } from '../state/actions';
 import { logger } from '../services/logger';
 import { keybindings } from '../utils/keybindings';
 import type { AppSettings } from '../state/types';
@@ -207,9 +207,19 @@ export class TerminalPane {
   private onOscBusy?: () => void;
   private onOscIdle?: () => void;
 
+  // Prompt-return detection via title change (fallback for non-OSC panes)
+  private onPromptReturn?: () => void;
+  private promptReturnTimer: ReturnType<typeof setTimeout> | null = null;
+  private mountedAt = 0;
+  private static readonly PROMPT_RETURN_DEBOUNCE_MS = 300;
+  private static readonly PROMPT_RETURN_SUPPRESS_MS = 2_000;
+
+  private sessionId: string;
+
   constructor(
     paneId: string,
     projectId: string,
+    sessionId: string,
     projectPath: string,
     callbacks?: {
       onProcessExit?: () => void;
@@ -217,16 +227,19 @@ export class TerminalPane {
       onActivity?: () => void;
       onOscBusy?: () => void;
       onOscIdle?: () => void;
+      onPromptReturn?: () => void;
     },
   ) {
     this.paneId = paneId;
     this.projectId = projectId;
+    this.sessionId = sessionId;
     this.projectPath = projectPath;
     this.onProcessExit = callbacks?.onProcessExit;
     this.onCwdChange = callbacks?.onCwdChange;
     this.onActivity = callbacks?.onActivity;
     this.onOscBusy = callbacks?.onOscBusy;
     this.onOscIdle = callbacks?.onOscIdle;
+    this.onPromptReturn = callbacks?.onPromptReturn;
     this.lastReportedCwd = projectPath;
 
     logger.info('pty', 'TerminalPane created', { paneId, projectId, projectPath });
@@ -456,14 +469,19 @@ export class TerminalPane {
 
     this.terminal.onTitleChange((title) => {
       const cwd = extractCwdFromTitle(title);
-      if (cwd && cwd.toLowerCase() !== this.lastReportedCwd.toLowerCase()) {
-        logger.debug('pty', 'Working directory changed', {
-          paneId: this.paneId,
-          from: this.lastReportedCwd,
-          to: cwd,
-        });
-        this.lastReportedCwd = cwd;
-        this.onCwdChange?.(cwd);
+      if (cwd) {
+        if (cwd.toLowerCase() !== this.lastReportedCwd.toLowerCase()) {
+          logger.debug('pty', 'Working directory changed', {
+            paneId: this.paneId,
+            from: this.lastReportedCwd,
+            to: cwd,
+          });
+          this.lastReportedCwd = cwd;
+          this.onCwdChange?.(cwd);
+        }
+        // Prompt-like title detected — signal idle. markPromptReturn()
+        // filters out panes with full OSC support (C marker seen).
+        this.debouncedPromptReturn();
       }
     });
 
@@ -524,6 +542,8 @@ export class TerminalPane {
     }
 
     this.backendId = info.id;
+    registerBackendSession(info.id, this.projectId, this.sessionId, this.paneId);
+    this.mountedAt = Date.now();
     this.lastSentCols = cols;
     this.lastSentRows = rows;
     logger.info('pty', 'PTY session created', {
@@ -630,6 +650,20 @@ export class TerminalPane {
   }
 
   /**
+   * Debounced prompt-return signal via terminal title change.
+   * Suppressed during startup (first 2s after mount) and debounced at 300ms
+   * to absorb rapid title updates during shell initialisation.
+   */
+  private debouncedPromptReturn(): void {
+    if (Date.now() - this.mountedAt < TerminalPane.PROMPT_RETURN_SUPPRESS_MS) return;
+    if (this.promptReturnTimer) clearTimeout(this.promptReturnTimer);
+    this.promptReturnTimer = setTimeout(() => {
+      this.promptReturnTimer = null;
+      this.onPromptReturn?.();
+    }, TerminalPane.PROMPT_RETURN_DEBOUNCE_MS);
+  }
+
+  /**
    * Intercept Kitty keyboard protocol sequences in PTY output.
    * - Responds to mode queries  (CSI ? u)
    * - Tracks push/pop changes   (CSI > flags u  /  CSI < [count] u)
@@ -714,9 +748,11 @@ export class TerminalPane {
     this.onOscBusy?.();
   }
 
-  /** Transition to OSC idle state if currently busy. */
+  /** Transition to OSC idle state. Always propagates the signal because
+   *  oh-my-posh emits D/A without a preceding C marker — the oscBusy flag
+   *  may never have been set, but the session can still have activity from
+   *  the byte heuristic that needs resolving. */
   private setOscIdle(reason: string): void {
-    if (!this.oscBusy) return;
     this.oscBusy = false;
     logger.debug('pty', reason, { paneId: this.paneId });
     this.onOscIdle?.();
@@ -1162,6 +1198,7 @@ export class TerminalPane {
     this.disposed = true;
     if (this.resizeRafId) cancelAnimationFrame(this.resizeRafId);
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
+    if (this.promptReturnTimer) clearTimeout(this.promptReturnTimer);
     this.resetBottomSyncState();
     // Clean up OSC busy state so tracking Sets stay consistent
     this.setOscIdle('Pane disposed while busy');
@@ -1171,7 +1208,9 @@ export class TerminalPane {
       kittyStack: JSON.stringify(this.kittyModeStack),
     });
     this.resizeObserver.disconnect();
+    cleanupProcessTreePane(this.paneId);
     if (this.backendId) {
+      unregisterBackendSession(this.backendId);
       await killPtySession(this.backendId).catch((err) => {
         logger.error('pty', 'Failed to kill PTY session during dispose', {
           paneId: this.paneId,

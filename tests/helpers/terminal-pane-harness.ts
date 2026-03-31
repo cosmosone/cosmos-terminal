@@ -8,6 +8,9 @@ export const ptyMocks = {
   writeToPtySession: vi.fn(),
   resizePtySession: vi.fn(async () => undefined),
   killPtySession: vi.fn(async () => undefined),
+  registerBackendSession: vi.fn(),
+  unregisterBackendSession: vi.fn(),
+  lookupBackendSession: vi.fn(),
 };
 
 export class FakeTerminal {
@@ -202,7 +205,7 @@ export function resetPtyMocks(): void {
 export async function createTerminalPaneForTest() {
   const { TerminalPane } = await import('../../src/components/terminal-pane');
   initTerminalPaneTestStore();
-  const pane = new TerminalPane('pane-test', 'project-test', 'C:\\workspace');
+  const pane = new TerminalPane('pane-test', 'project-test', 'session-test', 'C:\\workspace');
 
   let width = 1024;
   Object.defineProperty(pane.element, 'offsetWidth', {

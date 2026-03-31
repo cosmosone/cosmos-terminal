@@ -1,6 +1,6 @@
 import { store } from '../state/store';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { getActiveProject, setPaneTree, removePane, removeSession, removeProject, setActivePaneId, updateProjectCwd, markSessionActivity, markPaneOscBusy, markPaneOscIdle } from '../state/actions';
+import { getActiveProject, setPaneTree, removePane, removeSession, removeProject, setActivePaneId, updateProjectCwd, markSessionActivity, markPaneOscBusy, markPaneOscIdle, markPromptReturn } from '../state/actions';
 import type { PaneNode, Rect } from '../state/types';
 import { computeLayout } from '../layout/pane-layout';
 import { setupResizeHandle } from '../layout/resize-handler';
@@ -95,12 +95,13 @@ export class SplitContainer {
       if (!this.terminals.has(paneId)) {
         logger.debug('layout', 'Creating terminal pane', { paneId });
         const capturedProjectId = project.id;
-        const tp = new TerminalPane(paneId, project.id, project.path, {
+        const tp = new TerminalPane(paneId, project.id, capturedSessionId, project.path, {
           onProcessExit: () => this.handlePaneExit(capturedProjectId, capturedSessionId, paneId),
           onCwdChange: (cwd) => updateProjectCwd(capturedProjectId, cwd),
           onActivity: () => markSessionActivity(capturedProjectId, capturedSessionId, paneId),
           onOscBusy: () => markPaneOscBusy(capturedProjectId, capturedSessionId, paneId),
           onOscIdle: () => markPaneOscIdle(capturedProjectId, capturedSessionId, paneId),
+          onPromptReturn: () => markPromptReturn(capturedProjectId, capturedSessionId, paneId),
         });
         tp.element.addEventListener('mousedown', () => {
           if (this.focusedPaneId !== paneId) {

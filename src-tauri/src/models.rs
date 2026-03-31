@@ -14,6 +14,15 @@ pub struct SystemStats {
     pub cpu_percent: f64,
 }
 
+// --- Process monitor models ---
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionChildrenEvent {
+    pub session_id: String,
+    pub has_children: bool,
+}
+
 // --- Git models ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

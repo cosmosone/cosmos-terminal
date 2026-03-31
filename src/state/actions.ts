@@ -248,6 +248,7 @@ function cleanupSessionTracking(projectId: string, session: Session): void {
   sessionActivityStart.delete(key);
   for (const paneId of findLeafPaneIds(session.paneTree)) {
     cleanupOscPane(paneId);
+    processTreePanes.delete(paneId);
   }
 }
 
@@ -352,6 +353,62 @@ export function clearSessionActivity(projectId: string, sessionId: string): void
   const session = findSession(projectId, sessionId);
   if (!session?.hasActivity) return;
   resolveActivity(projectId, sessionId);
+}
+
+/** Prompt-return signal from terminal title change (non-OSC fallback). */
+export function markPromptReturn(projectId: string, sessionId: string, paneId: string): void {
+  // OSC panes have more precise signals — ignore title-based detection
+  if (oscCapablePanes.has(paneId)) return;
+
+  const session = findSession(projectId, sessionId);
+  if (!session?.hasActivity) return;
+
+  // Title matched a prompt pattern — command finished, resolve immediately
+  const key = sessionKey(projectId, sessionId);
+  clearActivityTimer(key);
+  sessionActivityStart.delete(key);
+  resolveActivity(projectId, sessionId);
+}
+
+// --- Process tree activity detection (Tier 2 signal) ---
+
+const processTreePanes = new Set<string>();
+
+/** Process tree state change from the Rust-side monitor. */
+export function markProcessTreeChange(
+  projectId: string,
+  sessionId: string,
+  paneId: string,
+  hasChildren: boolean,
+): void {
+  // OSC panes have more precise signals
+  if (oscCapablePanes.has(paneId)) return;
+
+  processTreePanes.add(paneId);
+
+  const session = findSession(projectId, sessionId);
+  if (!session) return;
+  if (session.muted) return;
+
+  const key = sessionKey(projectId, sessionId);
+
+  if (hasChildren) {
+    if (!session.hasActivity && !isVisibleSession(projectId, sessionId)) {
+      updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true, activityCompleted: false }));
+      sessionActivityStart.set(key, Date.now());
+    }
+    // Process tree will determine idle — cancel byte-heuristic timer
+    clearActivityTimer(key);
+  } else if (session.hasActivity) {
+    clearActivityTimer(key);
+    sessionActivityStart.delete(key);
+    resolveActivity(projectId, sessionId);
+  }
+}
+
+/** Clean up process tree tracking for a disposed pane. */
+export function cleanupProcessTreePane(paneId: string): void {
+  processTreePanes.delete(paneId);
 }
 
 export function renameProject(projectId: string, name: string): void {

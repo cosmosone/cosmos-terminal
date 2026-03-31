@@ -55,12 +55,22 @@ impl SessionHandle {
         let mut cmd = CommandBuilder::new(&shell);
         cmd.cwd(&cwd_path);
 
-        // Windows PowerShell: suppress logo
         #[cfg(target_os = "windows")]
-        {
-            if shell.to_lowercase().contains("powershell") {
-                cmd.arg("-NoLogo");
-            }
+        let shell_lower = shell.to_lowercase();
+        #[cfg(target_os = "windows")]
+        let is_any_powershell =
+            shell_lower.contains("powershell") || shell_lower.contains("pwsh");
+        // pwsh (7+) does NOT emit OSC 133 natively — oh-my-posh or manual
+        // profile config provides it. We only inject for powershell.exe (5.1)
+        // because wrapping the prompt on pwsh conflicts with oh-my-posh / PSReadLine.
+        #[cfg(target_os = "windows")]
+        let is_legacy_powershell =
+            shell_lower.contains("powershell") && !shell_lower.contains("pwsh");
+
+        // PowerShell (5.1 or 7+): suppress logo
+        #[cfg(target_os = "windows")]
+        if is_any_powershell {
+            cmd.arg("-NoLogo");
         }
 
         let child = pair
@@ -75,10 +85,25 @@ impl SessionHandle {
             .try_clone_reader()
             .map_err(|e| format!("Failed to clone master reader: {}", e))?;
 
-        let master_write = pair
+        let mut master_write = pair
             .master
             .take_writer()
             .map_err(|e| format!("Failed to take master writer: {}", e))?;
+
+        // Inject OSC 133 shell integration for PowerShell 5.1 only.
+        // pwsh users get OSC 133 from oh-my-posh or manual profile config;
+        // injecting our wrapper there conflicts with PSReadLine.
+        #[cfg(target_os = "windows")]
+        if is_legacy_powershell {
+            let script = concat!(
+                "if(-not $__cosmos_osc){$__cosmos_osc=1;",
+                "$__cosmos_p=$function:prompt;",
+                "function prompt{$e=[char]27;",
+                "\"$e]133;D`a$e]133;A`a\"+(& $__cosmos_p)+\"$e]133;B`a\"",
+                "}}\r\ncls\r\n",
+            );
+            let _ = master_write.write_all(script.as_bytes());
+        }
 
         let alive = Arc::new(AtomicBool::new(true));
         let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>();

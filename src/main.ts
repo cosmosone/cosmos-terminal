@@ -23,6 +23,7 @@ import { confirmCloseTerminalTab, confirmCloseProject } from './components/confi
 import { $ } from './utils/dom';
 import { debounce } from './utils/debounce';
 import { basename } from './utils/path';
+import { initProcessMonitorListener } from './services/process-monitor-service';
 import './highlight/languages/register-all';
 
 async function main(): Promise<void> {
@@ -41,6 +42,9 @@ async function main(): Promise<void> {
   }
 
   logger.info('app', 'App starting', { settingsLoaded: true });
+
+  // Start listening for process tree changes from the Rust backend
+  initProcessMonitorListener();
 
   // Workspace migration: older saved data may lack newer fields
   type SavedSession = Omit<Session, 'locked' | 'muted'> & { locked?: boolean; muted?: boolean };
