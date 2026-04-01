@@ -1,6 +1,6 @@
 import { store } from '../state/store';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { getActiveProject, setPaneTree, removePane, removeSession, removeProject, setActivePaneId, updateProjectCwd, markSessionActivity, markPaneOscBusy, markPaneOscIdle, markPromptReturn } from '../state/actions';
+import { getActiveProject, setPaneTree, removePane, removeSession, removeProject, setActivePaneId, updateProjectCwd, markSessionActivity, markPaneOscBusy, markPaneOscIdle, markPromptReturn, markBellComplete } from '../state/actions';
 import type { PaneNode, Rect } from '../state/types';
 import { computeLayout } from '../layout/pane-layout';
 import { setupResizeHandle } from '../layout/resize-handler';
@@ -101,6 +101,7 @@ export class SplitContainer {
           onActivity: () => markSessionActivity(capturedProjectId, capturedSessionId, paneId),
           onOscBusy: () => markPaneOscBusy(capturedProjectId, capturedSessionId, paneId),
           onOscIdle: () => markPaneOscIdle(capturedProjectId, capturedSessionId, paneId),
+          onBell: () => markBellComplete(capturedProjectId, capturedSessionId),
           onPromptReturn: () => markPromptReturn(capturedProjectId, capturedSessionId, paneId),
         });
         tp.element.addEventListener('mousedown', () => {

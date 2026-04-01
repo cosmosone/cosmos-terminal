@@ -307,6 +307,9 @@ export function markSessionActivity(projectId: string, sessionId: string, paneId
     sessionActivityStart.set(key, now);
   }
 
+  // Agent sessions resolve via bell only -- no idle timer
+  if (session.agentCommand) return;
+
   // Reset idle timer -- when output stops, clear the activity dot
   const burstStart = sessionActivityStart.get(key) ?? now;
   const idleMs = getIdleTimeout(burstStart, now);
@@ -343,6 +346,9 @@ export function markPaneOscIdle(projectId: string, sessionId: string, paneId: st
   const session = findSession(projectId, sessionId);
   if (!session) return;
 
+  // Agent sessions resolve via bell only
+  if (session.agentCommand) return;
+
   const anyStillBusy = findLeafPaneIds(session.paneTree).some((id) => oscBusyPanes.has(id));
   if (!anyStillBusy && session.hasActivity) {
     resolveActivity(projectId, sessionId);
@@ -352,6 +358,20 @@ export function markPaneOscIdle(projectId: string, sessionId: string, paneId: st
 export function clearSessionActivity(projectId: string, sessionId: string): void {
   const session = findSession(projectId, sessionId);
   if (!session?.hasActivity) return;
+  // Agent sessions resolve via bell only
+  if (session.agentCommand) return;
+  resolveActivity(projectId, sessionId);
+}
+
+/** Bell-based completion for agent sessions (e.g. Claude Code sends \a when done). */
+export function markBellComplete(projectId: string, sessionId: string): void {
+  const session = findSession(projectId, sessionId);
+  if (!session?.agentCommand) return;
+  if (!session.hasActivity) return;
+
+  const key = sessionKey(projectId, sessionId);
+  clearActivityTimer(key);
+  sessionActivityStart.delete(key);
   resolveActivity(projectId, sessionId);
 }
 
@@ -402,7 +422,10 @@ export function markProcessTreeChange(
   } else if (session.hasActivity) {
     clearActivityTimer(key);
     sessionActivityStart.delete(key);
-    resolveActivity(projectId, sessionId);
+    // Agent sessions resolve via bell only
+    if (!session.agentCommand) {
+      resolveActivity(projectId, sessionId);
+    }
   }
 }
 

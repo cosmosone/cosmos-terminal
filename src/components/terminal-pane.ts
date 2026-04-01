@@ -207,6 +207,8 @@ export class TerminalPane {
   private onOscBusy?: () => void;
   private onOscIdle?: () => void;
 
+  private onBell?: () => void;
+
   // Prompt-return detection via title change (fallback for non-OSC panes)
   private onPromptReturn?: () => void;
   private promptReturnTimer: ReturnType<typeof setTimeout> | null = null;
@@ -227,6 +229,7 @@ export class TerminalPane {
       onActivity?: () => void;
       onOscBusy?: () => void;
       onOscIdle?: () => void;
+      onBell?: () => void;
       onPromptReturn?: () => void;
     },
   ) {
@@ -239,6 +242,7 @@ export class TerminalPane {
     this.onActivity = callbacks?.onActivity;
     this.onOscBusy = callbacks?.onOscBusy;
     this.onOscIdle = callbacks?.onOscIdle;
+    this.onBell = callbacks?.onBell;
     this.onPromptReturn = callbacks?.onPromptReturn;
     this.lastReportedCwd = projectPath;
 
@@ -419,6 +423,7 @@ export class TerminalPane {
       setTimeout(() => {
         if (!this.disposed) this.element.classList.remove('bell');
       }, 200);
+      this.onBell?.();
     });
 
     this.element.addEventListener('contextmenu', (e) => {
