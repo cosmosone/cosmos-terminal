@@ -14,7 +14,7 @@ import { suppressBrowserWebview, restoreBrowserWebview } from './browser-tab-con
 import { bellOffIcon, chevronDownIcon, fileIcon, folderIcon, gitBranchIcon, globeIcon, lockIcon, playIcon, terminalIcon } from '../utils/icons';
 import { createScrollableTabList } from '../utils/scrollable-tab-list';
 import { createTabDragManager } from '../utils/tab-drag';
-import { positionDropdownPanel, createDropdownRow } from '../utils/dropdown';
+import { positionDropdownPanel, createDropdownRow, createDropdownHeader } from '../utils/dropdown';
 
 const SESSION_ICON_MAP: Record<string, (size?: number) => string> = Object.fromEntries(
   AGENT_DEFINITIONS.map((a) => [a.command, a.icon]),
@@ -147,17 +147,12 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
     dropdownPanel = createElement('div', { className: 'tab-dropdown-panel' });
     const list = createElement('div', { className: 'tab-dropdown-list' });
 
-    // Determine what is currently active
-    const activeSessionId = project.activeSessionId;
-    const activeTabId = project.activeTabId;
-    const activeBrowserTabId = project.activeBrowserTabId;
-    const isSessionActive = (id: string) => id === activeSessionId && activeTabId === null && activeBrowserTabId === null;
+    const isSessionActive = (id: string) =>
+      id === project.activeSessionId && project.activeTabId === null && project.activeBrowserTabId === null;
 
     // Terminal sessions
     if (project.sessions.length > 0) {
-      const header = createElement('div', { className: 'tab-dropdown-header' });
-      header.textContent = 'Sessions';
-      list.appendChild(header);
+      list.appendChild(createDropdownHeader('Sessions'));
 
       for (const session of project.sessions) {
         list.appendChild(createDropdownRow({
@@ -174,41 +169,37 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
       }
     }
 
-    // File tabs
-    if (project.tabs.length > 0) {
-      const header = createElement('div', { className: 'tab-dropdown-header' });
-      header.textContent = 'Files';
-      list.appendChild(header);
-
-      for (const fileTab of project.tabs) {
-        list.appendChild(createDropdownRow({
-          icon: fileIcon(16),
-          name: fileTab.dirty ? `* ${fileTab.title}` : fileTab.title,
-          isActive: fileTab.id === activeTabId,
-          onClick: () => {
-            closeDropdown();
-            setActiveTab(project.id, fileTab.id);
-            onTabChange();
-          },
-        }));
-      }
-    }
-
     // Browser tabs
     if (project.browserTabs.length > 0) {
-      const header = createElement('div', { className: 'tab-dropdown-header' });
-      header.textContent = 'Browser';
-      list.appendChild(header);
+      list.appendChild(createDropdownHeader('Browser'));
 
       for (const browserTab of project.browserTabs) {
         list.appendChild(createDropdownRow({
           icon: globeIcon(16),
           name: browserTab.title || 'New Tab',
           detail: browserTab.url || undefined,
-          isActive: browserTab.id === activeBrowserTabId,
+          isActive: browserTab.id === project.activeBrowserTabId,
           onClick: () => {
             closeDropdown();
             setActiveBrowserTab(project.id, browserTab.id);
+            onTabChange();
+          },
+        }));
+      }
+    }
+
+    // File tabs
+    if (project.tabs.length > 0) {
+      list.appendChild(createDropdownHeader('Files'));
+
+      for (const fileTab of project.tabs) {
+        list.appendChild(createDropdownRow({
+          icon: fileIcon(16),
+          name: fileTab.dirty ? `* ${fileTab.title}` : fileTab.title,
+          isActive: fileTab.id === project.activeTabId,
+          onClick: () => {
+            closeDropdown();
+            setActiveTab(project.id, fileTab.id);
             onTabChange();
           },
         }));
@@ -305,7 +296,8 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
 
     for (let si = 0; si < project.sessions.length; si++) {
       const session = project.sessions[si];
-      const isActive = session.id === project.activeSessionId && project.activeTabId === null;
+      const isActive = session.id === project.activeSessionId
+        && project.activeTabId === null && project.activeBrowserTabId === null;
       const tab = createElement('button', {
         className: `work-tab${isActive ? ' active' : ''}`,
       });
@@ -333,13 +325,13 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
         tab.appendChild(muteEl);
       }
 
-      if (!session.agentCommand && project?.showRunButton !== false) {
+      if (!session.agentCommand && project.showRunButton !== false) {
         const playEl = createElement('span', { className: 'tab-play' });
         playEl.innerHTML = playIcon(10);
-        playEl.title = project?.runCommand || 'Run command';
+        playEl.title = project.runCommand || 'Run command';
         playEl.addEventListener('click', (e) => {
           e.stopPropagation();
-          const cmd = project?.runCommand;
+          const cmd = project.runCommand;
           if (!cmd || !onWriteToPane) return;
           const paneId = resolveActivePaneId(session.activePaneId, session.paneTree);
           if (paneId) onWriteToPane(paneId, cmd + '\r');
@@ -417,6 +409,84 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
       });
 
       tabList.appendChild(tab);
+    }
+
+    // --- Browser tabs ---
+    if (project.browserTabs.length > 0) {
+      tabList.appendChild(createElement('span', { className: 'work-tab-separator' }));
+
+      for (let bi = 0; bi < project.browserTabs.length; bi++) {
+        const browserTab = project.browserTabs[bi];
+        const isActive = browserTab.id === project.activeBrowserTabId;
+        const tab = createElement('button', {
+          className: `work-tab browser-tab${isActive ? ' active' : ''}`,
+        });
+
+        const iconEl = createElement('span', {
+          className: `browser-tab-icon${browserTab.loading ? ' browser-tab-loading' : ''}`,
+        });
+        iconEl.innerHTML = globeIcon(11);
+        tab.appendChild(iconEl);
+
+        const fullTitle = browserTab.title || 'New Tab';
+        const tabLabel = createElement('span', { className: 'tab-label' });
+        tabLabel.textContent = fullTitle;
+        tab.appendChild(tabLabel);
+        tab.title = fullTitle;
+
+        appendLockOrClose(
+          tab,
+          browserTab.locked,
+          () => { toggleBrowserTabLocked(project.id, browserTab.id); onTabChange(); },
+          async () => {
+            removeBrowserTab(project.id, browserTab.id);
+            onTabChange();
+          },
+        );
+
+        tab.addEventListener('mousedown', (e: MouseEvent) => {
+          dragManager.startDrag(e, tab, tabList, indicator, browserTab.id, bi, '.browser-tab', project.browserTabs, (itemId, _origin, adjustedIndex) => {
+            reorderBrowserTab(project.id, itemId, adjustedIndex);
+            onTabChange();
+          });
+        });
+
+        tab.addEventListener('click', () => {
+          if (dragManager.suppressClick) return;
+          setActiveBrowserTab(project.id, browserTab.id);
+          onTabChange();
+        });
+
+        tab.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          showContextMenu(e.clientX, e.clientY, [
+            {
+              label: browserTab.locked ? 'Unlock' : 'Lock',
+              action: () => {
+                toggleBrowserTabLocked(project.id, browserTab.id);
+                onTabChange();
+              },
+            },
+            {
+              label: 'Close',
+              separator: true,
+              action: async () => {
+                removeBrowserTab(project.id, browserTab.id);
+                onTabChange();
+              },
+            },
+            {
+              label: 'Close Others',
+              action: () => {
+                closeOtherBrowserTabs(project.id, browserTab.id);
+                onTabChange();
+              },
+            },
+          ]);
+        });
+
+        tabList.appendChild(tab);
+      }
     }
 
     // --- File tabs ---
@@ -513,85 +583,6 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
       }
     }
 
-    // --- Browser tabs ---
-    if (project.browserTabs.length > 0) {
-      const bSeparator = createElement('span', { className: 'work-tab-separator' });
-      tabList.appendChild(bSeparator);
-
-      for (let bi = 0; bi < project.browserTabs.length; bi++) {
-        const browserTab = project.browserTabs[bi];
-        const isActive = browserTab.id === project.activeBrowserTabId;
-        const tab = createElement('button', {
-          className: `work-tab browser-tab${isActive ? ' active' : ''}`,
-        });
-
-        const iconEl = createElement('span', {
-          className: `browser-tab-icon${browserTab.loading ? ' browser-tab-loading' : ''}`,
-        });
-        iconEl.innerHTML = globeIcon(11);
-        tab.appendChild(iconEl);
-
-        const fullTitle = browserTab.title || 'New Tab';
-        const tabLabel = createElement('span', { className: 'tab-label' });
-        tabLabel.textContent = fullTitle;
-        tab.appendChild(tabLabel);
-        tab.title = fullTitle;
-
-        appendLockOrClose(
-          tab,
-          browserTab.locked,
-          () => { toggleBrowserTabLocked(project.id, browserTab.id); onTabChange(); },
-          async () => {
-            removeBrowserTab(project.id, browserTab.id);
-            onTabChange();
-          },
-        );
-
-        tab.addEventListener('mousedown', (e: MouseEvent) => {
-          dragManager.startDrag(e, tab, tabList, indicator, browserTab.id, bi, '.browser-tab', project.browserTabs, (itemId, _origin, adjustedIndex) => {
-            reorderBrowserTab(project.id, itemId, adjustedIndex);
-            onTabChange();
-          });
-        });
-
-        tab.addEventListener('click', () => {
-          if (dragManager.suppressClick) return;
-          setActiveBrowserTab(project.id, browserTab.id);
-          onTabChange();
-        });
-
-        tab.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          showContextMenu(e.clientX, e.clientY, [
-            {
-              label: browserTab.locked ? 'Unlock' : 'Lock',
-              action: () => {
-                toggleBrowserTabLocked(project.id, browserTab.id);
-                onTabChange();
-              },
-            },
-            {
-              label: 'Close',
-              separator: true,
-              action: async () => {
-                removeBrowserTab(project.id, browserTab.id);
-                onTabChange();
-              },
-            },
-            {
-              label: 'Close Others',
-              action: () => {
-                closeOtherBrowserTabs(project.id, browserTab.id);
-                onTabChange();
-              },
-            },
-          ]);
-        });
-
-        tabList.appendChild(tab);
-      }
-    }
-
     scrollList.finalizeRender('.work-tab.active');
   }
 
@@ -627,7 +618,7 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
     // Only rename terminal tabs (not file or browser tabs)
     if (project.activeTabId !== null || project.activeBrowserTabId !== null) return;
 
-    const activeTab = scrollList.tabList.querySelector('.work-tab.active:not(.file-tab)') as HTMLElement | null;
+    const activeTab = scrollList.tabList.querySelector('.work-tab.active:not(.file-tab):not(.browser-tab)') as HTMLElement | null;
     if (!activeTab) return;
 
     beginRename(activeTab, project.id, session.id, session.title);

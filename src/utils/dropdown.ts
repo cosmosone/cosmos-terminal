@@ -19,6 +19,13 @@ export function positionDropdownPanel(panel: HTMLElement, anchorRect: DOMRect): 
   }
 }
 
+/** Create a section header for a dropdown list. */
+export function createDropdownHeader(text: string): HTMLElement {
+  const header = createElement('div', { className: 'tab-dropdown-header' });
+  header.textContent = text;
+  return header;
+}
+
 /** Create a standard dropdown row (icon + name + optional detail). */
 export function createDropdownRow(opts: {
   icon: string;

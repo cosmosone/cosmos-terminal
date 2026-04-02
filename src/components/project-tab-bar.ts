@@ -12,7 +12,7 @@ import { basename } from '../utils/path';
 import { chevronDownIcon, folderIcon, settingsIcon } from '../utils/icons';
 import { createScrollableTabList } from '../utils/scrollable-tab-list';
 import { createTabDragManager } from '../utils/tab-drag';
-import { positionDropdownPanel, createDropdownRow } from '../utils/dropdown';
+import { positionDropdownPanel, createDropdownRow, createDropdownHeader } from '../utils/dropdown';
 import { showProjectSettingsDialog } from './project-settings-dialog';
 
 export function initProjectTabBar(onProjectChange: () => void): void {
@@ -67,9 +67,7 @@ export function initProjectTabBar(onProjectChange: () => void): void {
 
     dropdownPanel = createElement('div', { className: 'tab-dropdown-panel' });
 
-    const header = createElement('div', { className: 'tab-dropdown-header' });
-    header.textContent = 'Open Projects';
-    dropdownPanel.appendChild(header);
+    dropdownPanel.appendChild(createDropdownHeader('Open Projects'));
 
     const list = createElement('div', { className: 'tab-dropdown-list' });
     for (const project of lastProjects) {
