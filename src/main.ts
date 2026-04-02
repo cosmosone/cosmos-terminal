@@ -4,7 +4,9 @@ import { addProject, addSession, getActiveProject, getActiveSession, removeProje
 import { loadSettings, saveSettings, buildUiFont } from './services/settings-service';
 import { loadWorkspace, saveWorkspace } from './services/workspace-service';
 import { resolveActivePaneId } from './layout/pane-tree';
-import type { AppState, BrowserTab, KeybindingConfig, Session, FileTab } from './state/types';
+import type { AppState, BrowserTab, KeybindingConfig, Session, FileTab, PaneLeaf } from './state/types';
+import { AGENT_DEFINITIONS } from './services/agent-definitions';
+import { setInitialCommand } from './services/initial-command';
 import { logger } from './services/logger';
 import { initProjectTabBar } from './components/project-tab-bar';
 import { initWorkTabBar } from './components/work-tab-bar';
@@ -61,6 +63,8 @@ async function main(): Promise<void> {
       activeTabId: p.activeTabId ?? null,
       activeBrowserTabId: p.activeBrowserTabId ?? null,
       tabActivationSeq: p.tabActivationSeq ?? 0,
+      runCommand: p.runCommand ?? (settings as any).runCommand ?? '',
+      showRunButton: p.showRunButton ?? true,
     })),
     activeProjectId: saved?.activeProjectId ?? null,
     settings,
@@ -229,7 +233,19 @@ async function main(): Promise<void> {
     bind(kb.newSession, () => {
       const project = getActiveProject();
       if (!project) return;
-      addSession(project.id);
+      const current = getActiveSession();
+      const agentCmd = current?.agentCommand;
+      if (agentCmd) {
+        const agent = AGENT_DEFINITIONS.find((a) => a.command === agentCmd);
+        if (agent) {
+          const session = addSession(project.id, { title: agent.label, agentCommand: agent.command });
+          setInitialCommand((session.paneTree as PaneLeaf).paneId, agent.initialCmd ?? agent.command);
+        } else {
+          addSession(project.id);
+        }
+      } else {
+        addSession(project.id);
+      }
       refresh();
     });
     bind(kb.toggleSettings, toggleSettingsView);

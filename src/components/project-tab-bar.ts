@@ -13,6 +13,7 @@ import { chevronDownIcon, folderIcon, settingsIcon } from '../utils/icons';
 import { createScrollableTabList } from '../utils/scrollable-tab-list';
 import { createTabDragManager } from '../utils/tab-drag';
 import { positionDropdownPanel, createDropdownRow } from '../utils/dropdown';
+import { showProjectSettingsDialog } from './project-settings-dialog';
 
 export function initProjectTabBar(onProjectChange: () => void): void {
   const bar = $('#project-tab-bar')!;
@@ -206,6 +207,13 @@ export function initProjectTabBar(onProjectChange: () => void): void {
               startInlineRename(tab, project.name, (newName) => {
                 renameProject(project.id, newName);
               }, onRenameDone);
+            },
+          },
+          {
+            label: 'Settings',
+            separator: true,
+            action: () => {
+              showProjectSettingsDialog(project.id);
             },
           },
         ]);

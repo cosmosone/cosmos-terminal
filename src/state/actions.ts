@@ -3,6 +3,7 @@ import { logger } from '../services/logger';
 import { saveSettings } from '../services/settings-service';
 import { closeBrowserWebview } from '../services/browser-service';
 import { findLeafPaneIds } from '../layout/pane-tree';
+import { CLAUDE_COMMAND } from '../services/agent-definitions';
 import { basename } from '../utils/path';
 import type { AppSettings, BrowserTab, FileTab, FileBrowserSidebarState, GitSidebarState, PaneNode, Project, ProjectGitState, Session } from './types';
 
@@ -36,6 +37,8 @@ export function addProject(name: string, path: string): Project {
     browserTabs: [],
     activeBrowserTabId: null,
     tabActivationSeq: 0,
+    runCommand: '',
+    showRunButton: true,
   };
   store.setState((s) => ({
     ...s,
@@ -307,9 +310,6 @@ export function markSessionActivity(projectId: string, sessionId: string, paneId
     sessionActivityStart.set(key, now);
   }
 
-  // Agent sessions resolve via bell only -- no idle timer
-  if (session.agentCommand) return;
-
   // Reset idle timer -- when output stops, clear the activity dot
   const burstStart = sessionActivityStart.get(key) ?? now;
   const idleMs = getIdleTimeout(burstStart, now);
@@ -323,6 +323,10 @@ export function markSessionActivity(projectId: string, sessionId: string, paneId
 }
 
 export function markPaneOscBusy(projectId: string, sessionId: string, paneId: string): void {
+  // Claude sessions use byte heuristic + bell — don't register as OSC-capable
+  const session = findSession(projectId, sessionId);
+  if (!session || session.agentCommand === CLAUDE_COMMAND) return;
+
   oscBusyPanes.add(paneId);
   oscCapablePanes.add(paneId);
 
@@ -332,8 +336,7 @@ export function markPaneOscBusy(projectId: string, sessionId: string, paneId: st
   // Skip the visible session -- no dot needed for the tab you're looking at
   if (isVisibleSession(projectId, sessionId)) return;
 
-  const session = findSession(projectId, sessionId);
-  if (!session || session.muted) return;
+  if (session.muted) return;
   if (!session.hasActivity) {
     updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true, activityCompleted: false }));
   }
@@ -346,8 +349,8 @@ export function markPaneOscIdle(projectId: string, sessionId: string, paneId: st
   const session = findSession(projectId, sessionId);
   if (!session) return;
 
-  // Agent sessions resolve via bell only
-  if (session.agentCommand) return;
+  // Claude sessions resolve via bell only
+  if (session.agentCommand === CLAUDE_COMMAND) return;
 
   const anyStillBusy = findLeafPaneIds(session.paneTree).some((id) => oscBusyPanes.has(id));
   if (!anyStillBusy && session.hasActivity) {
@@ -358,16 +361,21 @@ export function markPaneOscIdle(projectId: string, sessionId: string, paneId: st
 export function clearSessionActivity(projectId: string, sessionId: string): void {
   const session = findSession(projectId, sessionId);
   if (!session?.hasActivity) return;
-  // Agent sessions resolve via bell only
-  if (session.agentCommand) return;
+  if (session.agentCommand === CLAUDE_COMMAND) {
+    // Clear dot only — tick requires bell
+    updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: false, activityCompleted: false }));
+    return;
+  }
   resolveActivity(projectId, sessionId);
 }
 
-/** Bell-based completion for agent sessions (e.g. Claude Code sends \a when done). */
+/** Bell-based completion for Claude sessions (Claude Code sends \a when done). */
 export function markBellComplete(projectId: string, sessionId: string): void {
   const session = findSession(projectId, sessionId);
-  if (!session?.agentCommand) return;
-  if (!session.hasActivity) return;
+  if (session?.agentCommand !== CLAUDE_COMMAND) return;
+  // Skip if user is watching, or tick is already showing
+  if (isVisibleSession(projectId, sessionId)) return;
+  if (session.activityCompleted) return;
 
   const key = sessionKey(projectId, sessionId);
   clearActivityTimer(key);
@@ -412,6 +420,9 @@ export function markProcessTreeChange(
 
   const key = sessionKey(projectId, sessionId);
 
+  // Claude sessions use bell-only detection
+  if (session.agentCommand === CLAUDE_COMMAND) return;
+
   if (hasChildren) {
     if (!session.hasActivity && !isVisibleSession(projectId, sessionId)) {
       updateSession(projectId, sessionId, (s) => ({ ...s, hasActivity: true, activityCompleted: false }));
@@ -422,10 +433,7 @@ export function markProcessTreeChange(
   } else if (session.hasActivity) {
     clearActivityTimer(key);
     sessionActivityStart.delete(key);
-    // Agent sessions resolve via bell only
-    if (!session.agentCommand) {
-      resolveActivity(projectId, sessionId);
-    }
+    resolveActivity(projectId, sessionId);
   }
 }
 
@@ -440,6 +448,14 @@ export function renameProject(projectId: string, name: string): void {
     ...s,
     projects: s.projects.map((p) => (p.id === projectId ? { ...p, name } : p)),
   }));
+}
+
+export function updateProjectSettings(
+  projectId: string,
+  settings: Partial<Pick<Project, 'runCommand' | 'showRunButton'>>,
+): void {
+  logger.info('project', 'updateProjectSettings', { projectId, settings });
+  updateProject(projectId, (p) => ({ ...p, ...settings }));
 }
 
 export function updateProjectCwd(projectId: string, cwd: string): void {

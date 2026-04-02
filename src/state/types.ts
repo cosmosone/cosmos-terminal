@@ -19,6 +19,8 @@ export interface Project {
   browserTabs: BrowserTab[];
   activeBrowserTabId: string | null;
   tabActivationSeq?: number;
+  runCommand?: string;
+  showRunButton?: boolean;
 }
 
 export interface Session {
@@ -90,8 +92,6 @@ export interface AppSettings {
   debugLoggingExpiry: string | null;
   confirmCloseTerminalTab: boolean;
   confirmCloseProjectTab: boolean;
-  runCommand: string;
-  showRunButton: boolean;
   keybindings: KeybindingConfig;
   openaiApiKey: string;
   browserHomePage: string;

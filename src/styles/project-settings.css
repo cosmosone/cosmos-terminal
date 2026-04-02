@@ -1,0 +1,39 @@
+/* ── Backdrop ── */
+.project-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* ── Dialog ── */
+.project-settings-dialog {
+  width: 90%;
+  max-width: 480px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+/* ── Header ── */
+.project-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Content ── */
+.project-settings-content {
+  padding: 16px 24px 24px;
+}

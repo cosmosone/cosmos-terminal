@@ -96,8 +96,6 @@ function defaultSettings(): AppSettings {
     confirmCloseProjectTab: true,
     debugLogging: false,
     debugLoggingExpiry: null,
-    runCommand: 'python scripts/build.py',
-    showRunButton: true,
     openaiApiKey: '',
     browserHomePage: 'https://www.google.com.au',
     browserPoolSize: 10,

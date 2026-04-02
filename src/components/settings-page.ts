@@ -134,12 +134,6 @@ export function initSettingsPage(onSettingsChanged: () => void): void {
       createToggleRow('Ctrl+Shift+V as Alt+V', settings.ctrlShiftVAsAltV, (v) =>
         apply({ ctrlShiftVAsAltV: v })),
     );
-    term.content.appendChild(
-      createTextRow('Run Custom Command', settings.runCommand, (v) => apply({ runCommand: v })),
-    );
-    term.content.appendChild(
-      createToggleRow('Show Run Button in Tabs', settings.showRunButton, (v) => apply({ showRunButton: v })),
-    );
     inner.appendChild(term.wrapper);
 
     // ── 3. Shell (fundamental but set-and-forget) ──

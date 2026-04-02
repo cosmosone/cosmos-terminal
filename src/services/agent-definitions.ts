@@ -7,6 +7,8 @@ export interface AgentDef {
   initialCmd?: string;
 }
 
+export const CLAUDE_COMMAND = 'claude' as const;
+
 export const AGENT_DEFINITIONS: readonly AgentDef[] = [
   { command: 'claude', label: 'Claude', icon: claudeIcon },
   { command: 'codex', label: 'Codex', icon: codexIcon },
