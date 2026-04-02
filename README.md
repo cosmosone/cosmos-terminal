@@ -37,7 +37,7 @@ Switch projects with one click. Each project keeps its own terminals, file tabs,
 
 ### AI Agent Sessions
 
-Launch AI coding agents directly from the terminal. Built-in support for **Claude**, **Codex**, **Gemini**, and **Cline** — select an agent from the dropdown when creating a new session and it starts automatically with the right command.
+Launch AI coding agents directly from the terminal. Built-in support for **Claude**, **Codex**, **Gemini**, and **Open Code** — select an agent from the dropdown when creating a new session and it starts automatically with the right command.
 
 Agent sessions appear as regular work tabs with their own icons, so you can run an AI agent alongside your dev server and tests in the same project.
 
@@ -97,7 +97,7 @@ A configurable play button on terminal tabs that sends a command to the active p
 |----------|----------|
 | **Workspaces** | Multi-project tabs, per-project sessions, workspace persistence across restarts |
 | **Terminal** | Split panes (horizontal/vertical), WebGL rendering with ClearType, 10K–100K scrollback, copy-on-select, right-click paste |
-| **AI Agents** | One-click launch for Claude, Codex, Gemini, Cline with auto-configured commands |
+| **AI Agents** | One-click launch for Claude, Codex, Gemini, Open Code with auto-configured commands |
 | **Browser** | Embedded WebView2 tabs with navigation, zoom, address bar, LRU pooling |
 | **Git** | Stage, diff, commit, push, commit history graph, AI commit messages (OpenAI) |
 | **Files** | File browser tree, built-in editor/viewer, Markdown rendering, find in document, filesystem watcher |

@@ -1,4 +1,4 @@
-import { claudeIcon, codexIcon, geminiIcon, clineIcon } from '../utils/icons';
+import { claudeIcon, codexIcon, geminiIcon, openCodeIcon } from '../utils/icons';
 
 export interface AgentDef {
   command: string;
@@ -11,7 +11,7 @@ export const AGENT_DEFINITIONS: readonly AgentDef[] = [
   { command: 'claude', label: 'Claude', icon: claudeIcon },
   { command: 'codex', label: 'Codex', icon: codexIcon },
   { command: 'gemini', label: 'Gemini', icon: geminiIcon, initialCmd: 'gemini -y' },
-  { command: 'cline', label: 'Cline', icon: clineIcon },
+  { command: 'opencode', label: 'Open Code', icon: openCodeIcon },
 ];
 
 /** Look up the initial command for an agent session.
