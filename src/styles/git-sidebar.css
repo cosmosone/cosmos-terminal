@@ -343,6 +343,10 @@
   font-weight: 500;
   cursor: pointer;
   transition: background var(--transition-fast), opacity var(--transition-fast);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .git-commit-btn.secondary {
