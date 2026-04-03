@@ -1,102 +1,233 @@
-# Browser Tab Robustness Improvements — Phase 2
+# Frontend Hot-Swap — Implementation Plan
 
-## Previously Completed (Phase 1)
+## Overview
 
-H1 IStream read loop, H2 suppress race condition, M1 skip resize when suppressed,
-M2 background color, L1 scoped getWebviewArea, S1 color match, S2 catch-up resize,
-S3 dropdown flicker fix — all done and tested.
+Stop embedding frontend assets into the exe. Instead, serve them from a `frontend/` directory on disk next to the exe. This lets `build.py` skip Rust compilation when only frontend code changed (~2-3s vs ~2min).
 
-## Phase 2: Remaining Opportunities
-
-### R1. suppressCount desync protection (`browser-tab-content.ts`)
-
-**Problem**: If a caller suppresses but never restores (error path, component destroyed,
-re-render), suppressCount gets stuck > 0 and the webview is permanently hidden.
-The log-viewer close button calls `restoreBrowserWebview()` from a different file
-than the matching suppress (in status-bar), making the pairing fragile.
-
-**Fix**:
-- Reset `suppressCount` to 0 when the browser tab deactivates (activeTabId → null).
-  At that point no webview is visible anyway, so the count is meaningless.
-- Also reset when a new tab activates — fresh context, fresh count.
-- Clean up the screenshot background (and revoke any object URL) during reset.
-- Log a warning if suppressCount exceeds 3 (indicates likely leak).
-
-**Files**: `src/components/browser-tab-content.ts`
+The app watches `frontend/` for changes and auto-reloads the WebView. PTY sessions and all Rust state survive the reload.
 
 ---
 
-### R2. Base64 data URL → Blob + createObjectURL (`browser-tab-content.ts`)
+## Architecture
 
-**Problem**: The screenshot is embedded as an inline `data:image/jpeg;base64,...`
-CSS background-image. For large screenshots (4K displays), this creates a multi-MB
-string in the DOM style attribute, causing GC pressure and unnecessary memory use.
+```
+D:\Apps\Cosmos-Terminal\
+  cosmos-terminal.exe          <-- only rebuilt when Rust code changes
+  frontend\                    <-- rebuilt on EVERY build (~2s)
+    index.html
+    assets\
+      index-abc123.js
+      xterm-CWKXqyIO.js
+      index-BzT3qmmQ.css
+```
 
-**Fix**:
-- Decode the base64 string to a `Uint8Array`, create a `Blob`, then use
-  `URL.createObjectURL(blob)` for the background-image URL.
-- Store the object URL at module scope so `restoreBrowserWebview()` can call
-  `URL.revokeObjectURL()` during cleanup.
+**Asset loading**: Custom URI scheme protocol `cosmos://` registered in Rust. The WebView loads `cosmos://localhost/index.html`. The protocol handler reads files from `{exe_dir}/frontend/` and returns them with correct MIME types.
 
-**Files**: `src/components/browser-tab-content.ts`
+**Fallback**: If `frontend/` directory does not exist, the app uses embedded assets (traditional Tauri behaviour). This ensures the app always works, even without the directory.
 
----
-
-### R3. Async suppress pattern — SKIP (no change needed)
-
-**Rationale**: The async pattern is intentional. Callers `await suppress` so the
-screenshot is ready before the overlay appears. Making it synchronous would
-reintroduce the flickering bug that was fixed in Phase 1 (S3). This is a deliberate
-design choice, not a leaked implementation detail.
+**Reload flow**: Rust file watcher detects changes in `frontend/` -> emits `frontend-updated` event -> frontend saves workspace state -> `location.reload()` -> workspace restored from persisted state.
 
 ---
 
-### R4. Cross-language event name constant (`browser_commands.rs`)
+## Build Modes (Updated)
 
-**Problem**: Rust emits `"browser-navigated"` as a raw string literal. TypeScript
-defines `BROWSER_NAVIGATED_EVENT = 'browser-navigated'` as a constant. If either
-side changes the string, the contract silently breaks with no compile-time error.
+| Mode | Version | Rust Build | Frontend Build | Git | Install |
+|---|---|---|---|---|---|
+| `build.py` | Interactive | Smart detect | Always | If bumped + backend changes | "Install to app folder? [y/N]" |
+| `--dev` | No | Smart detect | Always | No | Silent auto-install (warn on failure) |
+| `--release` | Auto patch | Smart detect | Always | Tag+release only if backend changes; commit+push always | Silent auto-install (warn on failure) |
+| `--local` | No | Dev server | Dev server | No | No |
 
-**Fix**:
-- Add `const BROWSER_NAVIGATED_EVENT: &str = "browser-navigated"` in
-  `browser_commands.rs` (or a shared constants location) and use it in the
-  `emit_to` call.
-- This doesn't create cross-language safety, but it gives the Rust side a single
-  source of truth and makes the coupling visible via a searchable symbol name.
-
-**Files**: `src-tauri/src/commands/browser_commands.rs`
+**Smart detect**: Hash all Rust source files (`src-tauri/src/**/*.rs`, `Cargo.lock`, `build.rs`, `Cargo.toml` minus version line, `tauri.conf.json` minus version field). Compare with saved hash from last Rust build. If different -> full build. If same -> frontend only. Guard: if exe doesn't exist at target, force full build regardless.
 
 ---
 
-### R5. Project dropdown re-render race (`project-tab-bar.ts`)
+## Implementation Steps
 
-**Problem**: The dropdown state (`dropdownPanel`, `closeDropdown`, outside-click
-handler) is defined inside `render()`. If `render()` fires while the dropdown is
-open (e.g., a new project is added), the old dropdown panel (appended to
-`document.body`) and its outside-click handler are orphaned. The old panel stays
-visible with stale data until the user clicks somewhere. The suppress count from
-the orphaned dropdown is stuck until that click.
+### Step 1: Add `mime_guess` dependency
+- **File**: `src-tauri/Cargo.toml`
+- Add `mime_guess = "2"` to `[dependencies]`
 
-**Fix**:
-- Move `dropdownPanel`, `closeDropdown`, and `onDropdownOutsideClick` out of
-  `render()` to the `initProjectTabBar` scope.
-- Call `closeDropdown()` at the top of `render()` to clean up any open dropdown
-  before rebuilding the bar.
-- The dropdown item creation helpers (`createDropdownItem`, `positionDropdownPanel`)
-  stay inside render since they depend on the current `projects`/`activeId` snapshot.
+### Step 2: Register `cosmos://` custom protocol
+- **File**: `src-tauri/src/lib.rs`
+- Resolve `frontend_dir` = `{exe_dir}/frontend/`
+- Register `cosmos://` protocol on `tauri::Builder` via `.register_uri_scheme_protocol("cosmos", ...)`
+- Handler logic:
+  1. Parse request URI path (e.g., `/assets/index-abc123.js`)
+  2. Map to `frontend_dir.join(path)` — default `/` to `/index.html`
+  3. **Path traversal guard**: canonicalise and verify the resolved path starts with `frontend_dir`
+  4. Read file bytes from disk
+  5. Detect MIME type via `mime_guess::from_path()`
+  6. Return `tauri::http::Response` with `Content-Type` and `Cache-Control: no-cache` headers
+  7. Return 404 for missing files
 
-**Files**: `src/components/project-tab-bar.ts`
+### Step 3: Startup navigation to `cosmos://`
+- **File**: `src-tauri/src/lib.rs`
+- In `.setup()` callback, after existing setup code:
+  1. Check if `{exe_dir}/frontend/index.html` exists
+  2. If YES: navigate main WebView to `cosmos://localhost/index.html`
+  3. If NO: do nothing (embedded assets are used — fallback)
+
+### Step 4: Frontend watcher (auto-reload trigger)
+- **File**: `src-tauri/src/frontend_watcher.rs` (new)
+- Struct `FrontendWatcher` with `Mutex<Option<Inner>>` (same pattern as `watcher.rs`)
+- Watches `{exe_dir}/frontend/` recursively with **1500ms debounce**
+- On any file change: emit `"frontend-updated"` event via `app.emit()`
+- Ignores changes to dotfiles (`.reload-trigger`, etc.) — actually no, trigger on ALL changes
+- **File**: `src-tauri/src/lib.rs`
+  - Add `mod frontend_watcher;`
+  - In `.setup()`: if `frontend/` dir exists, create and manage `FrontendWatcher`
+
+### Step 5: Frontend reload listener
+- **File**: `src/main.ts`
+- After all component initialisation, add:
+  ```typescript
+  listen('frontend-updated', async () => {
+    const s = store.getState();
+    await saveWorkspace(s.projects, s.activeProjectId, s.gitSidebar, s.fileBrowserSidebar);
+    await saveSettings(s.settings);
+    location.reload();
+  });
+  ```
+- The existing workspace restoration code in `main()` handles state recovery on reload
+
+### Step 6: CSP update
+- **File**: `src-tauri/tauri.conf.json`
+- Add `cosmos:` to all relevant CSP directives:
+  ```
+  default-src 'self' cosmos:;
+  script-src 'self' cosmos:;
+  style-src 'self' 'unsafe-inline' cosmos:;
+  font-src 'self' cosmos:;
+  connect-src ipc: http://ipc.localhost https://api.openai.com cosmos:;
+  img-src 'self' asset: https://asset.localhost data: cosmos:;
+  ```
+- **File**: `index.html`
+- Update the inline `<meta>` CSP tag to match
+
+### Step 7: Build script — smart detect function
+- **File**: `scripts/build.py`
+- New constant: `RUST_HASH_FILE = ROOT / "src-tauri" / "target" / ".rust-build-hash"`
+- New function `compute_rust_hash() -> str`:
+  1. SHA-256 hash of all `*.rs` files in `src-tauri/src/` (sorted for determinism)
+  2. Hash `Cargo.lock` content
+  3. Hash `build.rs` content (if exists)
+  4. Hash `Cargo.toml` content with `version = "..."` line stripped
+  5. Hash `tauri.conf.json` content with `"version"` key removed
+  6. Return hex digest
+- New function `detect_build_type() -> str`:
+  1. If `RUST_HASH_FILE` doesn't exist -> return `'full'`
+  2. If exe doesn't exist at `COSMOS_TERMINAL_APP_DIR` -> return `'full'`
+  3. Compute current hash, compare with saved hash
+  4. If different -> return `'full'`
+  5. If same -> return `'frontend'`
+- New function `save_rust_hash()`:
+  - Write `compute_rust_hash()` result to `RUST_HASH_FILE`
+  - Called only after successful Rust build
+
+### Step 8: Build script — frontend-only build function
+- **File**: `scripts/build.py`
+- New function `build_frontend_only()`:
+  1. Print: `"Frontend-only build (no Rust changes detected)"`
+  2. Run `npm run build` (Vite)
+  3. Done — no Rust compilation
+
+### Step 9: Build script — install function
+- **File**: `scripts/build.py`
+- Rename `copy_exe_prompt()` to `install_prompt(build_type: str)`:
+  1. Check `COSMOS_TERMINAL_APP_DIR` env var
+  2. Ask: `"Install to app folder? [y/N]"`
+  3. If yes: call `install_to_app_folder(build_type)`
+- New function `install_to_app_folder(build_type: str)`:
+  1. Always: copy `dist/` -> `{APP_DIR}/frontend/` (using `shutil.copytree` with `dirs_exist_ok=True`)
+  2. If `build_type == 'full'`: also copy `cosmos-terminal.exe` to `{APP_DIR}/`
+  3. Print what was installed (e.g., "Installed frontend to app folder" or "Installed exe + frontend to app folder")
+- New function `try_silent_install(build_type: str) -> bool`:
+  1. Same as `install_to_app_folder` but wrapped in try/except
+  2. If frontend-only: always succeeds, print success message
+  3. If full and exe copy fails (PermissionError — file locked):
+     - Still copy frontend (that succeeds)
+     - Print warning: `"Frontend installed. Exe could not be copied (app is running). Close the app, copy the exe manually, and restart."`
+     - Print source path of exe for convenience
+  4. Return success/failure
+
+### Step 10: Build script — update mode handlers
+- **File**: `scripts/build.py`
+- **`build_dev()`**:
+  1. `ensure_node_modules()`
+  2. `build_type = detect_build_type()`
+  3. If `'full'`: run `run_cargo_build(...)` with existing fast profile + `--no-bundle`, then `save_rust_hash()`
+  4. If `'frontend'`: run `build_frontend_only()`
+  5. `try_silent_install(build_type)` (no prompt, same as `--release`)
+- **Default mode (interactive)**:
+  1. `ensure_node_modules()`
+  2. Version bump prompt (unchanged)
+  3. `build_type = detect_build_type()`
+  4. If `'full'`: run `run_cargo_build()`, then `save_rust_hash()`
+  5. If `'frontend'`: run `build_frontend_only()`
+  6. If bumped AND `build_type == 'full'`: `commit_and_tag()`, `create_release()`
+  7. If bumped AND `build_type == 'frontend'`: commit version bump only, push commit (no tag, no release)
+  8. `install_prompt(build_type)`
+- **`build_release()` (NEW)**:
+  1. `ensure_node_modules()`
+  2. Auto bump patch version (silent)
+  3. `build_type = detect_build_type()`
+  4. If `'full'`: run `run_cargo_build()`, then `save_rust_hash()`
+  5. If `'frontend'`: run `build_frontend_only()`
+  6. If `build_type == 'full'`: `commit_and_tag()`, `create_release()`
+  7. If `build_type == 'frontend'`: commit version bump, push commit only (no tag, no release)
+  8. `try_silent_install(build_type)`
+
+### Step 11: Build script — argument parser update
+- **File**: `scripts/build.py`
+- Add `--release` to the mutually exclusive group
+- Wire to new `build_release()` handler
+
+---
+
+## Edge Cases
+
+1. **First ever build**: No hash file exists -> forces full build. Correct.
+2. **No `frontend/` dir**: App uses embedded assets (fallback). Correct.
+3. **Exe locked during `--release`**: Frontend still installed, user warned about exe. Correct.
+4. **Version bump changes Cargo.toml/tauri.conf.json**: Hash computation strips version fields, so version-only changes don't trigger full build. Correct.
+5. **Rapid frontend updates**: Watcher debounced at 1500ms, prevents reload spam. Correct.
+6. **WebView reload state loss**: Workspace saved before reload, restored on init. Correct.
+7. **Dependency change (new crate)**: Changes `Cargo.lock` -> hash changes -> full build. Correct.
+8. **IPC after protocol navigation**: Tauri injects `__TAURI_INTERNALS__` regardless of origin. Needs verification during implementation.
+
+---
+
+## Verification
+
+After implementation, run:
+```bash
+python scripts/test.py
+```
+
+Manual testing matrix:
+- [ ] `build.py --dev` with Rust changes -> full build, silent auto-install
+- [ ] `build.py --dev` with frontend-only changes -> frontend build, silent auto-install
+- [ ] `build.py --release` with Rust changes -> full build, tag, release, auto-install
+- [ ] `build.py --release` with frontend-only changes -> frontend build, no tag/release, auto-install
+- [ ] `build.py` interactive with version bump + Rust changes -> full flow
+- [ ] `build.py` interactive with version bump + frontend-only -> commit+push, no tag/release
+- [ ] App starts without `frontend/` dir -> uses embedded assets (fallback)
+- [ ] App starts with `frontend/` dir -> loads from `cosmos://`
+- [ ] Frontend files updated while app running -> auto-reload, state preserved
+- [ ] PTY sessions survive WebView reload
+- [ ] IPC commands work after reload (git status, file browser, etc.)
 
 ## Checklist
 
-- [x] R1. suppressCount desync protection
-- [x] R2. Base64 → Blob + createObjectURL
-- [x] R4. Cross-language event name constant
-- [x] R5. Project dropdown re-render race
-
-## Simplify Review
-
-- **Fixed**: Extracted `decodeBase64ToBytes` to `src/utils/base64.ts` (was duplicated in `pty-service.ts` and inline in `browser-tab-content.ts`)
-- **Fixed**: Un-exported `resetSuppression()` — only used internally, exposing it would let external callers corrupt suppress count
-- **Noted** (out of scope): `'fs-change'` raw string on both Rust/TS sides should get the same constant treatment as `browser-navigated`
-- **Clean**: No memory leaks, no event listener leaks, no redundant work, no hot-path bloat
+- [ ] Step 1: Add `mime_guess` dependency
+- [ ] Step 2: Register `cosmos://` custom protocol
+- [ ] Step 3: Startup navigation to `cosmos://`
+- [ ] Step 4: Frontend watcher (auto-reload trigger)
+- [ ] Step 5: Frontend reload listener
+- [ ] Step 6: CSP update
+- [ ] Step 7: Build script — smart detect function
+- [ ] Step 8: Build script — frontend-only build function
+- [ ] Step 9: Build script — install function
+- [ ] Step 10: Build script — update mode handlers
+- [ ] Step 11: Build script — argument parser update

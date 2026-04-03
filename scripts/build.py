@@ -1,12 +1,15 @@
 """Unified build script for Cosmos Terminal.
 
 Usage:
-    python scripts/build.py          # Production release build (interactive)
-    python scripts/build.py --dev    # Fast local build (no bundling)
-    python scripts/build.py --local  # Dev server with hot reload (cargo tauri dev)
+    python scripts/build.py              # Interactive build (smart detect)
+    python scripts/build.py --dev        # Fast local build (smart detect, silent install)
+    python scripts/build.py --release    # Silent release build (auto bump, tag if backend)
+    python scripts/build.py --release --force  # Force full rebuild + tag + release
+    python scripts/build.py --local      # Dev server with hot reload (cargo tauri dev)
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -23,6 +26,7 @@ BUNDLE_DIR = ROOT / "src-tauri" / "target" / "release" / "bundle"
 PACKAGE_JSON = ROOT / "package.json"
 CARGO_TOML = ROOT / "src-tauri" / "Cargo.toml"
 TAURI_CONF = ROOT / "src-tauri" / "tauri.conf.json"
+RUST_HASH_FILE = ROOT / "src-tauri" / "target" / ".rust-build-hash"
 APP_DIR_ENV = os.environ.get("COSMOS_TERMINAL_APP_DIR")
 
 # ANSI helpers
@@ -32,6 +36,7 @@ CYAN = "\033[1;36m"
 GREEN = "\033[1;32m"
 YELLOW = "\033[1;33m"
 RED = "\033[1;31m"
+DIM = "\033[2m"
 
 # --- Version management ------------------------------------------------------
 
@@ -70,6 +75,101 @@ def update_version(new_version: str) -> None:
     CARGO_TOML.write_text(cargo, encoding="utf-8")
 
 
+# --- Smart build detection ---------------------------------------------------
+
+
+def compute_rust_hash() -> str:
+    """Hash all Rust source files and build config (excluding version fields)."""
+    hasher = hashlib.sha256()
+
+    # Hash all .rs files (sorted for determinism)
+    src_dir = ROOT / "src-tauri" / "src"
+    for rs_file in sorted(src_dir.rglob("*.rs")):
+        hasher.update(rs_file.read_bytes())
+
+    # Hash Cargo.toml with version line stripped
+    cargo_text = CARGO_TOML.read_text(encoding="utf-8")
+    cargo_text = re.sub(
+        r'^version\s*=\s*"[^"]*"',
+        "",
+        cargo_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    hasher.update(cargo_text.encode("utf-8"))
+
+    # Hash Cargo.lock with own-package version stripped (version bumps should
+    # not trigger a full rebuild)
+    cargo_lock = ROOT / "src-tauri" / "Cargo.lock"
+    if cargo_lock.exists():
+        lock_text = cargo_lock.read_text(encoding="utf-8")
+        lock_text = re.sub(
+            r'(name\s*=\s*"cosmos-terminal"\s*\n)version\s*=\s*"[^"]*"',
+            r"\1",
+            lock_text,
+            count=1,
+        )
+        hasher.update(lock_text.encode("utf-8"))
+
+    # Hash build.rs
+    build_rs = ROOT / "src-tauri" / "build.rs"
+    if build_rs.exists():
+        hasher.update(build_rs.read_bytes())
+
+    # Hash tauri.conf.json with version field stripped
+    conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
+    conf.pop("version", None)
+    hasher.update(json.dumps(conf, sort_keys=True).encode("utf-8"))
+
+    return hasher.hexdigest()
+
+
+_cached_rust_hash: str | None = None
+
+
+def detect_build_type() -> str:
+    """Determine if a full (Rust + frontend) or frontend-only build is needed.
+
+    Returns 'full' or 'frontend'.  Caches the computed hash for
+    ``save_rust_hash()`` to reuse.
+    """
+    global _cached_rust_hash
+
+    # Guard: if exe has never been built, force full build
+    if not EXE_SRC.exists():
+        print(f"{DIM}No existing exe found — full build required{RESET}")
+        return "full"
+
+    # Guard: if app dir is set but exe not present there, force full build
+    if APP_DIR_ENV:
+        app_exe = Path(APP_DIR_ENV) / "cosmos-terminal.exe"
+        if not app_exe.exists():
+            print(f"{DIM}No exe in app folder — full build required{RESET}")
+            return "full"
+
+    # Compare hash with saved hash from last Rust build
+    if not RUST_HASH_FILE.exists():
+        print(f"{DIM}No previous Rust build hash — full build required{RESET}")
+        return "full"
+
+    saved_hash = RUST_HASH_FILE.read_text(encoding="utf-8").strip()
+    _cached_rust_hash = compute_rust_hash()
+
+    if saved_hash != _cached_rust_hash:
+        print(f"{DIM}Rust source changes detected — full build required{RESET}")
+        return "full"
+
+    print(f"{DIM}No Rust changes detected — frontend-only build{RESET}")
+    return "frontend"
+
+
+def save_rust_hash() -> None:
+    """Save the current Rust hash after a successful build."""
+    RUST_HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
+    rust_hash = _cached_rust_hash or compute_rust_hash()
+    RUST_HASH_FILE.write_text(rust_hash, encoding="utf-8")
+
+
 # --- Git + release -----------------------------------------------------------
 
 
@@ -80,9 +180,9 @@ def clear_git_lock() -> None:
         print(f"{YELLOW}Removed stale .git/index.lock from a previous failed run{RESET}")
 
 
-def commit_and_tag(version: str) -> None:
+def _stage_and_commit(version: str) -> None:
+    """Stage version files and commit if there are changes."""
     clear_git_lock()
-    tag = f"v{version}"
     subprocess.run(
         ["git", "add", "package.json", "src-tauri/Cargo.toml",
          "src-tauri/Cargo.lock", "src-tauri/tauri.conf.json"],
@@ -96,10 +196,22 @@ def commit_and_tag(version: str) -> None:
         )
     else:
         print(f"{YELLOW}Version bump already committed — skipping commit{RESET}")
+
+
+def commit_and_tag(version: str) -> None:
+    _stage_and_commit(version)
+    tag = f"v{version}"
     subprocess.run(["git", "tag", tag], cwd=ROOT, check=True)
     subprocess.run(["git", "push"], cwd=ROOT, check=True)
     subprocess.run(["git", "push", "origin", tag], cwd=ROOT, check=True)
     print(f"{GREEN}Tagged {tag} and pushed{RESET}")
+
+
+def commit_and_push(version: str) -> None:
+    """Commit version bump and push (no tag, no release)."""
+    _stage_and_commit(version)
+    subprocess.run(["git", "push"], cwd=ROOT, check=True)
+    print(f"{GREEN}Pushed version bump to {version}{RESET}")
 
 
 def get_changelog(count: int = 3) -> str:
@@ -174,20 +286,98 @@ def run_cargo_build(env_overrides: dict[str, str] | None = None,
         sys.exit(result.returncode)
 
 
-def copy_exe_prompt() -> None:
-    if not EXE_SRC.exists():
-        return
+def build_frontend_only() -> None:
+    """Build frontend assets only (no Rust compilation)."""
+    print(f"{CYAN}Building frontend only (npm run build){RESET}")
+    print("-" * 40)
+    result = subprocess.run("npm run build", shell=True, cwd=ROOT)
+    if result.returncode != 0:
+        print(f"{RED}Frontend build failed{RESET}")
+        sys.exit(result.returncode)
+    # Write version.json so the frontend hot-swap can show the new version
+    dist_dir = ROOT / "dist"
+    if dist_dir.is_dir():
+        (dist_dir / "version.json").write_text(json.dumps({"version": read_version()}))
+    print(f"{GREEN}Frontend build complete{RESET}")
+
+
+# --- Install helpers ---------------------------------------------------------
+
+
+def install_to_app_folder(build_type: str) -> bool:
+    """Copy built assets to the app folder.
+
+    Returns True on full success, False if the exe copy failed.
+    """
     if not APP_DIR_ENV:
-        print(f"{YELLOW}COSMOS_TERMINAL_APP_DIR is not set — skipping exe copy.{RESET}")
+        return True
+
+    app_dir = Path(APP_DIR_ENV)
+    app_dir.mkdir(parents=True, exist_ok=True)
+    dist_src = ROOT / "dist"
+    frontend_dest = app_dir / "frontend"
+    exe_failed = False
+
+    # Always install frontend assets (clear contents, not the directory itself,
+    # so the Rust FrontendWatcher keeps its file-system handle alive).
+    if dist_src.is_dir():
+        if frontend_dest.exists():
+            for child in frontend_dest.iterdir():
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+        else:
+            frontend_dest.mkdir(parents=True)
+        for child in dist_src.iterdir():
+            dest_child = frontend_dest / child.name
+            if child.is_dir():
+                shutil.copytree(child, dest_child)
+            else:
+                shutil.copy2(child, dest_child)
+        print(f"{GREEN}Installed frontend to {frontend_dest}{RESET}")
+    else:
+        print(f"{RED}dist/ directory not found — frontend not installed{RESET}")
+        return False
+
+    # Install exe only on full builds
+    if build_type == "full":
+        if EXE_SRC.exists():
+            dest = app_dir / "cosmos-terminal.exe"
+            try:
+                shutil.copy2(EXE_SRC, dest)
+                print(f"{GREEN}Installed exe to {dest}{RESET}")
+            except PermissionError:
+                exe_failed = True
+                print(f"{YELLOW}Frontend installed successfully.{RESET}")
+                print(f"{YELLOW}Exe could not be copied (app is running).{RESET}")
+                print(f"{YELLOW}Close the app, then copy manually:{RESET}")
+                print(f"  {DIM}{EXE_SRC}{RESET}")
+                print(f"  {DIM}  -> {dest}{RESET}")
+        else:
+            print(f"{RED}Exe not found at {EXE_SRC}{RESET}")
+            exe_failed = True
+
+    return not exe_failed
+
+
+def install_prompt(build_type: str) -> None:
+    """Ask the user whether to install to app folder."""
+    if not APP_DIR_ENV:
+        print(f"{YELLOW}COSMOS_TERMINAL_APP_DIR is not set — skipping install.{RESET}")
         print("To enable, set the COSMOS_TERMINAL_APP_DIR environment variable.")
         return
-    app_dir = Path(APP_DIR_ENV)
-    answer = input(f"{YELLOW}Copy exe to app folder? [y/N] {RESET}").strip().lower()
+    answer = input(f"{YELLOW}Install to app folder? [y/N] {RESET}").strip().lower()
     if answer in ("y", "yes"):
-        app_dir.mkdir(parents=True, exist_ok=True)
-        dest = app_dir / "cosmos-terminal.exe"
-        shutil.copy2(EXE_SRC, dest)
-        print(f"{GREEN}Copied to {dest}{RESET}")
+        install_to_app_folder(build_type)
+
+
+def try_silent_install(build_type: str) -> None:
+    """Install to app folder without prompting."""
+    if not APP_DIR_ENV:
+        print(f"{YELLOW}COSMOS_TERMINAL_APP_DIR is not set — skipping install.{RESET}")
+        return
+    install_to_app_folder(build_type)
 
 
 # --- Mode handlers -----------------------------------------------------------
@@ -205,25 +395,70 @@ def build_local() -> None:
         sys.exit(0)
 
 
-def build_dev() -> None:
-    print(f"{YELLOW}Local build (fast profile){RESET}")
-    print("  LTO: thin | codegen-units: 8 | opt-level: 2 | incremental: on")
-    print("  Bundling: skipped (exe only)")
-
+def build_dev(force: bool = False) -> None:
     ensure_node_modules()
-    run_cargo_build(
-        env_overrides={
-            "CARGO_PROFILE_RELEASE_LTO": "thin",
-            "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "8",
-            "CARGO_PROFILE_RELEASE_OPT_LEVEL": "2",
-            "CARGO_INCREMENTAL": "1",
-        },
-        no_bundle=True,
-    )
-    copy_exe_prompt()
+
+    if force:
+        global _cached_rust_hash
+        _cached_rust_hash = compute_rust_hash()
+        build_type = "full"
+        print(f"{YELLOW}Force flag set — full build regardless of changes{RESET}")
+    else:
+        build_type = detect_build_type()
+
+    if build_type == "full":
+        print(f"{YELLOW}Full build (Rust + frontend){RESET}")
+        print("  LTO: thin | codegen-units: 8 | opt-level: 2 | incremental: on")
+        print("  Bundling: skipped (exe only)")
+        run_cargo_build(
+            env_overrides={
+                "CARGO_PROFILE_RELEASE_LTO": "thin",
+                "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "8",
+                "CARGO_PROFILE_RELEASE_OPT_LEVEL": "2",
+                "CARGO_INCREMENTAL": "1",
+            },
+            no_bundle=True,
+        )
+        save_rust_hash()
+    else:
+        print(f"{GREEN}Frontend-only build (no Rust changes){RESET}")
+        build_frontend_only()
+
+    try_silent_install(build_type)
 
 
-def build_release() -> None:
+def build_release(force: bool = False) -> None:
+    ensure_node_modules()
+
+    # Auto bump patch version (silent)
+    current = read_version()
+    version = bump_patch(current)
+    update_version(version)
+    print(f"{GREEN}Version bumped to {version}{RESET}")
+
+    if force:
+        global _cached_rust_hash
+        _cached_rust_hash = compute_rust_hash()
+        build_type = "full"
+        print(f"{YELLOW}Force flag set — full build + tag + release regardless of changes{RESET}")
+    else:
+        build_type = detect_build_type()
+
+    if build_type == "full":
+        print(f"{YELLOW}Full build (Rust + frontend){RESET}")
+        run_cargo_build()
+        save_rust_hash()
+        commit_and_tag(version)
+        create_release(version)
+    else:
+        print(f"{GREEN}Frontend-only build (no Rust changes){RESET}")
+        build_frontend_only()
+        commit_and_push(version)
+
+    try_silent_install(build_type)
+
+
+def build_interactive() -> None:
     ensure_node_modules()
 
     # --- Version bump --------------------------------------------------------
@@ -251,15 +486,35 @@ def build_release() -> None:
         print(f"{GREEN}Version set to {version}{RESET}")
 
     # --- Build ---------------------------------------------------------------
-    run_cargo_build()
+    build_type = detect_build_type()
+
+    if build_type == "frontend":
+        force_full = input(
+            f"{YELLOW}Force full rebuild anyway? [y/N] {RESET}"
+        ).strip().lower()
+        if force_full in ("y", "yes"):
+            global _cached_rust_hash
+            _cached_rust_hash = compute_rust_hash()
+            build_type = "full"
+
+    if build_type == "full":
+        print(f"{YELLOW}Full build (Rust + frontend){RESET}")
+        run_cargo_build()
+        save_rust_hash()
+    else:
+        print(f"{GREEN}Frontend-only build (no Rust changes){RESET}")
+        build_frontend_only()
 
     # --- Publish -------------------------------------------------------------
     if bumped:
-        commit_and_tag(version)
-        create_release(version)
+        if build_type == "full":
+            commit_and_tag(version)
+            create_release(version)
+        else:
+            commit_and_push(version)
 
-    # --- Copy exe ------------------------------------------------------------
-    copy_exe_prompt()
+    # --- Install -------------------------------------------------------------
+    install_prompt(build_type)
 
 
 # --- Entry point -------------------------------------------------------------
@@ -270,27 +525,41 @@ def main() -> None:
         description="Build Cosmos Terminal",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Examples:\n"
-               "  python scripts/build.py          # Production release build\n"
-               "  python scripts/build.py --dev    # Fast local build\n"
-               "  python scripts/build.py --local  # Dev server with hot reload",
+               "  python scripts/build.py              # Interactive build\n"
+               "  python scripts/build.py --dev        # Fast local build\n"
+               "  python scripts/build.py --release    # Silent release build\n"
+               "  python scripts/build.py --local      # Dev server with hot reload",
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--dev", action="store_true",
-        help="Fast local build (thin LTO, no bundling, incremental)",
+        help="Fast local build (smart detect, silent install)",
+    )
+    group.add_argument(
+        "--release", action="store_true",
+        help="Silent release build (auto bump, tag+release if backend changes)",
     )
     group.add_argument(
         "--local", action="store_true",
         help="Dev server with hot reload (cargo tauri dev)",
     )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Force full Rust rebuild + tag + release (ignores smart detection)",
+    )
     args = parser.parse_args()
+
+    if args.force and not (args.dev or args.release):
+        print(f"{YELLOW}--force has no effect without --dev or --release{RESET}")
 
     if args.local:
         build_local()
     elif args.dev:
-        build_dev()
+        build_dev(force=args.force)
+    elif args.release:
+        build_release(force=args.force)
     else:
-        build_release()
+        build_interactive()
 
 
 if __name__ == "__main__":

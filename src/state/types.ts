@@ -211,6 +211,9 @@ export interface SessionChildrenEvent {
 /** Event name emitted by the Rust backend on filesystem changes. */
 export const FS_CHANGE_EVENT = 'fs-change';
 
+/** Event name emitted when external frontend assets on disk are updated. */
+export const FRONTEND_UPDATED_EVENT = 'frontend-updated';
+
 /** Payload shape for `browser-navigated` events (mirrors Rust `BrowserNavEvent`). */
 export interface BrowserNavEvent {
   tabId: string;

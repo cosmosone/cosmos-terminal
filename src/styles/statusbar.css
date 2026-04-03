@@ -11,6 +11,31 @@
   gap: 12px;
 }
 
+.status-version {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+#status-update-badge {
+  background: var(--accent);
+  color: var(--bg-primary);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+
+#status-update-badge:hover {
+  filter: brightness(1.2);
+}
+
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
 .status-item {
   display: flex;
   align-items: center;
@@ -20,7 +45,6 @@
 .status-badge {
   display: flex;
   align-items: center;
-  margin-left: auto;
   gap: 5px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
@@ -69,6 +93,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  margin-left: auto;
 }
 
 .status-debug-label {

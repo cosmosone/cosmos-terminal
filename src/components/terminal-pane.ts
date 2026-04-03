@@ -4,8 +4,9 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ImageAddon } from '@xterm/addon-image';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { SerializeAddon } from '@xterm/addon-serialize';
 import { open } from '@tauri-apps/plugin-shell';
-import { createPtySession, writeToPtySession, resizePtySession, killPtySession, registerBackendSession, unregisterBackendSession } from '../services/pty-service';
+import { createPtySession, writeToPtySession, resizePtySession, killPtySession, reconnectPtySession, registerBackendSession, unregisterBackendSession } from '../services/pty-service';
 import { consumeInitialCommand } from '../services/initial-command';
 import { store } from '../state/store';
 import { addBrowserTab, getActiveProject, cleanupProcessTreePane } from '../state/actions';
@@ -143,6 +144,7 @@ export class TerminalPane {
 
   private terminal: Terminal;
   private fitAddon: FitAddon;
+  private serializeAddon: SerializeAddon;
   private webglAddon: WebglAddon | null = null;
   private backendId: string | null = null;
   /** Kitty keyboard protocol mode stack — pushed/popped by child applications. */
@@ -272,8 +274,10 @@ export class TerminalPane {
     });
 
     this.fitAddon = new FitAddon();
+    this.serializeAddon = new SerializeAddon();
 
     this.terminal.loadAddon(this.fitAddon);
+    this.terminal.loadAddon(this.serializeAddon);
     this.terminal.loadAddon(new WebLinksAddon((_e, uri) => {
       this.openExternalUri(uri);
     }));
@@ -1196,6 +1200,79 @@ export class TerminalPane {
     });
     this.setFollowOutput(true, 'manual-scroll-button');
     this.scheduleSyncToBottom('manual-scroll-button');
+  }
+
+  /** Serialize the terminal buffer for persistence across reloads. */
+  serialize(): string {
+    return this.serializeAddon.serialize();
+  }
+
+  getBackendId(): string | null {
+    return this.backendId;
+  }
+
+  /** Reconnect to an existing backend session and restore terminal content. */
+  async reconnect(backendId: string, serializedBuffer?: string): Promise<void> {
+    if (this.disposed) return;
+
+    // Kill the session that mount() just created (if any)
+    const oldBackendId = this.backendId;
+    if (oldBackendId && oldBackendId !== backendId) {
+      unregisterBackendSession(oldBackendId);
+      killPtySession(oldBackendId).catch((err) => {
+        logger.warn('pty', 'Failed to kill old session during reconnect', {
+          paneId: this.paneId, oldBackendId, error: String(err),
+        });
+      });
+    }
+
+    this.backendId = backendId;
+
+    // Clear terminal and restore buffer from serialized content
+    this.terminal.reset();
+    if (serializedBuffer) {
+      this.terminal.write(serializedBuffer);
+    }
+
+    // Re-attach to the backend session with new channels
+    try {
+      await reconnectPtySession(
+        backendId,
+        (data) => {
+          if (!this.disposed) {
+            this.processAndWrite(data);
+            this.trackActivity(data.length);
+          }
+        },
+        () => {
+          if (!this.disposed) {
+            logger.warn('pty', 'Shell process exited (reconnected)', {
+              paneId: this.paneId,
+              backendId: this.backendId,
+            });
+            this.onProcessExit?.();
+          }
+        },
+      );
+
+      registerBackendSession(backendId, this.projectId, this.sessionId, this.paneId);
+
+      // Resize to current dimensions
+      const dims = this.fitAddon.proposeDimensions();
+      if (dims) {
+        await resizePtySession(backendId, dims.rows, dims.cols);
+        this.lastSentRows = dims.rows;
+        this.lastSentCols = dims.cols;
+      }
+
+      logger.info('pty', 'Reconnected terminal pane', { paneId: this.paneId, backendId });
+    } catch (err) {
+      logger.error('pty', 'Failed to reconnect terminal pane', {
+        paneId: this.paneId,
+        backendId,
+        error: String(err),
+      });
+    }
   }
 
   async dispose(): Promise<void> {

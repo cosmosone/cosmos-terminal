@@ -1,3 +1,4 @@
+import { getVersion } from '@tauri-apps/api/app';
 import { getSystemStats } from '../services/system-monitor';
 import { logger } from '../services/logger';
 import { store } from '../state/store';
@@ -11,7 +12,10 @@ const TIMER_INTERVAL_MS = 60_000;
 export function initStatusBar(onCleanup?: () => void): void {
   const bar = $('#status-bar')!;
   bar.innerHTML = `
+    <span class="status-version"></span>
     <div class="status-debug-group">
+      <span class="status-debug-timer"></span>
+      <div class="toggle-switch-sm" title="Toggle Debug Logging"></div>
       <span class="status-item status-debug-label" id="status-log-toggle" title="Toggle Log Viewer">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -20,8 +24,6 @@ export function initStatusBar(onCleanup?: () => void): void {
           <line x1="8" y1="17" x2="13" y2="17"></line>
         </svg>
       </span>
-      <div class="toggle-switch-sm" title="Toggle Debug Logging"></div>
-      <span class="status-debug-timer"></span>
     </div>
     <span class="status-badge">
       <span class="status-badge-stats">
@@ -39,6 +41,9 @@ export function initStatusBar(onCleanup?: () => void): void {
       </span>
     </span>
   `;
+
+  const versionEl = bar.querySelector<HTMLElement>('.status-version')!;
+  getVersion().then((v) => { versionEl.textContent = `v${v}`; });
 
   const logToggle = $('#status-log-toggle')!;
   logToggle.addEventListener('click', async () => {

@@ -53,6 +53,31 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Return the IDs of all live sessions.
+    pub fn list_sessions(&self) -> Vec<PtySessionInfo> {
+        self.sessions
+            .lock()
+            .iter()
+            .filter(|(_, h)| h.is_alive())
+            .map(|(id, h)| PtySessionInfo {
+                id: id.clone(),
+                pid: h.pid,
+            })
+            .collect()
+    }
+
+    /// Reconnect an existing session with new IPC channels.
+    pub fn reconnect_session(
+        &self,
+        session_id: &str,
+        output_channel: Channel<String>,
+        exit_channel: Channel<bool>,
+    ) -> Result<(), String> {
+        self.with_session(session_id, |handle| {
+            handle.reconnect(output_channel, exit_channel)
+        })
+    }
+
     /// Drain all sessions from the registry without killing them.
     /// The caller is responsible for calling `kill()` on each handle.
     pub fn drain_all(&self) -> Vec<Arc<SessionHandle>> {

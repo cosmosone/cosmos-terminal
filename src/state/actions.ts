@@ -649,7 +649,7 @@ export function toggleSettingsView(): void {
 // --- Git sidebar actions ---
 
 function clampGitSidebarWidth(width: number): number {
-  return Math.max(250, Math.min(600, width));
+  return Math.max(280, Math.min(600, width));
 }
 
 function clampFileBrowserSidebarWidth(width: number): number {

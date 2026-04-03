@@ -10,6 +10,20 @@ import { getAgentCommand } from '../services/agent-definitions';
 import { setInitialCommand } from '../services/initial-command';
 import { TerminalPane } from './terminal-pane';
 
+/** Saved terminal state from a previous session (populated before reload). */
+let reconnectState: Record<string, { backendId: string; buffer: string }> | null = null;
+
+/** Load reconnection state from sessionStorage (called once on startup). */
+export function loadReconnectState(): void {
+  const raw = sessionStorage.getItem('cosmos-terminal-state');
+  if (raw) {
+    try {
+      reconnectState = JSON.parse(raw) as Record<string, { backendId: string; buffer: string }>;
+    } catch { /* ignore */ }
+    sessionStorage.removeItem('cosmos-terminal-state');
+  }
+}
+
 export class SplitContainer {
   private container: HTMLElement;
   private terminals = new Map<string, TerminalPane>();
@@ -128,7 +142,14 @@ export class SplitContainer {
           }
         }
 
-        await tp.mount();
+        const saved = reconnectState?.[paneId];
+        if (saved) {
+          delete reconnectState![paneId];
+          await tp.mount();
+          await tp.reconnect(saved.backendId, saved.buffer);
+        } else {
+          await tp.mount();
+        }
       }
     }
 
@@ -368,6 +389,18 @@ export class SplitContainer {
     }
 
     void this.render();
+  }
+
+  /** Serialize all terminal buffers and their backend session IDs for reconnection. */
+  serializeAll(): Map<string, { backendId: string; buffer: string }> {
+    const result = new Map<string, { backendId: string; buffer: string }>();
+    for (const [paneId, tp] of this.terminals) {
+      const backendId = tp.getBackendId();
+      if (backendId) {
+        result.set(paneId, { backendId, buffer: tp.serialize() });
+      }
+    }
+    return result;
   }
 
   private async disposeAll(): Promise<void> {

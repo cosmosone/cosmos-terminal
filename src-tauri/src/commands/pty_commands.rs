@@ -95,6 +95,30 @@ pub async fn resize_session(
 }
 
 #[tauri::command]
+pub async fn list_sessions(app: AppHandle) -> Result<Vec<PtySessionInfo>, String> {
+    spawn_blocking_result(move || {
+        let session_manager = app.state::<SessionManager>();
+        Ok(session_manager.list_sessions())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn reconnect_session(
+    app: AppHandle,
+    session_id: String,
+    on_output: Channel<String>,
+    on_exit: Channel<bool>,
+) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+    spawn_blocking_result(move || {
+        let session_manager = app.state::<SessionManager>();
+        session_manager.reconnect_session(&session_id, on_output, on_exit)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn kill_session(
     app: AppHandle,
     session_id: String,

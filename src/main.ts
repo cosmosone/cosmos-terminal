@@ -5,12 +5,13 @@ import { loadSettings, saveSettings, buildUiFont } from './services/settings-ser
 import { loadWorkspace, saveWorkspace } from './services/workspace-service';
 import { resolveActivePaneId } from './layout/pane-tree';
 import type { AppState, BrowserTab, KeybindingConfig, Session, FileTab, PaneLeaf } from './state/types';
+import { FRONTEND_UPDATED_EVENT } from './state/types';
 import { AGENT_DEFINITIONS } from './services/agent-definitions';
 import { setInitialCommand } from './services/initial-command';
 import { logger } from './services/logger';
 import { initProjectTabBar } from './components/project-tab-bar';
 import { initWorkTabBar } from './components/work-tab-bar';
-import { SplitContainer } from './components/split-container';
+import { SplitContainer, loadReconnectState } from './components/split-container';
 import { initSettingsPage } from './components/settings-page';
 import { initStatusBar } from './components/status-bar';
 import { initLogViewer } from './components/log-viewer';
@@ -19,6 +20,7 @@ import { initFileBrowserSidebar } from './components/file-browser-sidebar';
 import { initFileTabContent } from './components/file-tab-content';
 import { initBrowserTabContent } from './components/browser-tab-content';
 import { setBrowserPoolSize } from './services/browser-service';
+import { listen } from '@tauri-apps/api/event';
 import { watchDirectory, unwatchDirectory } from './services/fs-service';
 import { keybindings, parseKeybinding } from './utils/keybindings';
 import { confirmCloseTerminalTab, confirmCloseProject } from './components/confirm-dialog';
@@ -29,6 +31,7 @@ import { initProcessMonitorListener } from './services/process-monitor-service';
 import './highlight/languages/register-all';
 
 async function main(): Promise<void> {
+  loadReconnectState();
   const [settings, saved] = await Promise.all([loadSettings(), loadWorkspace()]);
 
   // Check 24h auto-disable for debug logging
@@ -311,6 +314,74 @@ async function main(): Promise<void> {
     (s) => s.settings.keybindings,
     (kb) => registerConfigurableBindings(kb),
   );
+
+  void listen(FRONTEND_UPDATED_EVENT, async () => {
+    logger.info('app', 'Frontend assets updated — hot-swapping');
+    try {
+      const resp = await fetch(`${location.origin}/index.html`, { cache: 'no-store' });
+      const html = await resp.text();
+      const newDoc = new DOMParser().parseFromString(html, 'text/html');
+
+      // --- Hot-swap CSS ---
+      const oldLinks = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'));
+      const newLinks = Array.from(newDoc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'));
+
+      const loads = newLinks.map(tmpl => new Promise<void>(resolve => {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        if (tmpl.hasAttribute('crossorigin')) link.crossOrigin = '';
+        const href = tmpl.getAttribute('href');
+        if (!href) { resolve(); return; }
+        link.href = href;
+        link.onload = () => resolve();
+        link.onerror = () => resolve();
+        document.head.appendChild(link);
+      }));
+      await Promise.all(loads);
+      oldLinks.forEach(l => l.remove());
+
+      // --- Fetch new version and show update badge ---
+      let newVersion: string | null = null;
+      try {
+        const vResp = await fetch(`${location.origin}/version.json`, { cache: 'no-store' });
+        if (vResp.ok) {
+          const vData = await vResp.json() as { version: string };
+          newVersion = vData.version;
+        }
+      } catch { /* version.json may not exist */ }
+
+      const versionEl = document.querySelector<HTMLElement>('.status-version');
+      if (versionEl && !document.getElementById('status-update-badge')) {
+        const badge = document.createElement('span');
+        badge.id = 'status-update-badge';
+        badge.title = 'Click to reload with new version';
+        badge.textContent = newVersion ? `Reload: v${newVersion}` : 'Reload: Update';
+        badge.addEventListener('click', async () => {
+          // Save terminal buffers for reconnection
+          const terminalState = splitContainer.serializeAll();
+          const serialized: Record<string, { backendId: string; buffer: string }> = {};
+          for (const [paneId, data] of terminalState) {
+            serialized[paneId] = data;
+          }
+          try {
+            sessionStorage.setItem('cosmos-terminal-state', JSON.stringify(serialized));
+          } catch {
+            logger.warn('app', 'Terminal state too large for sessionStorage, skipping');
+          }
+
+          const s = store.getState();
+          await saveWorkspace(s.projects, s.activeProjectId, s.gitSidebar, s.fileBrowserSidebar);
+          await saveSettings(s.settings);
+          location.reload();
+        });
+        versionEl.after(badge);
+      }
+
+      logger.info('app', `Hot-swap complete${newVersion ? ` (v${newVersion} available)` : ''}`);
+    } catch (e) {
+      logger.error('app', `Hot-swap failed: ${e}`);
+    }
+  });
 
   logger.info('app', 'App ready');
 }

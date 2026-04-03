@@ -13,6 +13,30 @@ use tauri::ipc::Channel;
 use super::platform::default_shell;
 use crate::security::path_guard::canonicalize_existing_dir;
 
+/// Shared state for output channel and buffer, allowing reconnection.
+struct SharedOutput {
+    channel: Mutex<Option<Channel<String>>>,
+    exit_channel: Mutex<Option<Channel<bool>>>,
+    /// Ring buffer of recent raw output for replay on reconnect.
+    buffer: Mutex<Vec<u8>>,
+    /// Whether the child process has exited while disconnected.
+    exited_while_disconnected: AtomicBool,
+}
+
+impl SharedOutput {
+    fn new(channel: Channel<String>, exit_channel: Channel<bool>) -> Self {
+        Self {
+            channel: Mutex::new(Some(channel)),
+            exit_channel: Mutex::new(Some(exit_channel)),
+            buffer: Mutex::new(Vec::new()),
+            exited_while_disconnected: AtomicBool::new(false),
+        }
+    }
+}
+
+/// Maximum buffer size for replay (1 MB).
+const REPLAY_BUFFER_MAX: usize = 1024 * 1024;
+
 pub struct SessionHandle {
     master_write: Mutex<Option<Box<dyn Write + Send>>>,
     master_pty: Mutex<Option<Box<dyn portable_pty::MasterPty + Send>>>,
@@ -20,6 +44,7 @@ pub struct SessionHandle {
     reader_thread: Mutex<Option<JoinHandle<()>>>,
     output_thread: Mutex<Option<JoinHandle<()>>>,
     exit_thread: Mutex<Option<JoinHandle<()>>>,
+    shared: Arc<SharedOutput>,
     pub pid: u32,
 }
 
@@ -106,6 +131,7 @@ impl SessionHandle {
         }
 
         let alive = Arc::new(AtomicBool::new(true));
+        let shared = Arc::new(SharedOutput::new(output_channel, exit_channel));
         let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>();
         let alive_for_reader = alive.clone();
 
@@ -115,12 +141,14 @@ impl SessionHandle {
         });
 
         // Thread 2: Batch output chunks before crossing the Tauri IPC boundary.
+        let shared_for_output = shared.clone();
         let output_handle = std::thread::spawn(move || {
-            Self::output_loop(output_rx, output_channel);
+            Self::output_loop(output_rx, shared_for_output);
         });
 
         // Thread 3: Wait for child process to exit, then notify frontend
         let alive_for_exit = alive.clone();
+        let shared_for_exit = shared.clone();
         let exit_handle = std::thread::spawn(move || {
             let mut child = child;
             const POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -150,7 +178,14 @@ impl SessionHandle {
             }
 
             alive_for_exit.store(false, Ordering::Release);
-            let _ = exit_channel.send(true);
+            let guard = shared_for_exit.exit_channel.lock();
+            if let Some(ch) = guard.as_ref() {
+                let _ = ch.send(true);
+            } else {
+                shared_for_exit
+                    .exited_while_disconnected
+                    .store(true, Ordering::Release);
+            }
         });
 
         // Drop slave side - we only need master
@@ -163,8 +198,49 @@ impl SessionHandle {
             reader_thread: Mutex::new(Some(reader_handle)),
             output_thread: Mutex::new(Some(output_handle)),
             exit_thread: Mutex::new(Some(exit_handle)),
+            shared,
             pid,
         })
+    }
+
+    /// Replace the IPC channels for this session (frontend reconnection).
+    /// Replays buffered output through the new channel so the terminal can
+    /// restore its display, then continues streaming live output.
+    pub fn reconnect(
+        &self,
+        new_output: Channel<String>,
+        new_exit: Channel<bool>,
+    ) -> Result<(), String> {
+        // Replay buffered output
+        let buffer = self.shared.buffer.lock().clone();
+        if !buffer.is_empty() {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&buffer);
+            new_output
+                .send(encoded)
+                .map_err(|e| format!("Failed to replay buffer: {e}"))?;
+        }
+
+        // Swap in new channels
+        *self.shared.channel.lock() = Some(new_output);
+        *self.shared.exit_channel.lock() = Some(new_exit);
+
+        // If the process exited while disconnected, notify now
+        if self
+            .shared
+            .exited_while_disconnected
+            .swap(false, Ordering::AcqRel)
+        {
+            let guard = self.shared.exit_channel.lock();
+            if let Some(ch) = guard.as_ref() {
+                let _ = ch.send(true);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::Acquire)
     }
 
     fn reader_loop(
@@ -187,7 +263,7 @@ impl SessionHandle {
         alive.store(false, Ordering::Release);
     }
 
-    fn output_loop(output_rx: mpsc::Receiver<Vec<u8>>, channel: Channel<String>) {
+    fn output_loop(output_rx: mpsc::Receiver<Vec<u8>>, shared: Arc<SharedOutput>) {
         while let Ok(first_chunk) = output_rx.recv() {
             let mut batch = first_chunk;
 
@@ -202,9 +278,24 @@ impl SessionHandle {
                 }
             }
 
-            let encoded = base64::engine::general_purpose::STANDARD.encode(&batch);
-            if channel.send(encoded).is_err() {
-                break;
+            // Append to ring buffer (capped at REPLAY_BUFFER_MAX)
+            {
+                let mut buf = shared.buffer.lock();
+                buf.extend_from_slice(&batch);
+                if buf.len() > REPLAY_BUFFER_MAX {
+                    let excess = buf.len() - REPLAY_BUFFER_MAX;
+                    buf.drain(..excess);
+                }
+            }
+
+            // Try to send via IPC — if channel is gone, just continue buffering
+            let guard = shared.channel.lock();
+            if let Some(ch) = guard.as_ref() {
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&batch);
+                if ch.send(encoded).is_err() {
+                    drop(guard);
+                    shared.channel.lock().take();
+                }
             }
         }
     }

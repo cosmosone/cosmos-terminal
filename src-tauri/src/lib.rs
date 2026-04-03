@@ -1,9 +1,12 @@
 mod browser;
 mod commands;
+mod frontend_watcher;
 mod models;
 mod pty;
 mod security;
 mod watcher;
+
+use std::path::PathBuf;
 
 use browser::manager::BrowserManager;
 use commands::browser_commands;
@@ -12,10 +15,18 @@ use commands::git_commands;
 use commands::pty_commands;
 use commands::system_commands::{self, SystemMonitor};
 use commands::watcher_commands;
+use frontend_watcher::FrontendWatcher;
 use pty::manager::SessionManager;
 use pty::process_monitor::ProcessMonitor;
 use tauri::Manager;
 use watcher::FsWatcher;
+
+/// Returns the `frontend/` directory path next to the running executable.
+fn frontend_dir() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.join("frontend")))
+}
 
 /// Directory names excluded from file search and filesystem watching.
 pub const IGNORED_DIRS: &[&str] = &[
@@ -147,7 +158,69 @@ pub fn run() {
     let browser_manager = BrowserManager::new();
     let process_monitor = ProcessMonitor::new();
 
+    // Resolve and canonicalise the external frontend asset directory once at
+    // startup so the protocol handler avoids per-request syscalls.
+    let fe_dir = frontend_dir();
+    let fe_canonical_root = fe_dir
+        .as_ref()
+        .filter(|d| d.is_dir())
+        .and_then(|d| dunce::canonicalize(d).ok());
+
+    fn text_response(
+        status: tauri::http::StatusCode,
+        body: &str,
+    ) -> tauri::http::Response<Vec<u8>> {
+        tauri::http::Response::builder()
+            .status(status)
+            .header(tauri::http::header::CONTENT_TYPE, "text/plain")
+            .body(body.as_bytes().to_vec())
+            .unwrap()
+    }
+
     tauri::Builder::default()
+        .register_uri_scheme_protocol("cosmos", move |_ctx, request| {
+            let fe_root = match &fe_canonical_root {
+                Some(root) => root,
+                None => return text_response(tauri::http::StatusCode::NOT_FOUND, "frontend directory not found"),
+            };
+
+            let uri_path = request.uri().path();
+            let relative = uri_path.trim_start_matches('/');
+            let relative = if relative.is_empty() {
+                "index.html"
+            } else {
+                relative
+            };
+
+            if relative.contains("..") {
+                return text_response(tauri::http::StatusCode::FORBIDDEN, "path traversal rejected");
+            }
+
+            let file_path = fe_root.join(relative);
+            let canonical = match dunce::canonicalize(&file_path) {
+                Ok(p) => p,
+                Err(_) => return text_response(tauri::http::StatusCode::NOT_FOUND, "not found"),
+            };
+
+            if !canonical.starts_with(fe_root) {
+                return text_response(tauri::http::StatusCode::FORBIDDEN, "path traversal rejected");
+            }
+
+            match std::fs::read(&canonical) {
+                Ok(bytes) => {
+                    let mime = mime_guess::from_path(&canonical)
+                        .first_or_octet_stream()
+                        .to_string();
+                    tauri::http::Response::builder()
+                        .status(tauri::http::StatusCode::OK)
+                        .header(tauri::http::header::CONTENT_TYPE, &mime)
+                        .header(tauri::http::header::CACHE_CONTROL, "no-cache")
+                        .body(bytes)
+                        .unwrap()
+                }
+                Err(_) => text_response(tauri::http::StatusCode::NOT_FOUND, "not found"),
+            }
+        })
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -160,6 +233,8 @@ pub fn run() {
             pty_commands::write_to_session,
             pty_commands::resize_session,
             pty_commands::kill_session,
+            pty_commands::list_sessions,
+            pty_commands::reconnect_session,
             system_commands::get_system_stats,
             git_commands::git_project_status,
             git_commands::git_status,
@@ -193,12 +268,21 @@ pub fn run() {
             browser_commands::capture_browser_screenshot,
             browser_commands::set_browser_pool_size,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             let fs_watcher = FsWatcher::new(app.handle().clone());
             app.manage(fs_watcher);
 
             let pm = app.state::<ProcessMonitor>();
             pm.start(app.handle().clone());
+
+            let fw = FrontendWatcher::new();
+            if let Some(ref dir) = fe_dir {
+                match fw.watch(app.handle(), dir) {
+                    Ok(()) => eprintln!("[FrontendWatcher] Watching {}", dir.display()),
+                    Err(e) => eprintln!("[FrontendWatcher] Failed to start: {e}"),
+                }
+            }
+            app.manage(fw);
 
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
@@ -223,6 +307,8 @@ pub fn run() {
                 pm.stop();
                 let watcher = window.state::<FsWatcher>();
                 watcher.unwatch();
+                let fw = window.state::<FrontendWatcher>();
+                fw.stop();
                 let bm = window.state::<BrowserManager>();
                 let app = window.app_handle().clone();
                 for label in bm.remove_all() {

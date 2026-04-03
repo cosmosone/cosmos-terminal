@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src ipc: http://ipc.localhost https://api.openai.com; img-src 'self' asset: https://asset.localhost data:; object-src 'none'; base-uri 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' cosmos:; script-src 'self' cosmos:; style-src 'self' 'unsafe-inline' cosmos:; font-src 'self' cosmos:; connect-src ipc: http://ipc.localhost https://api.openai.com cosmos:; img-src 'self' asset: https://asset.localhost data: cosmos:; object-src 'none'; base-uri 'self'" />
     <title>Cosmos Terminal</title>
     <link rel="stylesheet" href="/src/styles/reset.css" />
     <link rel="stylesheet" href="/src/styles/theme.css" />

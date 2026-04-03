@@ -6,6 +6,8 @@ export const IPC_COMMANDS = {
   WRITE_TO_SESSION: 'write_to_session',
   RESIZE_SESSION: 'resize_session',
   KILL_SESSION: 'kill_session',
+  LIST_SESSIONS: 'list_sessions',
+  RECONNECT_SESSION: 'reconnect_session',
   GET_SYSTEM_STATS: 'get_system_stats',
   GIT_PROJECT_STATUS: 'git_project_status',
   GIT_STATUS: 'git_status',

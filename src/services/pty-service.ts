@@ -11,6 +11,21 @@ interface CreateSessionOptions {
   cols: number;
 }
 
+function createPtyChannels(
+  onOutput: (data: Uint8Array) => void,
+  onExit: () => void,
+): { onOutput: Channel<string>; onExit: Channel<boolean> } {
+  const channel = new Channel<string>();
+  channel.onmessage = (base64) => {
+    onOutput(decodeBase64ToBytes(base64));
+  };
+  const exitChannel = new Channel<boolean>();
+  exitChannel.onmessage = () => {
+    onExit();
+  };
+  return { onOutput: channel, onExit: exitChannel };
+}
+
 export async function createPtySession(
   opts: CreateSessionOptions,
   onOutput: (data: Uint8Array) => void,
@@ -22,23 +37,14 @@ export async function createPtySession(
     rows: opts.rows,
     cols: opts.cols,
   });
-  const channel = new Channel<string>();
-  channel.onmessage = (base64) => {
-    onOutput(decodeBase64ToBytes(base64));
-  };
-
-  const exitChannel = new Channel<boolean>();
-  exitChannel.onmessage = () => {
-    onExit();
-  };
+  const channels = createPtyChannels(onOutput, onExit);
 
   const info = await invokeIpc<PtySessionInfo>(IPC_COMMANDS.CREATE_SESSION, {
     projectPath: opts.projectPath,
     shellPath: opts.shellPath ?? null,
     rows: opts.rows,
     cols: opts.cols,
-    onOutput: channel,
-    onExit: exitChannel,
+    ...channels,
   });
   logger.debug('pty', 'IPC: create_session result', { id: info.id, pid: info.pid });
   return info;
@@ -60,6 +66,18 @@ export async function resizePtySession(
 
 export async function killPtySession(sessionId: string): Promise<void> {
   await invokeIpcLogged<void>('pty', IPC_COMMANDS.KILL_SESSION, { sessionId }, 'info');
+}
+
+export async function reconnectPtySession(
+  sessionId: string,
+  onOutput: (data: Uint8Array) => void,
+  onExit: () => void,
+): Promise<void> {
+  await invokeIpc<void>(IPC_COMMANDS.RECONNECT_SESSION, {
+    sessionId,
+    ...createPtyChannels(onOutput, onExit),
+  });
+  logger.info('pty', 'Reconnected to session', { sessionId });
 }
 
 // --- Backend-to-frontend session ID mapping for process monitor events ---
