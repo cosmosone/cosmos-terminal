@@ -379,7 +379,7 @@ dependencies = [
 
 [[package]]
 name = "cosmos-terminal"
-version = "0.1.155"
+version = "0.1.156"
 dependencies = [
  "base64 0.22.1",
  "dunce",
