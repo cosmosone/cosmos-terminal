@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use crate::browser::manager::BrowserManager;
 use crate::models::{BrowserFaviconEvent, BrowserNavEvent, BrowserTitleEvent, BrowserZoomKeyEvent};
 use base64::Engine;
@@ -14,6 +16,46 @@ const BROWSER_FAVICON_CHANGED_EVENT: &str = "browser-favicon-changed";
 
 /// Event name for zoom key interception (must match TypeScript `BROWSER_ZOOM_KEY_EVENT`).
 const BROWSER_ZOOM_KEY_EVENT: &str = "browser-zoom-key";
+
+/// Fetches a favicon image from the given URL and emits it as a data URI.
+/// Blocking — callers should run this off the main thread.
+fn fetch_favicon_as_data_uri(app: &AppHandle, tab_id: &str, url: &str) {
+    let agent = ureq::Agent::new_with_config(
+        ureq::config::Config::builder()
+            .timeout_global(Some(std::time::Duration::from_secs(5)))
+            .build(),
+    );
+    let resp = match agent.get(url).call() {
+        Ok(r) if r.status() == 200 => r,
+        _ => return,
+    };
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/x-icon");
+    // Only accept image MIME types to prevent content-type injection
+    if !content_type.starts_with("image/") {
+        return;
+    }
+    let content_type = content_type.to_string();
+    let mut bytes = Vec::new();
+    if resp.into_body().as_reader().take(256_000).read_to_end(&mut bytes).is_err()
+        || bytes.is_empty()
+    {
+        return;
+    }
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let data_uri = format!("data:{content_type};base64,{b64}");
+    let _ = app.emit_to(
+        EventTarget::labeled("main"),
+        BROWSER_FAVICON_CHANGED_EVENT,
+        BrowserFaviconEvent {
+            tab_id: tab_id.to_string(),
+            favicon_url: data_uri,
+        },
+    );
+}
 
 /// Validate a URL string: must be http or https.
 fn validate_url(url: &str) -> Result<url::Url, String> {
@@ -170,17 +212,14 @@ window.addEventListener('popstate',n);
 window.addEventListener('hashchange',n);
 })()"#;
 
-        /// Fetches the page favicon as a data URI and sends it via postMessage.
-        /// Queries <link rel="icon"> tags, falls back to /favicon.ico.
-        /// Converts to data URI so the main window can display it without CSP issues.
+        /// JavaScript executed after navigation completes to extract the page favicon URL.
+        /// Sends the raw URL via postMessage; Rust then fetches the image and
+        /// converts it to a data URI (see `fetch_favicon_as_data_uri`).
         const FAVICON_EXTRACT_SCRIPT: &str = r#"(function(){
-var el=document.querySelector('link[rel~="icon"]')||document.querySelector('link[rel="shortcut icon"]');
+if(window.top!==window)return;
+var el=document.querySelector('link[rel~="icon"]');
 var url=el&&el.href?el.href:location.origin+'/favicon.ico';
-fetch(url).then(function(r){if(!r.ok)throw 0;return r.blob()}).then(function(b){
-var rd=new FileReader();rd.onloadend=function(){
-window.chrome.webview.postMessage(JSON.stringify({__cosmos:true,favicon:rd.result}));
-};rd.readAsDataURL(b);
-}).catch(function(){});
+window.chrome.webview.postMessage(JSON.stringify({__cosmos:true,favicon:url}));
 })()"#;
 
         #[implement(ICoreWebView2AcceleratorKeyPressedEventHandler)]
@@ -407,21 +446,16 @@ window.chrome.webview.postMessage(JSON.stringify({__cosmos:true,favicon:rd.resul
                         }
                         if let Some(favicon) = parsed.get("favicon").and_then(|v| v.as_str()) {
                             if !favicon.is_empty() {
-                                // Accept data: URIs (from our fetch+FileReader conversion)
-                                // and http/https URLs as a safety net
-                                let valid = favicon.starts_with("data:image/")
-                                    || url::Url::parse(favicon)
-                                        .map(|u| matches!(u.scheme(), "http" | "https"))
-                                        .unwrap_or(false);
-                                if valid {
-                                    let _ = self.app.emit_to(
-                                        EventTarget::labeled("main"),
-                                        BROWSER_FAVICON_CHANGED_EVENT,
-                                        BrowserFaviconEvent {
-                                            tab_id: self.tab_id.clone(),
-                                            favicon_url: favicon.to_string(),
-                                        },
-                                    );
+                                if let Ok(fav_url) = url::Url::parse(favicon) {
+                                    if matches!(fav_url.scheme(), "http" | "https") {
+                                        let app = self.app.clone();
+                                        let tab_id = self.tab_id.clone();
+                                        let url = favicon.to_string();
+                                        // Fetch favicon from Rust to bypass webview restrictions
+                                        std::thread::spawn(move || {
+                                            fetch_favicon_as_data_uri(&app, &tab_id, &url);
+                                        });
+                                    }
                                 }
                             }
                         }
