@@ -293,6 +293,12 @@ export class SplitContainer {
     }
   }
 
+  clearHiddenScrollback(): void {
+    for (const tp of this.terminals.values()) {
+      if (!tp.isVisible()) tp.clearScrollback();
+    }
+  }
+
   scrollToBottom(): void {
     if (this.focusedPaneId) {
       this.terminals.get(this.focusedPaneId)?.scrollToBottom();

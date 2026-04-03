@@ -994,6 +994,10 @@ export class TerminalPane {
     this.terminal.clear();
   }
 
+  isVisible(): boolean {
+    return this.paneVisible;
+  }
+
   setVisible(visible: boolean): void {
     if (this.paneVisible === visible) return;
 

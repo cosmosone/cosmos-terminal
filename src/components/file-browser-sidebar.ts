@@ -19,6 +19,7 @@ import { languageFromExtension } from '../highlight/languages/index';
 
 export interface FileBrowserSidebarApi {
   triggerSearch(): void;
+  clearCache(): void;
 }
 
 export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserSidebarApi {
@@ -505,6 +506,9 @@ export function initFileBrowserSidebar(onLayoutChange: () => void): FileBrowserS
       }
       // Defer so the sidebar becomes visible before entering search mode
       requestAnimationFrame(() => enterSearchMode());
+    },
+    clearCache(): void {
+      dirCache.clear();
     },
   };
 }

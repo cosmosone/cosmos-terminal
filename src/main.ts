@@ -19,6 +19,7 @@ import { initGitSidebar } from './components/git-sidebar';
 import { initFileBrowserSidebar } from './components/file-browser-sidebar';
 import { initFileTabContent } from './components/file-tab-content';
 import { initBrowserTabContent } from './components/browser-tab-content';
+import { clearMarkdownRenderCache } from './services/markdown-renderer';
 import { setBrowserPoolSize } from './services/browser-service';
 import { listen } from '@tauri-apps/api/event';
 import { watchDirectory, unwatchDirectory } from './services/fs-service';
@@ -95,10 +96,14 @@ async function main(): Promise<void> {
   initProjectTabBar(refresh);
   const workTabBar = initWorkTabBar(refresh, (paneId, data) => splitContainer.writeToPane(paneId, data));
   initSettingsPage(() => { splitContainer.applySettings(); applyFontSettings(); });
-  initStatusBar(() => splitContainer.clearAllScrollback());
   initLogViewer();
   initGitSidebar(() => splitContainer.reLayout());
   const fileBrowser = initFileBrowserSidebar(() => splitContainer.reLayout());
+  initStatusBar(() => {
+    splitContainer.clearHiddenScrollback();
+    fileBrowser.clearCache();
+    clearMarkdownRenderCache();
+  });
   const fileTabContent = initFileTabContent();
   initBrowserTabContent();
 

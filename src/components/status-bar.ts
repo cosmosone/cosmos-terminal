@@ -9,7 +9,7 @@ import { suppressBrowserWebview, restoreBrowserWebview } from './browser-tab-con
 const POLL_INTERVAL_MS = 5000;
 const TIMER_INTERVAL_MS = 60_000;
 
-export function initStatusBar(onCleanup?: () => void): void {
+export function initStatusBar(onOptimise?: () => void): void {
   const bar = $('#status-bar')!;
   bar.innerHTML = `
     <span class="status-version"></span>
@@ -31,7 +31,7 @@ export function initStatusBar(onCleanup?: () => void): void {
         <span class="status-badge-sep"></span>
         <span id="status-cpu">--%</span>
       </span>
-      <span class="status-badge-refresh" id="status-cleanup" title="Optimize Memory">
+      <span class="status-badge-refresh" id="status-optimise" title="Optimise Memory">
         <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 2v6h-6"/>
           <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
@@ -86,15 +86,12 @@ export function initStatusBar(onCleanup?: () => void): void {
 
   let timerIntervalId: ReturnType<typeof setInterval> | null = setInterval(updateTimer, TIMER_INTERVAL_MS);
 
-  const refreshBtn = $('#status-cleanup')!;
+  const refreshBtn = $('#status-optimise')!;
   refreshBtn.addEventListener('click', async () => {
     refreshBtn.classList.add('sweeping');
-    logger.info('app', 'Memory cleanup triggered');
+    logger.info('app', 'Memory optimisation triggered');
 
-    // Clear terminal scrollback buffers (biggest memory consumer)
-    onCleanup?.();
-
-    // Clear debug log entries
+    onOptimise?.();
     logger.clear();
 
     // Re-poll stats after a brief delay to show updated memory
