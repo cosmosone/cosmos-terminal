@@ -1,6 +1,6 @@
 [package]
 name = "cosmos-terminal"
-version = "0.1.153"
+version = "0.1.154"
 description = "A high-performance terminal emulator"
 authors = ["Cosmos"]
 license = "MIT"
