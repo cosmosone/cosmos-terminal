@@ -36,6 +36,7 @@ export async function saveWorkspace(
     browserTabs: (p.browserTabs ?? []).map((t) => ({
       ...t,
       loading: undefined,
+      faviconUrl: undefined,
       zoomFactor: (t.zoomFactor && t.zoomFactor !== 1.0) ? t.zoomFactor : undefined,
     })),
   }));

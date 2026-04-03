@@ -1,5 +1,5 @@
 use crate::browser::manager::BrowserManager;
-use crate::models::{BrowserNavEvent, BrowserTitleEvent, BrowserZoomKeyEvent};
+use crate::models::{BrowserFaviconEvent, BrowserNavEvent, BrowserTitleEvent, BrowserZoomKeyEvent};
 use base64::Engine;
 use tauri::{AppHandle, Emitter, EventTarget, Manager, Webview};
 
@@ -8,6 +8,9 @@ const BROWSER_NAVIGATED_EVENT: &str = "browser-navigated";
 
 /// Event name for page title updates (must match TypeScript `BROWSER_TITLE_CHANGED_EVENT`).
 const BROWSER_TITLE_CHANGED_EVENT: &str = "browser-title-changed";
+
+/// Event name for favicon detection (must match TypeScript `BROWSER_FAVICON_CHANGED_EVENT`).
+const BROWSER_FAVICON_CHANGED_EVENT: &str = "browser-favicon-changed";
 
 /// Event name for zoom key interception (must match TypeScript `BROWSER_ZOOM_KEY_EVENT`).
 const BROWSER_ZOOM_KEY_EVENT: &str = "browser-zoom-key";
@@ -167,6 +170,19 @@ window.addEventListener('popstate',n);
 window.addEventListener('hashchange',n);
 })()"#;
 
+        /// Fetches the page favicon as a data URI and sends it via postMessage.
+        /// Queries <link rel="icon"> tags, falls back to /favicon.ico.
+        /// Converts to data URI so the main window can display it without CSP issues.
+        const FAVICON_EXTRACT_SCRIPT: &str = r#"(function(){
+var el=document.querySelector('link[rel~="icon"]')||document.querySelector('link[rel="shortcut icon"]');
+var url=el&&el.href?el.href:location.origin+'/favicon.ico';
+fetch(url).then(function(r){if(!r.ok)throw 0;return r.blob()}).then(function(b){
+var rd=new FileReader();rd.onloadend=function(){
+window.chrome.webview.postMessage(JSON.stringify({__cosmos:true,favicon:rd.result}));
+};rd.readAsDataURL(b);
+}).catch(function(){});
+})()"#;
+
         #[implement(ICoreWebView2AcceleratorKeyPressedEventHandler)]
         struct ZoomKeyHandler {
             app: AppHandle,
@@ -299,6 +315,19 @@ window.addEventListener('hashchange',n);
                             );
                         }
                     }
+
+                    static FAVICON_UTF16: std::sync::OnceLock<Vec<u16>> =
+                        std::sync::OnceLock::new();
+                    let favicon_wide = FAVICON_UTF16.get_or_init(|| {
+                        FAVICON_EXTRACT_SCRIPT
+                            .encode_utf16()
+                            .chain(std::iter::once(0))
+                            .collect()
+                    });
+                    let favicon_pcwstr = PCWSTR(favicon_wide.as_ptr());
+                    let exec_handler: ICoreWebView2ExecuteScriptCompletedHandler =
+                        ScriptExecHandler.into();
+                    let _ = core.ExecuteScript(favicon_pcwstr, &exec_handler);
                 }
                 Ok(())
             }
@@ -374,6 +403,26 @@ window.addEventListener('hashchange',n);
                                         title: title.to_string(),
                                     },
                                 );
+                            }
+                        }
+                        if let Some(favicon) = parsed.get("favicon").and_then(|v| v.as_str()) {
+                            if !favicon.is_empty() {
+                                // Accept data: URIs (from our fetch+FileReader conversion)
+                                // and http/https URLs as a safety net
+                                let valid = favicon.starts_with("data:image/")
+                                    || url::Url::parse(favicon)
+                                        .map(|u| matches!(u.scheme(), "http" | "https"))
+                                        .unwrap_or(false);
+                                if valid {
+                                    let _ = self.app.emit_to(
+                                        EventTarget::labeled("main"),
+                                        BROWSER_FAVICON_CHANGED_EVENT,
+                                        BrowserFaviconEvent {
+                                            tab_id: self.tab_id.clone(),
+                                            favicon_url: favicon.to_string(),
+                                        },
+                                    );
+                                }
                             }
                         }
                     }

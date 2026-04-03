@@ -991,6 +991,10 @@ export function setBrowserTabLoading(projectId: string, tabId: string, loading: 
   updateBrowserTab(projectId, tabId, (t) => t.loading === loading ? t : { ...t, loading });
 }
 
+export function setBrowserTabFavicon(projectId: string, tabId: string, faviconUrl: string | undefined): void {
+  updateBrowserTab(projectId, tabId, (t) => t.faviconUrl === faviconUrl ? t : { ...t, faviconUrl });
+}
+
 export function setBrowserTabZoom(projectId: string, tabId: string, zoomFactor: number): void {
   updateBrowserTab(projectId, tabId, (t) => t.zoomFactor === zoomFactor ? t : { ...t, zoomFactor });
 }

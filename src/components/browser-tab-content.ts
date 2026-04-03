@@ -1,13 +1,13 @@
 import { store } from '../state/store';
-import { setBrowserTabUrl, setBrowserTabTitle, setBrowserTabLoading, setBrowserTabZoom } from '../state/actions';
+import { setBrowserTabUrl, setBrowserTabTitle, setBrowserTabLoading, setBrowserTabFavicon, setBrowserTabZoom } from '../state/actions';
 import { createBrowserWebview, showBrowserWebview, hideBrowserWebview, navigateBrowser, reloadBrowser, resizeBrowserWebview, browserGoBack, browserGoForward, captureBrowserScreenshot, setBrowserZoom } from '../services/browser-service';
 import { listen } from '@tauri-apps/api/event';
 import { createElement, clearChildren, $ } from '../utils/dom';
 import { arrowLeftIcon, arrowRightIcon, refreshIcon, zoomIcon } from '../utils/icons';
 import { logger } from '../services/logger';
 import { keybindings } from '../utils/keybindings';
-import { BROWSER_NAVIGATED_EVENT, BROWSER_TITLE_CHANGED_EVENT, BROWSER_ZOOM_KEY_EVENT } from '../state/types';
-import type { AppState, BrowserNavEvent, BrowserTab, BrowserTitleEvent, Project } from '../state/types';
+import { BROWSER_NAVIGATED_EVENT, BROWSER_TITLE_CHANGED_EVENT, BROWSER_FAVICON_CHANGED_EVENT, BROWSER_ZOOM_KEY_EVENT } from '../state/types';
+import type { AppState, BrowserFaviconEvent, BrowserNavEvent, BrowserTab, BrowserTitleEvent, Project } from '../state/types';
 /** Currently active browser tab ID (runtime only, not persisted). */
 let activeTabId: string | null = null;
 
@@ -405,6 +405,11 @@ export function initBrowserTabContent(): void {
 
     setBrowserTabLoading(project.id, tabId, loading);
 
+    if (loading) {
+      // Clear favicon so tab shows spinner during navigation
+      setBrowserTabFavicon(project.id, tabId, undefined);
+    }
+
     if (!loading) {
       // Finished — update URL + title
       let title: string | null = null;
@@ -437,6 +442,15 @@ export function initBrowserTabContent(): void {
     const project = findProjectForBrowserTab(tabId);
     if (!project) return;
     setBrowserTabTitle(project.id, tabId, title);
+  });
+
+  // Listen for favicon detection events from the Rust backend
+  void listen<BrowserFaviconEvent>(BROWSER_FAVICON_CHANGED_EVENT, (event) => {
+    const { tabId, faviconUrl } = event.payload;
+    logger.debug('browser', 'browser-favicon-changed event', { tabId, faviconUrl });
+    const project = findProjectForBrowserTab(tabId);
+    if (!project) return;
+    setBrowserTabFavicon(project.id, tabId, faviconUrl);
   });
 
   // Main subscription: react to active browser tab changes (not URL changes)

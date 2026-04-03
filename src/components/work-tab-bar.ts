@@ -422,10 +422,18 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
           className: `work-tab browser-tab${isActive ? ' active' : ''}`,
         });
 
-        const iconEl = createElement('span', {
-          className: `browser-tab-icon${browserTab.loading ? ' browser-tab-loading' : ''}`,
-        });
-        iconEl.innerHTML = globeIcon(11);
+        const iconEl = createElement('span', { className: 'browser-tab-icon' });
+        if (browserTab.loading) {
+          iconEl.appendChild(createElement('span', { className: 'browser-tab-spinner' }));
+        } else if (browserTab.faviconUrl) {
+          const img = createElement('img', { className: 'browser-tab-favicon' }) as HTMLImageElement;
+          img.src = browserTab.faviconUrl;
+          img.alt = '';
+          img.addEventListener('error', () => { iconEl.innerHTML = globeIcon(11); });
+          iconEl.appendChild(img);
+        } else {
+          iconEl.innerHTML = globeIcon(11);
+        }
         tab.appendChild(iconEl);
 
         const fullTitle = browserTab.title || 'New Tab';

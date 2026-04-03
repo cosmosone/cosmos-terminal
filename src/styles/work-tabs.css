@@ -124,8 +124,24 @@
   flex-shrink: 0;
 }
 
-.browser-tab-loading svg {
-  animation: spin 1s linear infinite;
+/* Favicon image in browser tab */
+.browser-tab-favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+/* CSS-only spinner shown during page loading */
+.browser-tab-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--text-secondary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 /* ===== File tab extras ===== */

@@ -188,6 +188,8 @@ export interface BrowserTab {
   loading?: boolean;
   /** Zoom factor (1.0 = 100%). Persisted across sessions. */
   zoomFactor?: number;
+  /** Runtime-only favicon URL extracted from the page (not persisted). */
+  faviconUrl?: string;
 }
 
 /** Event name emitted by the Rust backend on webview navigation. */
@@ -195,6 +197,9 @@ export const BROWSER_NAVIGATED_EVENT = 'browser-navigated';
 
 /** Event name emitted by the Rust backend when a page title is available. */
 export const BROWSER_TITLE_CHANGED_EVENT = 'browser-title-changed';
+
+/** Event name emitted by the Rust backend when a page favicon is detected. */
+export const BROWSER_FAVICON_CHANGED_EVENT = 'browser-favicon-changed';
 
 /** Event name emitted by the Rust backend when a zoom shortcut is pressed in the WebView2 overlay. */
 export const BROWSER_ZOOM_KEY_EVENT = 'browser-zoom-key';
@@ -225,6 +230,12 @@ export interface BrowserNavEvent {
 export interface BrowserTitleEvent {
   tabId: string;
   title: string;
+}
+
+/** Payload shape for `browser-favicon-changed` events (mirrors Rust `BrowserFaviconEvent`). */
+export interface BrowserFaviconEvent {
+  tabId: string;
+  faviconUrl: string;
 }
 
 export interface FileBrowserSidebarState {
