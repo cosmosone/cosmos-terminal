@@ -321,13 +321,52 @@ async function main(): Promise<void> {
   );
 
   void listen(FRONTEND_UPDATED_EVENT, async () => {
-    logger.info('app', 'Frontend assets updated — hot-swapping');
+    logger.info('app', 'Frontend assets updated');
+    if (document.getElementById('status-update-badge')) return;
+
+    // location.origin returns "null" on custom URI schemes (cosmos://),
+    // so build the base URL from protocol + host instead.
+    const baseUrl = `${location.protocol}//${location.host}`;
+    let newVersion: string | null = null;
     try {
-      const resp = await fetch(`${location.origin}/index.html`, { cache: 'no-store' });
+      const vResp = await fetch(`${baseUrl}/version.json`, { cache: 'no-store' });
+      if (vResp.ok) {
+        const vData = await vResp.json() as { version: string };
+        newVersion = vData.version;
+      }
+    } catch { /* version.json may not exist or fetch may fail on old code */ }
+
+    const versionEl = document.querySelector<HTMLElement>('.status-version');
+    if (versionEl) {
+      const badge = document.createElement('span');
+      badge.id = 'status-update-badge';
+      badge.title = 'Click to reload with new version';
+      badge.textContent = newVersion ? `Reload: v${newVersion}` : 'Reload: Update';
+      badge.addEventListener('click', async () => {
+        const terminalState = splitContainer.serializeAll();
+        const serialized: Record<string, { backendId: string; buffer: string }> = {};
+        for (const [paneId, data] of terminalState) {
+          serialized[paneId] = data;
+        }
+        try {
+          sessionStorage.setItem('cosmos-terminal-state', JSON.stringify(serialized));
+        } catch {
+          logger.warn('app', 'Terminal state too large for sessionStorage, skipping');
+        }
+
+        const s = store.getState();
+        await saveWorkspace(s.projects, s.activeProjectId, s.gitSidebar, s.fileBrowserSidebar);
+        await saveSettings(s.settings);
+        location.reload();
+      });
+      versionEl.after(badge);
+    }
+
+    try {
+      const resp = await fetch(`${baseUrl}/index.html`, { cache: 'no-store' });
       const html = await resp.text();
       const newDoc = new DOMParser().parseFromString(html, 'text/html');
 
-      // --- Hot-swap CSS ---
       const oldLinks = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'));
       const newLinks = Array.from(newDoc.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'));
 
@@ -344,47 +383,9 @@ async function main(): Promise<void> {
       }));
       await Promise.all(loads);
       oldLinks.forEach(l => l.remove());
-
-      // --- Fetch new version and show update badge ---
-      let newVersion: string | null = null;
-      try {
-        const vResp = await fetch(`${location.origin}/version.json`, { cache: 'no-store' });
-        if (vResp.ok) {
-          const vData = await vResp.json() as { version: string };
-          newVersion = vData.version;
-        }
-      } catch { /* version.json may not exist */ }
-
-      const versionEl = document.querySelector<HTMLElement>('.status-version');
-      if (versionEl && !document.getElementById('status-update-badge')) {
-        const badge = document.createElement('span');
-        badge.id = 'status-update-badge';
-        badge.title = 'Click to reload with new version';
-        badge.textContent = newVersion ? `Reload: v${newVersion}` : 'Reload: Update';
-        badge.addEventListener('click', async () => {
-          // Save terminal buffers for reconnection
-          const terminalState = splitContainer.serializeAll();
-          const serialized: Record<string, { backendId: string; buffer: string }> = {};
-          for (const [paneId, data] of terminalState) {
-            serialized[paneId] = data;
-          }
-          try {
-            sessionStorage.setItem('cosmos-terminal-state', JSON.stringify(serialized));
-          } catch {
-            logger.warn('app', 'Terminal state too large for sessionStorage, skipping');
-          }
-
-          const s = store.getState();
-          await saveWorkspace(s.projects, s.activeProjectId, s.gitSidebar, s.fileBrowserSidebar);
-          await saveSettings(s.settings);
-          location.reload();
-        });
-        versionEl.after(badge);
-      }
-
-      logger.info('app', `Hot-swap complete${newVersion ? ` (v${newVersion} available)` : ''}`);
+      logger.info('app', 'CSS hot-swap complete');
     } catch (e) {
-      logger.error('app', `Hot-swap failed: ${e}`);
+      logger.warn('app', `CSS hot-swap failed (reload will apply all changes): ${e}`);
     }
   });
 

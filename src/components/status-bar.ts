@@ -107,8 +107,13 @@ export function initStatusBar(onOptimise?: () => void): void {
   async function poll(): Promise<void> {
     try {
       const stats = await getSystemStats();
-      memEl.textContent = `${stats.memoryMb.toFixed(0)} MB`;
-      cpuEl.textContent = `${stats.cpuPercent.toFixed(0)}%`;
+      const mem = stats.memoryMb;
+      const memText = mem >= 1024
+        ? `${(mem / 1024).toFixed(1)} GB`
+        : `${mem.toFixed(0)} MB`;
+      const cpuText = `${stats.cpuPercent.toFixed(0)}%`;
+      if (memEl.textContent !== memText) memEl.textContent = memText;
+      if (cpuEl.textContent !== cpuText) cpuEl.textContent = cpuText;
     } catch {
       // Backend not ready yet
     }
