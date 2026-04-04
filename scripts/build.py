@@ -3,8 +3,8 @@
 Usage:
     python scripts/build.py              # Interactive build (smart detect)
     python scripts/build.py --dev        # Fast local build (smart detect, silent install)
-    python scripts/build.py --release    # Silent release build (auto bump, tag if backend)
-    python scripts/build.py --release --force  # Force full rebuild + tag + release
+    python scripts/build.py --release    # Release build (auto bump, optional tag+release)
+    python scripts/build.py --release --force  # Force full rebuild (ignores smart detection)
     python scripts/build.py --local      # Dev server with hot reload (cargo tauri dev)
 """
 
@@ -200,9 +200,13 @@ def _stage_and_commit(version: str) -> None:
 
 def commit_and_tag(version: str) -> None:
     _stage_and_commit(version)
+    tag_and_push(version)
+
+
+def tag_and_push(version: str) -> None:
+    """Create a git tag and push it to origin."""
     tag = f"v{version}"
     subprocess.run(["git", "tag", tag], cwd=ROOT, check=True)
-    subprocess.run(["git", "push"], cwd=ROOT, check=True)
     subprocess.run(["git", "push", "origin", tag], cwd=ROOT, check=True)
     print(f"{GREEN}Tagged {tag} and pushed{RESET}")
 
@@ -445,7 +449,7 @@ def build_release(force: bool = False) -> None:
         global _cached_rust_hash
         _cached_rust_hash = compute_rust_hash()
         build_type = "full"
-        print(f"{YELLOW}Force flag set — full build + tag + release regardless of changes{RESET}")
+        print(f"{YELLOW}Force flag set — full build regardless of changes{RESET}")
     else:
         build_type = detect_build_type()
 
@@ -453,12 +457,12 @@ def build_release(force: bool = False) -> None:
         print(f"{YELLOW}Full build (Rust + frontend){RESET}")
         run_cargo_build()
         save_rust_hash()
-        commit_and_tag(version)
-        create_release(version)
     else:
         print(f"{GREEN}Frontend-only build (no Rust changes){RESET}")
         build_frontend_only()
-        commit_and_push(version)
+
+    # Commit and push the version bump (no tag, no release)
+    commit_and_push(version)
 
     try_silent_install(build_type)
 
@@ -512,11 +516,14 @@ def build_interactive() -> None:
 
     # --- Publish -------------------------------------------------------------
     if bumped:
-        if build_type == "full":
-            commit_and_tag(version)
+        commit_and_push(version)
+
+        publish = input(
+            f"\n{YELLOW}Create tag, generate release notes, and upload to GitHub? [y/N] {RESET}"
+        ).strip().lower()
+        if publish in ("y", "yes"):
+            tag_and_push(version)
             create_release(version)
-        else:
-            commit_and_push(version)
 
     # --- Install -------------------------------------------------------------
     install_prompt(build_type)
@@ -542,7 +549,7 @@ def main() -> None:
     )
     group.add_argument(
         "--release", action="store_true",
-        help="Silent release build (auto bump, tag+release if backend changes)",
+        help="Release build (auto bump, optional tag+release via prompt)",
     )
     group.add_argument(
         "--local", action="store_true",
@@ -550,7 +557,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--force", action="store_true",
-        help="Force full Rust rebuild + tag + release (ignores smart detection)",
+        help="Force full Rust rebuild (ignores smart detection)",
     )
     args = parser.parse_args()
 
