@@ -153,6 +153,29 @@ pub fn run() {
         unsafe { env::set_var(key, combined) };
     }
 
+    // Clean up after a previous restart-with-update cycle.
+    if let Ok(exe) = std::env::current_exe() {
+        // Remove the renamed old exe
+        let old = exe.with_extension("exe.old");
+        let _ = std::fs::remove_file(&old);
+
+        // Clear stale exePending from version.json so a manual restart
+        // doesn't leave a phantom "Restart" badge on the next frontend update.
+        if let Some(vj) = exe.parent().map(|p| p.join("frontend").join("version.json")) {
+            if let Ok(bytes) = std::fs::read(&vj) {
+                if let Ok(mut map) =
+                    serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&bytes)
+                {
+                    if map.remove("exePending").is_some() {
+                        if let Ok(json) = serde_json::to_string(&map) {
+                            let _ = std::fs::write(&vj, json);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let session_manager = SessionManager::new();
     let system_monitor = SystemMonitor::new();
     let browser_manager = BrowserManager::new();
@@ -236,6 +259,7 @@ pub fn run() {
             pty_commands::list_sessions,
             pty_commands::reconnect_session,
             system_commands::get_system_stats,
+            system_commands::restart_with_update,
             git_commands::git_project_status,
             git_commands::git_status,
             git_commands::git_log,

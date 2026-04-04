@@ -100,6 +100,7 @@ export interface AppSettings {
 
 export interface PtySessionInfo {
   id: string;
+  paneId: string;
   pid: number;
 }
 

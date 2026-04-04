@@ -3,7 +3,7 @@ import { initStore, store } from './state/store';
 import { addProject, addSession, getActiveProject, getActiveSession, removeProject, removeSession, splitPane, cycleSession, cycleProject, toggleSettingsView, toggleGitSidebar, toggleFileBrowserSidebar, defaultGitSidebarState, defaultFileBrowserSidebarState } from './state/actions';
 import { loadSettings, saveSettings, buildUiFont } from './services/settings-service';
 import { loadWorkspace, saveWorkspace } from './services/workspace-service';
-import { resolveActivePaneId } from './layout/pane-tree';
+import { resolveActivePaneId, findLeafPaneIds } from './layout/pane-tree';
 import type { AppState, BrowserTab, KeybindingConfig, Session, FileTab, PaneLeaf } from './state/types';
 import { FRONTEND_UPDATED_EVENT } from './state/types';
 import { AGENT_DEFINITIONS } from './services/agent-definitions';
@@ -11,7 +11,7 @@ import { setInitialCommand } from './services/initial-command';
 import { logger } from './services/logger';
 import { initProjectTabBar } from './components/project-tab-bar';
 import { initWorkTabBar } from './components/work-tab-bar';
-import { SplitContainer, loadReconnectState } from './components/split-container';
+import { SplitContainer, loadSavedBuffers, setReconnectionMap } from './components/split-container';
 import { initSettingsPage } from './components/settings-page';
 import { initStatusBar } from './components/status-bar';
 import { initLogViewer } from './components/log-viewer';
@@ -21,7 +21,9 @@ import { initFileTabContent } from './components/file-tab-content';
 import { initBrowserTabContent } from './components/browser-tab-content';
 import { clearMarkdownRenderCache } from './services/markdown-renderer';
 import { setBrowserPoolSize } from './services/browser-service';
+import { buildReconnectionMap, cleanupOrphanedSessions } from './services/pty-service';
 import { listen } from '@tauri-apps/api/event';
+import { IPC_COMMANDS, invokeIpc } from './services/ipc';
 import { watchDirectory, unwatchDirectory } from './services/fs-service';
 import { keybindings, parseKeybinding } from './utils/keybindings';
 import { confirmCloseTerminalTab, confirmCloseProject } from './components/confirm-dialog';
@@ -32,7 +34,7 @@ import { initProcessMonitorListener } from './services/process-monitor-service';
 import './highlight/languages/register-all';
 
 async function main(): Promise<void> {
-  loadReconnectState();
+  loadSavedBuffers();
   const [settings, saved] = await Promise.all([loadSettings(), loadWorkspace()]);
 
   // Check 24h auto-disable for debug logging
@@ -100,7 +102,6 @@ async function main(): Promise<void> {
   initGitSidebar(() => splitContainer.reLayout());
   const fileBrowser = initFileBrowserSidebar(() => splitContainer.reLayout());
   initStatusBar(() => {
-    splitContainer.clearHiddenScrollback();
     fileBrowser.clearCache();
     clearMarkdownRenderCache();
   });
@@ -178,7 +179,24 @@ async function main(): Promise<void> {
     logger.info('app', 'Workspace restored', { projectCount: saved.projects.length });
   }
 
+  // Build the reconnection map from the Rust backend (survives WebView reload).
+  // This must happen before render so renderImpl can match panes to sessions.
+  const { map: reconnectMap, sessions: backendSessions } = await buildReconnectionMap();
+  setReconnectionMap(reconnectMap);
+
   await splitContainer.render();
+
+  // Release one-shot reconnection state — no longer needed after initial render.
+  setReconnectionMap(null);
+
+  // Kill backend PTY sessions whose paneId doesn't match any pane in the state
+  // tree — prevents cumulative leaks from closed tabs or previous failed reloads.
+  const allPaneIds = new Set(
+    store.getState().projects.flatMap((p) =>
+      p.sessions.flatMap((s) => findLeafPaneIds(s.paneTree)),
+    ),
+  );
+  void cleanupOrphanedSessions(allPaneIds, backendSessions);
 
   // Persist workspace state on changes (debounced)
   const debouncedSave = debounce(() => {
@@ -327,12 +345,12 @@ async function main(): Promise<void> {
     // location.origin returns "null" on custom URI schemes (cosmos://),
     // so build the base URL from protocol + host instead.
     const baseUrl = `${location.protocol}//${location.host}`;
-    let newVersion: string | null = null;
+    let exePending: string | null = null;
     try {
       const vResp = await fetch(`${baseUrl}/version.json`, { cache: 'no-store' });
       if (vResp.ok) {
-        const vData = await vResp.json() as { version: string };
-        newVersion = vData.version;
+        const vData = await vResp.json() as { version: string; exePending?: string };
+        exePending = vData.exePending ?? null;
       }
     } catch { /* version.json may not exist or fetch may fail on old code */ }
 
@@ -340,25 +358,44 @@ async function main(): Promise<void> {
     if (versionEl) {
       const badge = document.createElement('span');
       badge.id = 'status-update-badge';
-      badge.title = 'Click to reload with new version';
-      badge.textContent = newVersion ? `Reload: v${newVersion}` : 'Reload: Update';
-      badge.addEventListener('click', async () => {
-        const terminalState = splitContainer.serializeAll();
-        const serialized: Record<string, { backendId: string; buffer: string }> = {};
-        for (const [paneId, data] of terminalState) {
-          serialized[paneId] = data;
-        }
-        try {
-          sessionStorage.setItem('cosmos-terminal-state', JSON.stringify(serialized));
-        } catch {
-          logger.warn('app', 'Terminal state too large for sessionStorage, skipping');
-        }
 
+      const persistState = async () => {
         const s = store.getState();
         await saveWorkspace(s.projects, s.activeProjectId, s.gitSidebar, s.fileBrowserSidebar);
         await saveSettings(s.settings);
-        location.reload();
-      });
+      };
+
+      if (exePending) {
+        badge.classList.add('restart');
+        badge.title = 'Backend updated — click to restart the app';
+        badge.textContent = 'Restart';
+        badge.addEventListener('click', async () => {
+          await persistState();
+          try {
+            await invokeIpc(IPC_COMMANDS.RESTART_WITH_UPDATE, { exeSource: exePending });
+          } catch (e) {
+            logger.error('app', `Restart failed: ${e}`);
+          }
+        });
+      } else {
+        badge.title = 'Click to silently reload with new frontend';
+        badge.textContent = 'Silent Reload';
+        badge.addEventListener('click', async () => {
+          // Save terminal display buffers to sessionStorage (optional optimisation).
+          // Session identity comes from the Rust backend, not sessionStorage.
+          const buffers = splitContainer.serializeBuffers();
+          try {
+            sessionStorage.setItem('cosmos-terminal-buffers', JSON.stringify(Object.fromEntries(buffers)));
+          } catch {
+            // Buffers too large — ring-buffer replay will restore content instead.
+            logger.warn('app', 'Terminal buffers too large for sessionStorage, skipping');
+          }
+
+          await persistState();
+          location.reload();
+        });
+      }
+
       versionEl.after(badge);
     }
 

@@ -31,13 +31,24 @@ export async function showProjectSettingsDialog(projectId: string): Promise<void
   const cmdRow = createElement('div', { className: 'settings-row' });
   const cmdLabel = createElement('label');
   cmdLabel.textContent = 'Run Custom Command';
+  const cmdRight = createElement('div', { className: 'settings-cmd-right' });
   const cmdInput = createElement('input', { type: 'text' });
   cmdInput.value = project.runCommand ?? '';
-  cmdInput.addEventListener('change', () => {
-    updateProjectSettings(projectId, { runCommand: cmdInput.value });
+  const cmdSave = createElement('button', { className: 'settings-cmd-save' });
+  cmdSave.textContent = 'Save';
+  cmdSave.disabled = true;
+  cmdInput.addEventListener('input', () => {
+    cmdSave.disabled = cmdInput.value === (project.runCommand ?? '');
   });
+  cmdSave.addEventListener('click', () => {
+    updateProjectSettings(projectId, { runCommand: cmdInput.value });
+    project.runCommand = cmdInput.value;
+    cmdSave.disabled = true;
+  });
+  cmdRight.appendChild(cmdInput);
+  cmdRight.appendChild(cmdSave);
   cmdRow.appendChild(cmdLabel);
-  cmdRow.appendChild(cmdInput);
+  cmdRow.appendChild(cmdRight);
   content.appendChild(cmdRow);
 
   // Show Run Button in Tabs
@@ -60,14 +71,10 @@ export async function showProjectSettingsDialog(projectId: string): Promise<void
   backdrop.appendChild(dialog);
   document.body.appendChild(backdrop);
 
-  const originalCmd = project.runCommand ?? '';
   let closed = false;
   function cleanup(): void {
     if (closed) return;
     closed = true;
-    if (cmdInput.value !== originalCmd) {
-      updateProjectSettings(projectId, { runCommand: cmdInput.value });
-    }
     window.removeEventListener('keydown', onKeydown, true);
     backdrop.remove();
     keybindings.setActive(true);

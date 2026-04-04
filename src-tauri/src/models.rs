@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PtySessionInfo {
     pub id: String,
+    #[serde(rename = "paneId")]
+    pub pane_id: String,
     pub pid: u32,
 }
 

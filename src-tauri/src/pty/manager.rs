@@ -8,9 +8,14 @@ use uuid::Uuid;
 use super::session::SessionHandle;
 use crate::models::PtySessionInfo;
 
+struct SessionEntry {
+    handle: Arc<SessionHandle>,
+    pane_id: String,
+}
+
 #[derive(Default)]
 pub struct SessionManager {
-    sessions: Mutex<HashMap<String, Arc<SessionHandle>>>,
+    sessions: Mutex<HashMap<String, SessionEntry>>,
 }
 
 impl SessionManager {
@@ -20,6 +25,7 @@ impl SessionManager {
 
     pub fn create_session(
         &self,
+        pane_id: String,
         shell_path: Option<String>,
         cwd: String,
         rows: u16,
@@ -31,8 +37,11 @@ impl SessionManager {
         let handle =
             SessionHandle::spawn(shell_path, cwd, rows, cols, output_channel, exit_channel)?;
         let pid = handle.pid;
-        self.sessions.lock().insert(id.clone(), Arc::new(handle));
-        Ok(PtySessionInfo { id, pid })
+        self.sessions.lock().insert(
+            id.clone(),
+            SessionEntry { handle: Arc::new(handle), pane_id: pane_id.clone() },
+        );
+        Ok(PtySessionInfo { id, pane_id, pid })
     }
 
     pub fn write_to_session(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
@@ -44,12 +53,12 @@ impl SessionManager {
     }
 
     pub fn kill_session(&self, session_id: &str) -> Result<(), String> {
-        let handle = self
+        let entry = self
             .sessions
             .lock()
             .remove(session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
-        handle.kill();
+        entry.handle.kill();
         Ok(())
     }
 
@@ -58,10 +67,11 @@ impl SessionManager {
         self.sessions
             .lock()
             .iter()
-            .filter(|(_, h)| h.is_alive())
-            .map(|(id, h)| PtySessionInfo {
+            .filter(|(_, e)| e.handle.is_alive())
+            .map(|(id, e)| PtySessionInfo {
                 id: id.clone(),
-                pid: h.pid,
+                pane_id: e.pane_id.clone(),
+                pid: e.handle.pid,
             })
             .collect()
     }
@@ -72,16 +82,21 @@ impl SessionManager {
         session_id: &str,
         output_channel: Channel<String>,
         exit_channel: Channel<bool>,
+        skip_replay: bool,
     ) -> Result<(), String> {
         self.with_session(session_id, |handle| {
-            handle.reconnect(output_channel, exit_channel)
+            handle.reconnect(output_channel, exit_channel, skip_replay)
         })
     }
 
     /// Drain all sessions from the registry without killing them.
     /// The caller is responsible for calling `kill()` on each handle.
     pub fn drain_all(&self) -> Vec<Arc<SessionHandle>> {
-        self.sessions.lock().drain().map(|(_, h)| h).collect()
+        self.sessions
+            .lock()
+            .drain()
+            .map(|(_, e)| e.handle)
+            .collect()
     }
 
     /// Look up a session by ID and invoke `f` on it.  The map lock is released
@@ -95,7 +110,7 @@ impl SessionManager {
             .sessions
             .lock()
             .get(session_id)
-            .cloned()
+            .map(|e| e.handle.clone())
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
         f(&handle)
     }

@@ -204,20 +204,25 @@ impl SessionHandle {
     }
 
     /// Replace the IPC channels for this session (frontend reconnection).
-    /// Replays buffered output through the new channel so the terminal can
-    /// restore its display, then continues streaming live output.
+    /// When `skip_replay` is false, replays buffered output through the new
+    /// channel so the terminal can restore its display.  When the frontend
+    /// already restored the buffer from a serialized snapshot, pass `true`
+    /// to avoid duplicate output.
     pub fn reconnect(
         &self,
         new_output: Channel<String>,
         new_exit: Channel<bool>,
+        skip_replay: bool,
     ) -> Result<(), String> {
-        // Replay buffered output
-        let buffer = self.shared.buffer.lock().clone();
-        if !buffer.is_empty() {
-            let encoded = base64::engine::general_purpose::STANDARD.encode(&buffer);
-            new_output
-                .send(encoded)
-                .map_err(|e| format!("Failed to replay buffer: {e}"))?;
+        // Replay buffered output unless the frontend already restored it
+        if !skip_replay {
+            let buffer = self.shared.buffer.lock().clone();
+            if !buffer.is_empty() {
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&buffer);
+                new_output
+                    .send(encoded)
+                    .map_err(|e| format!("Failed to replay buffer: {e}"))?;
+            }
         }
 
         // Swap in new channels
@@ -288,13 +293,15 @@ impl SessionHandle {
                 }
             }
 
-            // Try to send via IPC — if channel is gone, just continue buffering
-            let guard = shared.channel.lock();
+            // Try to send via IPC — if channel is gone, just continue buffering.
+            // Keep the lock held across the failed-send clear to prevent a
+            // race where reconnect() installs a new channel between drop and
+            // re-lock.
+            let mut guard = shared.channel.lock();
             if let Some(ch) = guard.as_ref() {
                 let encoded = base64::engine::general_purpose::STANDARD.encode(&batch);
                 if ch.send(encoded).is_err() {
-                    drop(guard);
-                    shared.channel.lock().take();
+                    *guard = None;
                 }
             }
         }

@@ -20,6 +20,7 @@ fn validate_dimensions(rows: u16, cols: u16) -> Result<(), String> {
 #[tauri::command]
 pub async fn create_session(
     app: AppHandle,
+    pane_id: String,
     project_path: String,
     shell_path: Option<String>,
     rows: u16,
@@ -27,12 +28,13 @@ pub async fn create_session(
     on_output: Channel<String>,
     on_exit: Channel<bool>,
 ) -> Result<PtySessionInfo, String> {
+    validate_session_id(&pane_id)?;
     validate_dimensions(rows, cols)?;
     spawn_blocking_result(move || {
         let shell_path = normalize_shell_path(shell_path)?;
         let session_manager = app.state::<SessionManager>();
         let info =
-            session_manager.create_session(shell_path, project_path, rows, cols, on_output, on_exit)?;
+            session_manager.create_session(pane_id, shell_path, project_path, rows, cols, on_output, on_exit)?;
         let monitor = app.state::<ProcessMonitor>();
         monitor.register(info.id.clone(), info.pid);
         Ok(info)
@@ -109,11 +111,13 @@ pub async fn reconnect_session(
     session_id: String,
     on_output: Channel<String>,
     on_exit: Channel<bool>,
+    skip_replay: Option<bool>,
 ) -> Result<(), String> {
     validate_session_id(&session_id)?;
+    let skip = skip_replay.unwrap_or(false);
     spawn_blocking_result(move || {
         let session_manager = app.state::<SessionManager>();
-        session_manager.reconnect_session(&session_id, on_output, on_exit)
+        session_manager.reconnect_session(&session_id, on_output, on_exit, skip)
     })
     .await
 }

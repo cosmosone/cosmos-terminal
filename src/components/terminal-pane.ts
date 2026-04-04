@@ -301,8 +301,14 @@ export class TerminalPane {
     });
   }
 
-  async mount(): Promise<void> {
-    logger.info('pty', 'Mounting terminal pane', { paneId: this.paneId });
+  /**
+   * Mount the xterm.js UI: open terminal, attach key/event handlers, WebGL,
+   * resize observer, and perform the initial fit.  Does NOT create a PTY
+   * session — call {@link mount} for a full mount or this method directly
+   * when restoring a session from a previous frontend lifecycle (followed
+   * by {@link reconnect}).
+   */
+  async mountUI(): Promise<void> {
     this.terminal.open(this.element);
     this.element.appendChild(this.scrollBtn);
 
@@ -493,6 +499,12 @@ export class TerminalPane {
         this.debouncedPromptReturn();
       }
     });
+  }
+
+  async mount(): Promise<void> {
+    logger.info('pty', 'Mounting terminal pane', { paneId: this.paneId });
+    await this.mountUI();
+    if (this.disposed) return;
 
     const settings = store.getState().settings;
     const dims = this.fitAddon.proposeDimensions();
@@ -510,6 +522,7 @@ export class TerminalPane {
     try {
       info = await createPtySession(
         {
+          paneId: this.paneId,
           projectPath: this.projectPath,
           shellPath: settings.shellPath,
           rows,
@@ -1218,18 +1231,6 @@ export class TerminalPane {
   /** Reconnect to an existing backend session and restore terminal content. */
   async reconnect(backendId: string, serializedBuffer?: string): Promise<void> {
     if (this.disposed) return;
-
-    // Kill the session that mount() just created (if any)
-    const oldBackendId = this.backendId;
-    if (oldBackendId && oldBackendId !== backendId) {
-      unregisterBackendSession(oldBackendId);
-      killPtySession(oldBackendId).catch((err) => {
-        logger.warn('pty', 'Failed to kill old session during reconnect', {
-          paneId: this.paneId, oldBackendId, error: String(err),
-        });
-      });
-    }
-
     this.backendId = backendId;
 
     // Clear terminal and restore buffer from serialized content
@@ -1238,7 +1239,9 @@ export class TerminalPane {
       this.terminal.write(serializedBuffer);
     }
 
-    // Re-attach to the backend session with new channels
+    // Re-attach to the backend session with new channels.
+    // Skip ring-buffer replay when we already restored a serialized
+    // snapshot — replaying on top would duplicate output and cursors.
     try {
       await reconnectPtySession(
         backendId,
@@ -1257,14 +1260,20 @@ export class TerminalPane {
             this.onProcessExit?.();
           }
         },
+        !!serializedBuffer,
       );
 
       registerBackendSession(backendId, this.projectId, this.sessionId, this.paneId);
+      this.mountedAt = Date.now();
 
-      // Resize to current dimensions
+      // Sync dimension tracking with the backend's current size.
+      // The backend PTY already has the correct dimensions from before
+      // the reload — sending a resize IPC to the same size would cause
+      // ConPTY/PowerShell to redraw the prompt (duplicate cursor).
+      // If the window resized during reload, fit() via the
+      // ResizeObserver will detect the mismatch and send the update.
       const dims = this.fitAddon.proposeDimensions();
       if (dims) {
-        await resizePtySession(backendId, dims.rows, dims.cols);
         this.lastSentRows = dims.rows;
         this.lastSentCols = dims.cols;
       }
@@ -1276,6 +1285,10 @@ export class TerminalPane {
         backendId,
         error: String(err),
       });
+      // Clear backendId so keystrokes aren't silently sent to a dead
+      // session, then signal process exit to close the zombie pane.
+      this.backendId = null;
+      this.onProcessExit?.();
     }
   }
 

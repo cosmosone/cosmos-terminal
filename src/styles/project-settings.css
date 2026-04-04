@@ -37,3 +37,33 @@
 .project-settings-content {
   padding: 16px 24px 24px;
 }
+
+/* ── Command row right side ── */
+.settings-cmd-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-cmd-save {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 12px;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.settings-cmd-save:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.settings-cmd-save:not(:disabled):hover {
+  opacity: 0.85;
+}

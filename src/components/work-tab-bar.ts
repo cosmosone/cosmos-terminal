@@ -325,7 +325,7 @@ export function initWorkTabBar(onTabChange: () => void, onWriteToPane?: (paneId:
         tab.appendChild(muteEl);
       }
 
-      if (!session.agentCommand && project.showRunButton !== false) {
+      if (!session.agentCommand && project.runCommand && project.showRunButton !== false) {
         const playEl = createElement('span', { className: 'tab-play' });
         playEl.innerHTML = playIcon(10);
         playEl.title = project.runCommand || 'Run command';

@@ -10,18 +10,27 @@ import { getAgentCommand } from '../services/agent-definitions';
 import { setInitialCommand } from '../services/initial-command';
 import { TerminalPane } from './terminal-pane';
 
-/** Saved terminal state from a previous session (populated before reload). */
-let reconnectState: Record<string, { backendId: string; buffer: string }> | null = null;
+/** Saved terminal display buffers from a previous frontend lifecycle. */
+let savedBuffers: Record<string, string> | null = null;
 
-/** Load reconnection state from sessionStorage (called once on startup). */
-export function loadReconnectState(): void {
-  const raw = sessionStorage.getItem('cosmos-terminal-state');
+/** Backend-authoritative reconnection map: paneId → backendId. */
+let reconnectionMap: Map<string, string> | null = null;
+
+/** Load serialized terminal buffers from sessionStorage (called once on startup). */
+export function loadSavedBuffers(): void {
+  const raw = sessionStorage.getItem('cosmos-terminal-buffers');
   if (raw) {
     try {
-      reconnectState = JSON.parse(raw) as Record<string, { backendId: string; buffer: string }>;
+      savedBuffers = JSON.parse(raw) as Record<string, string>;
     } catch { /* ignore */ }
-    sessionStorage.removeItem('cosmos-terminal-state');
+    sessionStorage.removeItem('cosmos-terminal-buffers');
   }
+}
+
+/** Inject or clear the backend-authoritative reconnection map. */
+export function setReconnectionMap(map: Map<string, string> | null): void {
+  reconnectionMap = map;
+  if (!map) savedBuffers = null;
 }
 
 export class SplitContainer {
@@ -131,23 +140,27 @@ export class SplitContainer {
         const r = preMountRects.get(paneId);
         if (r) SplitContainer.positionElement(tp.element, r);
 
-        // For restored agent sessions, register the initial command so the
-        // terminal automatically runs it on mount (e.g. "gemini -y" for Gemini).
-        // Only do this for the session's first pane — split panes should open
-        // a plain shell, not re-launch the agent.
-        if (activePaneIds.size === 1) {
-          const agentCmd = getAgentCommand(session.agentCommand, session.title);
-          if (agentCmd) {
-            setInitialCommand(paneId, agentCmd);
-          }
-        }
-
-        const saved = reconnectState?.[paneId];
-        if (saved) {
-          delete reconnectState![paneId];
-          await tp.mount();
-          await tp.reconnect(saved.backendId, saved.buffer);
+        const backendId = reconnectionMap?.get(paneId);
+        if (backendId) {
+          // Reconnect to existing backend session — mount UI only (no PTY
+          // creation) to avoid a throwaway process whose exit callback
+          // would incorrectly remove the session/pane.
+          reconnectionMap!.delete(paneId);
+          const buffer = savedBuffers?.[paneId];
+          if (buffer !== undefined && savedBuffers) delete savedBuffers[paneId];
+          await tp.mountUI();
+          await tp.reconnect(backendId, buffer);
         } else {
+          // Fresh pane — register agent command (if any) before mount so
+          // the terminal automatically runs it (e.g. "gemini -y").
+          // Only do this for the session's first pane — split panes should
+          // open a plain shell, not re-launch the agent.
+          if (activePaneIds.size === 1) {
+            const agentCmd = getAgentCommand(session.agentCommand, session.title);
+            if (agentCmd) {
+              setInitialCommand(paneId, agentCmd);
+            }
+          }
           await tp.mount();
         }
       }
@@ -293,12 +306,6 @@ export class SplitContainer {
     }
   }
 
-  clearHiddenScrollback(): void {
-    for (const tp of this.terminals.values()) {
-      if (!tp.isVisible()) tp.clearScrollback();
-    }
-  }
-
   scrollToBottom(): void {
     if (this.focusedPaneId) {
       this.terminals.get(this.focusedPaneId)?.scrollToBottom();
@@ -397,13 +404,12 @@ export class SplitContainer {
     void this.render();
   }
 
-  /** Serialize all terminal buffers and their backend session IDs for reconnection. */
-  serializeAll(): Map<string, { backendId: string; buffer: string }> {
-    const result = new Map<string, { backendId: string; buffer: string }>();
+  /** Serialize all terminal display buffers for visual restoration after reload. */
+  serializeBuffers(): Map<string, string> {
+    const result = new Map<string, string>();
     for (const [paneId, tp] of this.terminals) {
-      const backendId = tp.getBackendId();
-      if (backendId) {
-        result.set(paneId, { backendId, buffer: tp.serialize() });
+      if (tp.getBackendId()) {
+        result.set(paneId, tp.serialize());
       }
     }
     return result;

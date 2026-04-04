@@ -83,3 +83,50 @@ pub async fn get_system_stats(app: AppHandle) -> Result<SystemStats, String> {
     })
     .await
 }
+
+/// Swap the running exe with a new build and relaunch.
+///
+/// Windows blocks overwriting a running executable but allows renaming it.
+/// We rename the current exe to `.exe.old`, copy the new build into place,
+/// then spawn the new process and exit.
+#[tauri::command]
+pub async fn restart_with_update(app: AppHandle, exe_source: String) -> Result<(), String> {
+    let source = crate::security::path_guard::canonicalize_existing_file(&exe_source)?;
+
+    spawn_blocking_result(move || {
+        let current = std::env::current_exe()
+            .map_err(|e| format!("Failed to get current exe path: {e}"))?;
+
+        let old = current.with_extension("exe.old");
+
+        // Remove leftover .old from a previous update (may not exist)
+        let _ = std::fs::remove_file(&old);
+
+        // Rename the running exe — Windows allows rename but not overwrite
+        std::fs::rename(&current, &old)
+            .map_err(|e| format!("Failed to rename current exe: {e}"))?;
+
+        // Copy new build into the original location
+        std::fs::copy(&source, &current)
+            .map_err(|e| {
+                let _ = std::fs::rename(&old, &current);
+                format!("Failed to copy new exe: {e}")
+            })?;
+
+        // Spawn the new exe
+        std::process::Command::new(&current)
+            .spawn()
+            .map_err(|e| {
+                let _ = std::fs::remove_file(&current);
+                let _ = std::fs::rename(&old, &current);
+                format!("Failed to launch new exe: {e}")
+            })?;
+
+        // Give the IPC response a moment to reach the frontend before exiting
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        app.exit(0);
+
+        Ok(())
+    })
+    .await
+}

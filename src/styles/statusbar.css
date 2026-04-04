@@ -27,6 +27,10 @@
   animation: badge-pulse 2s ease-in-out infinite;
 }
 
+#status-update-badge.restart {
+  background: var(--warning);
+}
+
 #status-update-badge:hover {
   filter: brightness(1.2);
 }

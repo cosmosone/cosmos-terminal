@@ -351,12 +351,17 @@ def install_to_app_folder(build_type: str) -> bool:
                 exe_failed = True
                 print(f"{YELLOW}Frontend installed successfully.{RESET}")
                 print(f"{YELLOW}Exe could not be copied (app is running).{RESET}")
-                print(f"{YELLOW}Close the app, then copy manually:{RESET}")
-                print(f"  {DIM}{EXE_SRC}{RESET}")
-                print(f"  {DIM}  -> {dest}{RESET}")
+                print(f"{YELLOW}The app will offer a Restart button to apply the update.{RESET}")
         else:
             print(f"{RED}Exe not found at {EXE_SRC}{RESET}")
             exe_failed = True
+
+    # Write version.json so the frontend hot-swap badge knows what to show.
+    # exePending (path to new exe) tells the app a restart is needed.
+    version_data: dict[str, object] = {"version": read_version()}
+    if exe_failed:
+        version_data["exePending"] = str(EXE_SRC)
+    (frontend_dest / "version.json").write_text(json.dumps(version_data))
 
     return not exe_failed
 

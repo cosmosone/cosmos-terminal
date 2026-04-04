@@ -40,6 +40,7 @@ export const IPC_COMMANDS = {
   CAPTURE_BROWSER_SCREENSHOT: 'capture_browser_screenshot',
   SET_BROWSER_ZOOM: 'set_browser_zoom',
   SET_BROWSER_POOL_SIZE: 'set_browser_pool_size',
+  RESTART_WITH_UPDATE: 'restart_with_update',
 } as const;
 
 type IpcCommand = (typeof IPC_COMMANDS)[keyof typeof IPC_COMMANDS];
